@@ -535,6 +535,91 @@ class GameScene extends Phaser.Scene {
         // Store for enemy spawning (free spaces)
         this._pathTiles = pathTiles;
         this._clearings = clearings;
+
+        // Build walkability grid for pathfinding (true = walkable)
+        this._walkGrid = new Uint8Array(worldSize * worldSize);
+        for (let ty = 0; ty < worldSize; ty++) {
+            for (let tx = 0; tx < worldSize; tx++) {
+                this._walkGrid[ty * worldSize + tx] = this._occupiedTiles.has(`${tx},${ty}`) ? 0 : 1;
+            }
+        }
+        this._gridSize = worldSize;
+    }
+
+    // A* pathfinding on tile grid. Returns array of {x, y} world positions, or null if no path.
+    _findPath(fromWX, fromWY, toWX, toWY) {
+        const T = CONFIG.TILE_SIZE;
+        const gs = this._gridSize;
+        const grid = this._walkGrid;
+        if (!grid) return null;
+
+        const sx = Math.floor(fromWX / T), sy = Math.floor(fromWY / T);
+        const ex = Math.floor(toWX / T), ey = Math.floor(toWY / T);
+
+        // Clamp to bounds
+        if (sx < 0 || sy < 0 || ex < 0 || ey < 0 || sx >= gs || sy >= gs || ex >= gs || ey >= gs) return null;
+
+        // Quick bail if start or end is blocked
+        if (!grid[sy * gs + sx] || !grid[ey * gs + ex]) return null;
+
+        const key = (x, y) => y * gs + x;
+        const heuristic = (x, y) => Math.abs(x - ex) + Math.abs(y - ey);
+
+        // Open set as simple sorted array (good enough for game-scale grids)
+        const open = [{ x: sx, y: sy, g: 0, f: heuristic(sx, sy) }];
+        const cameFrom = new Map();
+        const gScore = new Map();
+        gScore.set(key(sx, sy), 0);
+
+        const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+        const maxIterations = 2000; // cap to avoid lag
+        let iterations = 0;
+
+        while (open.length > 0 && iterations++ < maxIterations) {
+            // Pop lowest f
+            let bestIdx = 0;
+            for (let i = 1; i < open.length; i++) {
+                if (open[i].f < open[bestIdx].f) bestIdx = i;
+            }
+            const curr = open.splice(bestIdx, 1)[0];
+
+            if (curr.x === ex && curr.y === ey) {
+                // Reconstruct path — return every Nth waypoint for smooth movement
+                const path = [];
+                let k = key(curr.x, curr.y);
+                while (cameFrom.has(k)) {
+                    const tx = k % gs, ty = Math.floor(k / gs);
+                    path.push({ x: tx * T + T / 2, y: ty * T + T / 2 });
+                    k = cameFrom.get(k);
+                }
+                path.reverse();
+                // Simplify: keep every 3rd waypoint for smoother movement
+                const simplified = [];
+                for (let i = 0; i < path.length; i += 3) {
+                    simplified.push(path[i]);
+                }
+                // Always include final destination
+                simplified.push({ x: toWX, y: toWY });
+                return simplified;
+            }
+
+            for (const [dx, dy] of dirs) {
+                const nx = curr.x + dx, ny = curr.y + dy;
+                if (nx < 0 || ny < 0 || nx >= gs || ny >= gs) continue;
+                if (!grid[ny * gs + nx]) continue;
+
+                const moveCost = (dx !== 0 && dy !== 0) ? 1.41 : 1;
+                const ng = curr.g + moveCost;
+                const nk = key(nx, ny);
+                if (gScore.has(nk) && ng >= gScore.get(nk)) continue;
+
+                gScore.set(nk, ng);
+                cameFrom.set(nk, key(curr.x, curr.y));
+                open.push({ x: nx, y: ny, g: ng, f: ng + heuristic(nx, ny) });
+            }
+        }
+
+        return null; // no path found
     }
 
     // --------------------------------------------------------
@@ -1170,6 +1255,13 @@ class GameScene extends Phaser.Scene {
         if (resType === 'tree') {
             const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
             this.time.delayedCall(30000, () => stump.destroy());
+            // Update walkability grid — chopped tree opens path
+            const ttx = Math.floor(ox / CONFIG.TILE_SIZE);
+            const tty = Math.floor(oy / CONFIG.TILE_SIZE);
+            if (this._walkGrid && this._occupiedTiles) {
+                this._occupiedTiles.delete(`${ttx},${tty}`);
+                this._walkGrid[tty * this._gridSize + ttx] = 1;
+            }
         }
         obj.destroy();
 
@@ -1612,17 +1704,24 @@ class GameScene extends Phaser.Scene {
 
         const stats = ENEMIES[type];
 
-        // Spawn far outside light — 2x to 3x light radius away
-        let sx, sy;
-        for (let attempt = 0; attempt < 10; attempt++) {
+        // Spawn far outside light — try positions that have a valid path to camp
+        let sx, sy, path = null;
+        for (let attempt = 0; attempt < 15; attempt++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = lightRadius * 2 + Math.random() * lightRadius;
             sx = target.x + Math.cos(angle) * dist;
             sy = target.y + Math.sin(angle) * dist;
             const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
             const tty = Math.floor(sy / CONFIG.TILE_SIZE);
-            if (!this._occupiedTiles || !this._occupiedTiles.has(`${ttx},${tty}`)) break;
+            if (this._occupiedTiles && this._occupiedTiles.has(`${ttx},${tty}`)) continue;
+
+            // Verify path exists to camp
+            path = this._findPath(sx, sy, target.x, target.y);
+            if (path && path.length > 0) break;
+            path = null;
         }
+        // No valid path found — skip this raider
+        if (!path) return null;
 
         const textureKey = {
             SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
@@ -1651,6 +1750,9 @@ class GameScene extends Phaser.Scene {
         enemy.setData('raidMode', 'march'); // 'march' = heading to camp, 'chase' = chasing player
         enemy.setData('raidTargetX', target.x);
         enemy.setData('raidTargetY', target.y);
+        // Pathfinding waypoints
+        enemy.setData('raidPath', path);
+        enemy.setData('raidPathIdx', 0);
         enemy.body.setAllowGravity(false);
 
         this.physics.add.collider(enemy, this.trees);
@@ -1892,8 +1994,17 @@ class GameScene extends Phaser.Scene {
                     const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
 
                     if (distToTarget > atkRange * 0.9) {
-                        // Still approaching — march toward camp
-                        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                        // Follow pathfinding waypoints toward camp
+                        const path = enemy.getData('raidPath');
+                        let pathIdx = enemy.getData('raidPathIdx') || 0;
+                        if (path && pathIdx < path.length) {
+                            const wp = path[pathIdx];
+                            if (Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y) < 20) {
+                                enemy.setData('raidPathIdx', ++pathIdx);
+                            }
+                        }
+                        const wp = (path && pathIdx < path.length) ? path[pathIdx] : { x: tx, y: ty };
+                        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, wp.x, wp.y);
                         enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
                         enemy.setFlipX(Math.cos(angle) < 0);
                     } else {
@@ -1992,17 +2103,37 @@ class GameScene extends Phaser.Scene {
                         this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                     }
                 } else {
-                    // March to camp — target nearest bonfire or building
+                    // March to camp following pathfinding waypoints
+                    const path = enemy.getData('raidPath');
+                    let pathIdx = enemy.getData('raidPathIdx') || 0;
+
+                    if (path && pathIdx < path.length) {
+                        const wp = path[pathIdx];
+                        const distToWP = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
+                        if (distToWP < 20) {
+                            pathIdx++;
+                            enemy.setData('raidPathIdx', pathIdx);
+                        }
+                        if (pathIdx < path.length) {
+                            const nextWP = path[pathIdx];
+                            const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, nextWP.x, nextWP.y);
+                            enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                            enemy.setFlipX(Math.cos(angle) < 0);
+                        }
+                    } else {
+                        // Reached end of path — head to camp directly
+                        const tx = enemy.getData('raidTargetX');
+                        const ty = enemy.getData('raidTargetY');
+                        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                        enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                        enemy.setFlipX(Math.cos(angle) < 0);
+                    }
+
+                    // Attack bonfire when close to target
                     const tx = enemy.getData('raidTargetX');
                     const ty = enemy.getData('raidTargetY');
                     const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
-                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
-                    enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
-                    enemy.setFlipX(Math.cos(angle) < 0);
-
-                    // Attack bonfire when close
                     if (distToTarget < CONFIG.RAID_ATTACK_RANGE) {
-                        // Drain fuel from nearest bonfire
                         let nearestBonfire = null, nearestDist = 60;
                         for (const b of this.bonfires) {
                             const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
