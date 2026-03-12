@@ -334,6 +334,8 @@ const network = {
                 break;
 
             case 's': // state update (position, facing, moving)
+                // If this is a relayed message (from another client via host), skip — handled below
+                if (msg.from && msg.from !== peerId) break;
                 peer.state = msg;
                 peer.lastUpdate = Date.now();
                 if (this.onPeerState) this.onPeerState(peerId, msg);
@@ -353,6 +355,7 @@ const network = {
                 break;
 
             case 'a': // attack
+                if (msg.from && msg.from !== peerId) break;
                 if (this.onPeerAttack) this.onPeerAttack(peerId, msg);
                 // Host relays attacks to other clients
                 if (this.isHost) {

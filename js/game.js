@@ -1513,6 +1513,13 @@ class GameScene extends Phaser.Scene {
             };
         });
 
+        // Materialize any peers that connected before callbacks were set (race condition fix)
+        for (const [peerId, peer] of network.peers) {
+            if (!scene.remotePlayers.has(peerId) && peer.name) {
+                network.onPeerJoined(peerId, peer.name, peer.color);
+            }
+        }
+
         // Show player count in HUD
         this._playerCountText = this.add.text(10, 70, '', {
             fontSize: '11px',
