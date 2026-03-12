@@ -87,25 +87,32 @@ const network = {
         this.playerName = name;
     },
 
-    // Connect to relay server and join/create a room
-    _connectWS(roomCode) {
+    // Callback for wakeup progress: onWakeProgress(secondsElapsed, maxSeconds, attempt)
+    // Set by menu before calling connect methods
+    onWakeProgress: null,
+
+    // Max time to wait for server wakeup (Render free tier: ~50s)
+    WAKE_TIMEOUT: 50,
+    // Single attempt timeout
+    ATTEMPT_TIMEOUT: 6000,
+
+    // Try a single WebSocket connection attempt
+    _tryConnect(roomCode) {
         return new Promise((resolve) => {
             const timeout = setTimeout(() => {
-                console.warn('WebSocket connection timeout');
+                if (this.ws) { this.ws.close(); this.ws = null; }
                 resolve(false);
-            }, 8000);
+            }, this.ATTEMPT_TIMEOUT);
 
             try {
                 this.ws = new WebSocket(this.RELAY_URL);
             } catch (e) {
                 clearTimeout(timeout);
-                console.warn('WebSocket creation failed:', e);
                 resolve(false);
                 return;
             }
 
             this.ws.onopen = () => {
-                // Send join message
                 this.ws.send(JSON.stringify({
                     type: 'join',
                     roomCode: roomCode,
@@ -129,7 +136,6 @@ const network = {
                         this.worldSeed = this.generateSeed();
                     }
 
-                    // Register existing peers
                     for (const p of msg.peers) {
                         this.peers.set(p.peerId, {
                             name: p.name,
@@ -145,26 +151,62 @@ const network = {
                     return;
                 }
 
-                // Handle other server messages
                 this._handleServerMessage(msg);
             };
 
             this.ws.onclose = () => {
                 clearTimeout(timeout);
-                if (!this.connected) {
-                    resolve(false);
-                    return;
-                }
+                if (!this.connected) { resolve(false); return; }
                 console.log('WebSocket disconnected');
                 this.connected = false;
             };
 
-            this.ws.onerror = (err) => {
+            this.ws.onerror = () => {
                 clearTimeout(timeout);
-                console.warn('WebSocket error:', err);
+                if (this.ws) { this.ws.close(); this.ws = null; }
                 resolve(false);
             };
         });
+    },
+
+    // Connect with auto-retry and wakeup timer
+    async _connectWS(roomCode) {
+        // First attempt — fast path (server is already awake)
+        const ok = await this._tryConnect(roomCode);
+        if (ok) return true;
+
+        // Server likely sleeping — start retry loop with countdown
+        console.log('Server may be waking up, retrying...');
+        const startTime = Date.now();
+        let attempt = 1;
+
+        // Start countdown timer (updates every second)
+        let timerInterval = null;
+        if (this.onWakeProgress) {
+            this.onWakeProgress(0, this.WAKE_TIMEOUT, attempt);
+            timerInterval = setInterval(() => {
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                if (this.onWakeProgress) this.onWakeProgress(elapsed, this.WAKE_TIMEOUT, attempt);
+            }, 1000);
+        }
+
+        while ((Date.now() - startTime) < this.WAKE_TIMEOUT * 1000) {
+            attempt++;
+            // Wait 3 seconds between retries
+            await new Promise(r => setTimeout(r, 3000));
+            if ((Date.now() - startTime) >= this.WAKE_TIMEOUT * 1000) break;
+
+            const result = await this._tryConnect(roomCode);
+            if (result) {
+                if (timerInterval) clearInterval(timerInterval);
+                if (this.onWakeProgress) this.onWakeProgress(-1, this.WAKE_TIMEOUT, attempt); // -1 = success
+                return true;
+            }
+        }
+
+        if (timerInterval) clearInterval(timerInterval);
+        if (this.onWakeProgress) this.onWakeProgress(this.WAKE_TIMEOUT, this.WAKE_TIMEOUT, attempt); // timed out
+        return false;
     },
 
     _handleServerMessage(msg) {

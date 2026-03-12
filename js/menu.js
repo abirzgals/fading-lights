@@ -170,6 +170,23 @@ class MenuScene extends Phaser.Scene {
             btnText.setColor('#FF9944');
         });
 
+        // Wakeup progress callback — shows timer when server is sleeping
+        this._setupWakeProgress = () => {
+            network.onWakeProgress = (elapsed, max, attempt) => {
+                const statusEl = document.getElementById('room-status');
+                if (!statusEl) return;
+                if (elapsed === -1) {
+                    // Connected!
+                    statusEl.textContent = 'Server ready!';
+                    statusEl.style.color = '#44FF44';
+                    return;
+                }
+                const remaining = Math.max(0, max - elapsed);
+                statusEl.innerHTML = `Waking up server... <strong>${remaining}s</strong> (attempt ${attempt})`;
+                statusEl.style.color = '#FFAA44';
+            };
+        };
+
         this._launchGame = () => {
             // Remove input overlay
             const overlay = document.getElementById('name-input-overlay');
@@ -196,6 +213,7 @@ class MenuScene extends Phaser.Scene {
             const name = this._getName();
             const statusEl = document.getElementById('room-status');
             if (statusEl) statusEl.textContent = 'Connecting...';
+            this._setupWakeProgress();
 
             // Try to join the default room first (someone else is hosting)
             const joined = await network.joinRoom(name, network.playerColor, 'MAIN');
@@ -227,6 +245,7 @@ class MenuScene extends Phaser.Scene {
             const name = this._getName();
             const statusEl = document.getElementById('room-status');
             if (statusEl) statusEl.textContent = 'Creating room...';
+            this._setupWakeProgress();
 
             const ok = await network.createRoom(name, network.playerColor);
             if (ok) {
@@ -269,6 +288,7 @@ class MenuScene extends Phaser.Scene {
 
             const statusEl = document.getElementById('room-status');
             if (statusEl) statusEl.textContent = 'Joining room ' + code + '...';
+            this._setupWakeProgress();
 
             const ok = await network.joinRoom(name, network.playerColor, code);
             if (ok) {

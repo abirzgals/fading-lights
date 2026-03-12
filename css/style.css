@@ -448,6 +448,45 @@ body {
     background: rgba(0, 136, 255, 0.35);
 }
 
+/* ── Fullscreen Button ── */
+#fullscreen-btn {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 30;
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 136, 0, 0.12);
+    border: 1px solid rgba(255, 136, 0, 0.25);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+    padding: 0;
+}
+
+#fullscreen-btn:hover {
+    background: rgba(255, 136, 0, 0.25);
+    border-color: rgba(255, 136, 0, 0.5);
+}
+
+#fullscreen-btn svg {
+    width: 18px;
+    height: 18px;
+    fill: none;
+    stroke: #FF9944;
+    stroke-width: 2;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+/* Hide fullscreen button when already in fullscreen or standalone PWA */
+@media (display-mode: fullscreen), (display-mode: standalone) {
+    #fullscreen-btn { display: none; }
+}
+
 @media (hover: none) and (pointer: coarse) {
     #mobile-controls { display: block; }
     #hint-text { display: none !important; }
