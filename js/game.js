@@ -324,6 +324,22 @@ class GameScene extends Phaser.Scene {
             tree.setData('type', 'tree');
         }
 
+        // Starter stones near bonfire (visible on first screen)
+        const centerWx = cx * CONFIG.TILE_SIZE + 16;
+        const centerWy = cy * CONFIG.TILE_SIZE + 16;
+        for (let s = 0; s < 4; s++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = 80 + rng() * 60;
+            const sx = centerWx + Math.cos(angle) * dist;
+            const sy = centerWy + Math.sin(angle) * dist;
+            const stone = this.stones.create(sx, sy, 'stone');
+            stone.setDepth(2);
+            stone.body.setSize(20, 16);
+            stone.body.setOffset(6, 12);
+            stone.setData('hits', 0);
+            stone.setData('type', 'stone');
+        }
+
         // Stone clusters
         for (let c = 0; c < 18; c++) {
             const scx = Math.floor(rng() * (worldSize - 20)) + 10;
@@ -608,13 +624,34 @@ class GameScene extends Phaser.Scene {
             p.setAlpha(1);
         }
 
-        // Attack (keyboard, mobile, or mouse hold)
+        // Attack (keyboard, mobile, mouse hold, or autoattack)
         const kbAttack = Phaser.Input.Keyboard.JustDown(this.cursors.attack);
         const mobileAttack = mobileControls.consumeAttack();
         const wantAttack = kbAttack || mobileAttack || this._mouseLeftHeld;
         if (wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
             if (this._mouseLeftHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerAttack();
+        }
+
+        // Autoattack: if idle and enemy in weapon range, face it and attack
+        if (!wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+            const weapon = WEAPONS[gameState.weapon];
+            const autoRange = weapon.range + 20;
+            let nearest = null, nearDist = Infinity;
+            for (const enemy of this.enemies.children.entries) {
+                if (!enemy.active) continue;
+                const d = Phaser.Math.Distance.Between(p.x, p.y, enemy.x, enemy.y);
+                if (d < autoRange + enemy.getData('size') && d < nearDist) {
+                    nearDist = d;
+                    nearest = enemy;
+                }
+            }
+            if (nearest) {
+                const angle = Phaser.Math.Angle.Between(p.x, p.y, nearest.x, nearest.y);
+                p.facing = { x: Math.cos(angle), y: Math.sin(angle) };
+                if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+                this.playerAttack();
+            }
         }
 
         // Interact (keyboard, mobile, or mouse hold)
