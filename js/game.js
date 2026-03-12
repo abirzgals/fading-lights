@@ -176,6 +176,83 @@ class GameScene extends Phaser.Scene {
             this.cursors[key].on('down', () => { this.useMouseFacing = false; });
         }
 
+        // --- Chat ---
+        this._chatOpen = false;
+        this._chatBubbles = []; // { text, target, createdAt }
+        const chatContainer = document.getElementById('chat-input-container');
+        const chatInput = document.getElementById('chat-input');
+
+        this.input.keyboard.on('keydown-ENTER', () => {
+            if (gameState.gameOver) return;
+            if (this._chatOpen) {
+                // Send message
+                const text = chatInput.value.trim();
+                if (text) {
+                    this._showChatBubble(this.player, this.playerNameLabel, text);
+                    network.broadcastReliable({ t: 'c', text });
+                }
+                chatInput.value = '';
+                chatContainer.style.display = 'none';
+                this._chatOpen = false;
+                chatInput.blur();
+            } else {
+                // Open chat
+                this._chatOpen = true;
+                chatContainer.style.display = 'block';
+                chatInput.focus();
+            }
+        });
+
+        // ESC closes chat
+        this.input.keyboard.on('keydown-ESC', () => {
+            if (this._chatOpen) {
+                chatInput.value = '';
+                chatContainer.style.display = 'none';
+                this._chatOpen = false;
+                chatInput.blur();
+            }
+        });
+
+        // Prevent game input while chat is open
+        chatInput.addEventListener('keydown', (e) => {
+            e.stopPropagation();
+            if (e.key === 'Enter') {
+                const text = chatInput.value.trim();
+                if (text) {
+                    this._showChatBubble(this.player, this.playerNameLabel, text);
+                    network.broadcastReliable({ t: 'c', text });
+                }
+                chatInput.value = '';
+                chatContainer.style.display = 'none';
+                this._chatOpen = false;
+                chatInput.blur();
+            }
+            if (e.key === 'Escape') {
+                chatInput.value = '';
+                chatContainer.style.display = 'none';
+                this._chatOpen = false;
+                chatInput.blur();
+            }
+        });
+
+        // Mobile chat button
+        if (mobileControls.isMobile) {
+            const chatBtn = document.createElement('div');
+            chatBtn.id = 'touch-chat-btn';
+            chatBtn.className = 'touch-zone';
+            chatBtn.textContent = 'CHAT';
+            chatBtn.style.cssText = 'position:absolute;bottom:100px;left:50%;transform:translateX(-50%);width:60px;height:36px;display:flex;align-items:center;justify-content:center;background:rgba(255,170,0,0.15);border:1px solid rgba(255,170,0,0.3);border-radius:6px;color:#FFD080;font-size:11px;z-index:150;';
+            document.getElementById('game-container').appendChild(chatBtn);
+            chatBtn.addEventListener('touchend', (e) => {
+                e.preventDefault();
+                if (!this._chatOpen) {
+                    this._chatOpen = true;
+                    chatContainer.style.display = 'block';
+                    chatInput.focus();
+                }
+            });
+        }
+
         // --- Spawn timer ---
         this.spawnTimer = 0;
         this.waveTimer = 0;
@@ -457,6 +534,7 @@ class GameScene extends Phaser.Scene {
         this.updateBuildGhost();
         this._updateBuildSpots();
         this.updateHUD();
+        this._updateChatBubbles();
         this.updateNetwork(dt);
     }
 
@@ -467,7 +545,7 @@ class GameScene extends Phaser.Scene {
         const p = this.player;
         let vx = 0, vy = 0;
 
-        if (!gameState.craftingOpen) {
+        if (!gameState.craftingOpen && !this._chatOpen) {
             // Keyboard input
             if (this.cursors.left.isDown)  vx = -1;
             if (this.cursors.right.isDown) vx = 1;
@@ -531,14 +609,14 @@ class GameScene extends Phaser.Scene {
         // Attack (keyboard or mobile)
         const kbAttack = Phaser.Input.Keyboard.JustDown(this.cursors.attack);
         const mobileAttack = mobileControls.consumeAttack();
-        if ((kbAttack || mobileAttack) && p.attackCooldown <= 0 && !gameState.craftingOpen) {
+        if ((kbAttack || mobileAttack) && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
             this.playerAttack();
         }
 
         // Interact (keyboard or mobile)
         const kbInteract = Phaser.Input.Keyboard.JustDown(this.cursors.interact);
         const mobileInteract = mobileControls.consumeInteract();
-        if ((kbInteract || mobileInteract) && !gameState.craftingOpen) {
+        if ((kbInteract || mobileInteract) && !gameState.craftingOpen && !this._chatOpen) {
             this.playerInteract();
         }
     }
@@ -1663,6 +1741,14 @@ class GameScene extends Phaser.Scene {
             });
         };
 
+        // Chat message from peer
+        network.onChat = (peerId, text) => {
+            const remote = scene.remotePlayers.get(peerId);
+            if (remote) {
+                scene._showChatBubble(remote.sprite, remote.nameLabel, text);
+            }
+        };
+
         // Enemy sync from host (positions update)
         network.onEnemySync = (enemies) => {
             if (network.isHost) return;
@@ -1877,6 +1963,90 @@ class GameScene extends Phaser.Scene {
         if (this._playerCountText) {
             this._playerCountText.setText(count > 0 ? `Players: ${count + 1}` : '');
         }
+    }
+
+    // --------------------------------------------------------
+    // Chat Bubbles
+    // --------------------------------------------------------
+    _showChatBubble(sprite, nameLabel, text) {
+        // Remove existing bubble for this sprite
+        this._chatBubbles = this._chatBubbles.filter(b => {
+            if (b.sprite === sprite) {
+                b.bg.destroy();
+                b.label.destroy();
+                return false;
+            }
+            return true;
+        });
+
+        // Wrap text at ~20 chars
+        const lines = [];
+        const words = text.split(' ');
+        let line = '';
+        for (const word of words) {
+            if ((line + ' ' + word).trim().length > 22) {
+                if (line) lines.push(line);
+                line = word;
+            } else {
+                line = (line + ' ' + word).trim();
+            }
+        }
+        if (line) lines.push(line);
+        const wrapped = lines.join('\n');
+
+        const label = this.add.text(sprite.x, sprite.y - 50, wrapped, {
+            fontSize: '11px',
+            fontFamily: 'monospace',
+            color: '#FFFFFF',
+            backgroundColor: 'rgba(0,0,0,0.7)',
+            padding: { x: 8, y: 5 },
+            align: 'center',
+            wordWrap: { width: 180 },
+        }).setOrigin(0.5, 1).setDepth(110);
+
+        // Background bubble shape
+        const bg = this.add.graphics();
+        bg.setDepth(109);
+
+        this._chatBubbles.push({
+            sprite,
+            label,
+            bg,
+            createdAt: Date.now(),
+        });
+    }
+
+    _updateChatBubbles() {
+        const now = Date.now();
+        this._chatBubbles = this._chatBubbles.filter(b => {
+            const age = now - b.createdAt;
+            if (age > 10000) {
+                b.label.destroy();
+                b.bg.destroy();
+                return false;
+            }
+
+            // Position above sprite
+            const x = b.sprite.x;
+            const y = b.sprite.y - 48;
+            b.label.setPosition(x, y);
+
+            // Draw bubble background
+            b.bg.clear();
+            const bounds = b.label.getBounds();
+            const pad = 3;
+            b.bg.fillStyle(0x000000, 0.65);
+            b.bg.fillRoundedRect(bounds.x - pad, bounds.y - pad, bounds.width + pad * 2, bounds.height + pad * 2, 6);
+
+            // Fade out in last 2 seconds
+            if (age > 8000) {
+                const alpha = 1 - (age - 8000) / 2000;
+                b.label.setAlpha(alpha);
+                b.bg.setAlpha(alpha);
+            }
+
+            return true;
+        });
     }
 
     // --------------------------------------------------------

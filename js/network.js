@@ -30,6 +30,7 @@ const network = {
     onEnemyDied: null,
     onEnemySpawn: null,
     onFuelAdded: null,
+    onChat: null,
 
     // Config
     ROOM_PREFIX: 'fading-light-',
@@ -430,6 +431,18 @@ const network = {
                 }
                 break;
 
+            case 'c': // chat message
+                if (this.onChat) this.onChat(peerId, msg.text);
+                // Host relays to other clients
+                if (this.isHost) {
+                    for (const [id, p] of this.peers) {
+                        if (id !== peerId && p.conn && p.conn.open) {
+                            try { p.conn.send(JSON.stringify({ ...msg, from: peerId })); } catch {}
+                        }
+                    }
+                }
+                break;
+
             case 'new_peer': // host tells us about another peer
                 if (this.onPeerJoined) this.onPeerJoined(msg.peerId, msg.name, msg.color);
                 // Track them for state relay
@@ -474,6 +487,8 @@ const network = {
                     if (this.onPeerState) this.onPeerState(msg.from, msg);
                 } else if (msg.t === 'a') {
                     if (this.onPeerAttack) this.onPeerAttack(msg.from, msg);
+                } else if (msg.t === 'c') {
+                    if (this.onChat) this.onChat(msg.from, msg.text);
                 }
             }
         }
