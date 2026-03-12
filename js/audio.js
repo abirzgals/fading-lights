@@ -33,6 +33,7 @@ const AUDIO_CONFIG = {
     footsteps:    { file: 'audio/footsteps.mp3',    volume: 0.3,  loop: true },
     ambient:      { file: 'audio/ambient.mp3',      volume: 0.2,  loop: true },
     rain:         { file: 'audio/rain.mp3',        volume: 0.35, loop: true },
+    magic_proj:   { file: 'audio/attack_magic_projectile.mp3', volume: 0.3, loop: true },
 
     // One-shots
     // Files present: attack.mp3, enemy_death.mp3, enemy_roar.mp3
@@ -204,6 +205,16 @@ class AudioEngine {
 
     startFootsteps() { this.startLoop('footsteps'); }
     stopFootsteps()  { this.stopLoop('footsteps', 200); }
+
+    // Magic projectile sound — reference counted
+    startMagicProj() {
+        this._magicProjCount = (this._magicProjCount || 0) + 1;
+        if (this._magicProjCount === 1) this.startLoop('magic_proj', 100);
+    }
+    stopMagicProj() {
+        this._magicProjCount = Math.max(0, (this._magicProjCount || 0) - 1);
+        if (this._magicProjCount === 0) this.stopLoop('magic_proj', 200);
+    }
 
     // Proximity-based fire crackle:
     // - Close (< nearDist): full volume

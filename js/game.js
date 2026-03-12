@@ -47,6 +47,11 @@ class GameScene extends Phaser.Scene {
             this._createSecondCamp(this._secondCampWorldX, this._secondCampWorldY);
         }
 
+        // --- Wandering Merchant Shop ---
+        if (this._shopWorldX) {
+            this._createShop(this._shopWorldX, this._shopWorldY);
+        }
+
         // --- Build spots (predefined positions around bonfire) ---
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
@@ -224,8 +229,12 @@ class GameScene extends Phaser.Scene {
             }
         });
 
-        // ESC closes chat
+        // ESC closes chat / shop
         this.input.keyboard.on('keydown-ESC', () => {
+            if (this._shopOpen) {
+                this._closeShop();
+                return;
+            }
             if (this._chatOpen) {
                 chatInput.value = '';
                 chatContainer.style.display = 'none';
@@ -297,6 +306,9 @@ class GameScene extends Phaser.Scene {
 
         // --- Floating text pool ---
         this.floatingTexts = [];
+
+        // --- Objectives ---
+        this._initObjectives();
 
         // Show and auto-hide hint
         document.getElementById('hint-text').style.display = 'block';
@@ -532,6 +544,48 @@ class GameScene extends Phaser.Scene {
             stone.setData('type', 'stone');
         }
 
+        // --- Wandering Merchant Shop ---
+        // Place on opposite side of center from second camp, at ~lvl3 light range
+        const shopAngle = secondCampAngle + Math.PI + (rng() - 0.5) * 0.6; // roughly opposite
+        const shopDist = 22; // tiles from center (~704px, around lvl3 edge)
+        const shop_tx = Math.round(cx + Math.cos(shopAngle) * shopDist);
+        const shop_ty = Math.round(cy + Math.sin(shopAngle) * shopDist);
+        this._shopWorldX = shop_tx * T + 16;
+        this._shopWorldY = shop_ty * T + 16;
+
+        // Clear trees around shop (radius 4 tiles)
+        for (const tree of [...this.trees.children.entries]) {
+            const ttx = Math.floor(tree.x / T);
+            const tty = Math.floor(tree.y / T);
+            const dx = ttx - shop_tx, dy = tty - shop_ty;
+            if (dx * dx + dy * dy < 4 * 4) {
+                this._occupiedTiles.delete(`${ttx},${tty}`);
+                tree.destroy();
+            }
+        }
+
+        // Generate shop inventory using seeded RNG (deterministic for all players)
+        this._shopInventory = [];
+        const shopPool = [...SHOP_WEAPONS];
+        for (let i = 0; i < SHOP_ITEM_COUNT && shopPool.length > 0; i++) {
+            const idx = Math.floor(rng() * shopPool.length);
+            const template = shopPool.splice(idx, 1)[0];
+            // Randomize stats ±20%
+            const vary = (base) => Math.round(base * (0.8 + rng() * 0.4));
+            const weapon = {
+                name: template.name,
+                damage: vary(template.baseDmg),
+                range: vary(template.baseRange),
+                speed: vary(template.baseSpeed),
+                color: template.color,
+                gold: vary(template.baseGold),
+                sold: false,
+            };
+            if (template.chopBonus) weapon.chopBonus = template.chopBonus;
+            if (template.shadowBonus) weapon.shadowBonus = template.shadowBonus;
+            this._shopInventory.push(weapon);
+        }
+
         // Store for enemy spawning (free spaces)
         this._pathTiles = pathTiles;
         this._clearings = clearings;
@@ -572,7 +626,7 @@ class GameScene extends Phaser.Scene {
         gScore.set(key(sx, sy), 0);
 
         const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-        const maxIterations = 2000; // cap to avoid lag
+        const maxIterations = 5000; // cap to avoid lag
         let iterations = 0;
 
         while (open.length > 0 && iterations++ < maxIterations) {
@@ -697,6 +751,7 @@ class GameScene extends Phaser.Scene {
         if (label) this.tweens.add({ targets: label, alpha: 0, duration: 1000, onComplete: () => label.destroy() });
 
         this.showFloatingText(bonfire.x, bonfire.y - 50, 'CAMP DISCOVERED!', '#FFCC00');
+        this._trackObjective('second_camp_lit', 1);
 
         // Broadcast second camp lit to peers
         if (network.peerCount > 0) {
@@ -736,6 +791,134 @@ class GameScene extends Phaser.Scene {
 
         this.bonfires.push(bonfire);
         this._secondCampBonfire = bonfire;
+    }
+
+    // Create the wandering merchant shop
+    _createShop(x, y) {
+        const shop = this.physics.add.staticImage(x, y, 'shop');
+        shop.setDepth(4);
+        shop.body.setSize(40, 20);
+        shop.body.setOffset(4, 24);
+        this.shopSprite = shop;
+
+        // Collider so player bumps into it
+        this.physics.add.collider(this.player, shop);
+
+        // Label
+        this._shopLabel = this.add.text(x, y - 30, 'Merchant', {
+            fontSize: '9px', fontFamily: 'monospace',
+            color: '#FFD700', stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(50).setAlpha(0.7);
+
+        // Subtle lantern glow particle
+        this._shopGlow = this.add.particles(x - 17, y - 16, 'particle', {
+            speed: { min: 2, max: 8 },
+            angle: { min: 240, max: 300 },
+            lifespan: { min: 300, max: 600 },
+            scale: { start: 0.25, end: 0 },
+            alpha: { start: 0.6, end: 0 },
+            tint: [0xFFAA00, 0xFFCC44],
+            blendMode: 'ADD',
+            frequency: 200,
+            quantity: 1,
+        });
+        this._shopGlow.setDepth(5);
+
+        // Shop state
+        this._shopOpen = false;
+
+        // Wire up close button
+        document.getElementById('shop-close-btn').onclick = () => this._closeShop();
+    }
+
+    _openShop() {
+        if (this._shopOpen || gameState.craftingOpen || gameState.gameOver) return;
+        this._shopOpen = true;
+
+        const menu = document.getElementById('shop-menu');
+        menu.style.display = 'block';
+        this._renderShopMenu();
+    }
+
+    _closeShop() {
+        this._shopOpen = false;
+        document.getElementById('shop-menu').style.display = 'none';
+    }
+
+    _renderShopMenu() {
+        const list = document.getElementById('shop-list');
+        list.innerHTML = '';
+
+        const inv = this._shopInventory;
+        if (!inv || inv.length === 0) {
+            list.innerHTML = '<div style="color:#888;text-align:center;padding:12px;">Sold out!</div>';
+            return;
+        }
+
+        for (let i = 0; i < inv.length; i++) {
+            const w = inv[i];
+            if (w.sold) continue;
+
+            const item = document.createElement('div');
+            const canBuy = gameState.resources.gold >= w.gold;
+            item.className = 'shop-item' + (canBuy ? '' : ' disabled');
+
+            // Stats line
+            let statsHtml = `DMG:${w.damage} RNG:${w.range} SPD:${(1000 / w.speed).toFixed(1)}/s`;
+            if (w.chopBonus) statsHtml += ` CHOP+${w.chopBonus}`;
+            if (w.shadowBonus) statsHtml += ` SHADOW×${w.shadowBonus}`;
+
+            item.innerHTML = `
+                <div class="shop-item-header">
+                    <span class="shop-item-name" style="color:#${w.color.toString(16).padStart(6, '0')}">${w.name}</span>
+                    <span class="shop-item-price">${w.gold} gold</span>
+                </div>
+                <div class="shop-item-stats">${statsHtml}</div>
+            `;
+
+            if (canBuy) {
+                item.onclick = () => this._buyWeapon(i);
+            }
+            list.appendChild(item);
+        }
+    }
+
+    _buyWeapon(index) {
+        const w = this._shopInventory[index];
+        if (!w || w.sold || gameState.resources.gold < w.gold) return;
+
+        // Deduct gold
+        gameState.resources.gold -= w.gold;
+        w.sold = true;
+
+        // Create a dynamic weapon key and register it
+        const weaponKey = 'SHOP_' + index + '_' + w.name.replace(/\s+/g, '_').toUpperCase();
+        WEAPONS[weaponKey] = {
+            name: w.name,
+            damage: w.damage,
+            range: w.range,
+            speed: w.speed,
+            tier: 2,
+            color: w.color,
+        };
+        if (w.chopBonus) WEAPONS[weaponKey].chopBonus = w.chopBonus;
+        if (w.shadowBonus) WEAPONS[weaponKey].shadowBonus = w.shadowBonus;
+
+        // Equip immediately
+        gameState.weapon = weaponKey;
+        if (!gameState.unlockedWeapons.includes(weaponKey)) {
+            gameState.unlockedWeapons.push(weaponKey);
+        }
+
+        this.showFloatingText(this.player.x, this.player.y - 40, `Bought ${w.name}!`, '#FFD700');
+        audioEngine.playCraft();
+
+        // Broadcast purchase to peers
+        if (network.peerCount > 0) {
+            network.broadcastReliable({ t: 'sp', idx: index, peerId: network.peerId });
+        }
+
+        this._closeShop();
     }
 
     // Create build spots for the second camp when it levels up
@@ -940,7 +1123,7 @@ class GameScene extends Phaser.Scene {
         const p = this.player;
         let vx = 0, vy = 0;
 
-        if (!gameState.craftingOpen && !this._chatOpen) {
+        if (!gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             // Keyboard input
             if (this.cursors.left.isDown)  vx = -1;
             if (this.cursors.right.isDown) vx = 1;
@@ -1005,7 +1188,7 @@ class GameScene extends Phaser.Scene {
         const kbAttack = Phaser.Input.Keyboard.JustDown(this.cursors.attack);
         const mobileAttack = mobileControls.consumeAttack();
         const wantAttack = kbAttack || mobileAttack || this._mouseLeftHeld;
-        if (wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+        if (wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             if (this._mouseLeftHeld) this.updateFacingToMouse(this.input.activePointer);
             // Mobile/keyboard: auto-face nearest choppable resource if in range
             if (!this._mouseLeftHeld) {
@@ -1028,7 +1211,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // Autoattack: if idle and enemy in weapon range, face it and attack
-        if (!wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+        if (!wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             const weapon = WEAPONS[gameState.weapon];
             const autoRange = weapon.range + 20;
             let nearest = null, nearDist = Infinity;
@@ -1053,7 +1236,7 @@ class GameScene extends Phaser.Scene {
         const kbInteract = Phaser.Input.Keyboard.JustDown(this.cursors.interact);
         const mobileInteract = mobileControls.consumeInteract();
         const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld;
-        if (wantInteract && this._interactCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+        if (wantInteract && this._interactCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             if (this._mouseRightHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerInteract();
             this._interactCooldown = 500;
@@ -1149,6 +1332,15 @@ class GameScene extends Phaser.Scene {
     playerInteract() {
         const p = this.player;
 
+        // Check shop interaction
+        if (this.shopSprite) {
+            const shopDist = Phaser.Math.Distance.Between(p.x, p.y, this.shopSprite.x, this.shopSprite.y);
+            if (shopDist < CONFIG.INTERACT_RADIUS + 10) {
+                this._openShop();
+                return;
+            }
+        }
+
         // Check build spots first
         if (this._tryBuildOnSpot()) return;
 
@@ -1172,6 +1364,7 @@ class GameScene extends Phaser.Scene {
                     // Track per-camp fuel added and level
                     const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
                     bonfire.setData('campFuelAdded', campFuelAdded);
+                    this._trackObjective('fuel_added', 1);
 
                     // Also update global fuelAdded for main camp (backwards compat)
                     if (bonfire.getData('isMain')) {
@@ -1194,6 +1387,7 @@ class GameScene extends Phaser.Scene {
                         this.showFloatingText(bonfire.x, bonfire.y - 50,
                             `CAMP LEVEL ${newLevel}!`, '#CC66FF');
                         audioEngine.playWave();
+                        this._trackObjective('fire_level', Math.max(newLevel, this._objCounters?.fire_level || 0));
                         // Create build spots for second camp on level up
                         if (bonfire.getData('isSecondCamp')) {
                             this._updateSecondCampBuildSpots(bonfire, newLevel);
@@ -1253,6 +1447,7 @@ class GameScene extends Phaser.Scene {
             drop.body.setAllowGravity(false);
         }
         if (resType === 'tree') {
+            this._trackObjective('trees_chopped', 1);
             const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
             this.time.delayedCall(30000, () => stump.destroy());
             // Update walkability grid — chopped tree opens path
@@ -1263,6 +1458,7 @@ class GameScene extends Phaser.Scene {
                 this._walkGrid[tty * this._gridSize + ttx] = 1;
             }
         }
+        if (resType === 'stone') this._trackObjective('stones_mined', 1);
         obj.destroy();
 
         // Broadcast to peers so they remove the same resource
@@ -1513,7 +1709,9 @@ class GameScene extends Phaser.Scene {
         this.player.setVelocity(0, 0);
         const goScreen = document.getElementById('game-over-screen');
         const goStats = document.getElementById('game-over-stats');
-        goStats.textContent = `Survived ${Math.floor(gameState.time)}s | Killed ${gameState.kills} enemies | Wave ${gameState.waveNumber}`;
+        const objDone = this._objectives ? this._objectives.filter(o => o.completed).length : 0;
+        const objTotal = this._objectives ? this._objectives.length : 0;
+        goStats.textContent = `Survived ${Math.floor(gameState.time)}s | Killed ${gameState.kills} enemies | Wave ${gameState.waveNumber} | Objectives ${objDone}/${objTotal}`;
         goScreen.style.display = 'flex';
         audioEngine.playGameOver();
         audioEngine.stopLoop('music', 1000);
@@ -1541,6 +1739,7 @@ class GameScene extends Phaser.Scene {
             gameState.waveNumber = newWave;
             this.showFloatingText(this.player.x, this.player.y - 60, `WAVE ${gameState.waveNumber}`, '#FF4444');
             audioEngine.playWave();
+            this._trackObjective('waves_survived', 1);
         }
 
         // Base spawns: normal enemies from the darkness
@@ -1708,7 +1907,7 @@ class GameScene extends Phaser.Scene {
         let sx, sy, path = null;
         for (let attempt = 0; attempt < 15; attempt++) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = lightRadius * 2 + Math.random() * lightRadius;
+            const dist = lightRadius + 60 + Math.random() * 120;
             sx = target.x + Math.cos(angle) * dist;
             sy = target.y + Math.sin(angle) * dist;
             const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
@@ -2273,8 +2472,14 @@ class GameScene extends Phaser.Scene {
         gameState.kills++;
         audioEngine.playEnemyDeath();
 
-        // Drop gold
+        // Track objectives
+        this._trackObjective('enemies_killed', 1);
         const enemyType = enemy.getData('type');
+        if (enemy.getData('isRaider')) this._trackObjective('raiders_killed', 1);
+        if (enemyType === 'SHADOW_ARCHER') this._trackObjective('archers_killed', 1);
+        if (enemyType === 'VOID_MAGE') this._trackObjective('mages_killed', 1);
+
+        // Drop gold
         const goldAmount = ENEMIES[enemyType] ? ENEMIES[enemyType].gold || 1 : 1;
         for (let i = 0; i < goldAmount; i++) {
             const drop = this.drops.create(
@@ -2314,6 +2519,11 @@ class GameScene extends Phaser.Scene {
         const enemy = this._findEnemyById(enemyId);
         if (!enemy) return;
         gameState.kills++;
+        this._trackObjective('enemies_killed', 1);
+        const eType = enemy.getData('type');
+        if (enemy.getData('isRaider')) this._trackObjective('raiders_killed', 1);
+        if (eType === 'SHADOW_ARCHER') this._trackObjective('archers_killed', 1);
+        if (eType === 'VOID_MAGE') this._trackObjective('mages_killed', 1);
         audioEngine.playEnemyDeath();
 
         // Death particles
@@ -2410,6 +2620,7 @@ class GameScene extends Phaser.Scene {
             placed.setData('lastAttack', 0);
         }
         gameState.buildings.push({ type, x, y });
+        this._trackObjective('buildings_built', 1);
 
         // Handle building effects
         if (type === 'OUTPOST') {
@@ -2515,7 +2726,7 @@ class GameScene extends Phaser.Scene {
         emitter.setDepth(7);
         proj.setData('emitter', emitter);
 
-        // Magic orb: add pulsing glow
+        // Magic orb: add pulsing glow + sound
         if (projType === 'magic') {
             this.tweens.add({
                 targets: proj,
@@ -2525,6 +2736,7 @@ class GameScene extends Phaser.Scene {
                 repeat: -1,
                 ease: 'Sine.easeInOut',
             });
+            audioEngine.startMagicProj();
         }
     }
 
@@ -2591,6 +2803,9 @@ class GameScene extends Phaser.Scene {
     }
 
     _destroyProjectile(proj) {
+        if (proj.getData('projType') === 'magic') {
+            audioEngine.stopMagicProj();
+        }
         const emitter = proj.getData('emitter');
         if (emitter) {
             emitter.stop();
@@ -2610,6 +2825,7 @@ class GameScene extends Phaser.Scene {
             if (dist < CONFIG.PICKUP_RADIUS) {
                 const type = drop.getData('resourceType');
                 gameState.resources[type]++;
+                this._trackObjective(type + '_collected', 1);
                 this.showFloatingText(drop.x, drop.y - 10, `+1 ${type}`, '#88FF88');
                 audioEngine.playPickup();
                 // Broadcast pickup to peers so they remove the drop
@@ -2694,6 +2910,7 @@ class GameScene extends Phaser.Scene {
         placed.setData('hp', building.hp);
 
         gameState.buildings.push({ type, x: bx, y: by });
+        this._trackObjective('buildings_built', 1);
 
         // Handle building effects
         if (type === 'OUTPOST') {
@@ -2849,6 +3066,16 @@ class GameScene extends Phaser.Scene {
         this.hud.metal.textContent = gameState.resources.metal;
         this.hud.gold.textContent = gameState.resources.gold;
         this.hud.weapon.textContent = WEAPONS[gameState.weapon].name;
+
+        // Shop proximity hint
+        if (this.shopSprite && !this._shopOpen) {
+            const shopDist = Phaser.Math.Distance.Between(this.player.x, this.player.y, this.shopSprite.x, this.shopSprite.y);
+            if (shopDist < CONFIG.INTERACT_RADIUS + 30) {
+                this.hud.hint.textContent = 'Press E to browse the merchant\'s wares';
+                this.hud.hint.style.display = 'block';
+                this.hud.hint.style.opacity = '1';
+            }
+        }
 
         // Show active camp's fire level progress
         const levels = CONFIG.FIRE_LEVELS;
@@ -3151,6 +3378,20 @@ class GameScene extends Phaser.Scene {
             );
         };
 
+        // Shop purchase from peer — mark item as sold
+        network.onShopPurchase = (idx, fromPeerId) => {
+            if (scene._shopInventory && scene._shopInventory[idx]) {
+                scene._shopInventory[idx].sold = true;
+                const peerData = network.peers.get(fromPeerId);
+                const peerName = peerData ? peerData.name : 'A player';
+                scene.showFloatingText(scene.shopSprite?.x || scene.player.x,
+                    (scene.shopSprite?.y || scene.player.y) - 30,
+                    `${peerName} bought ${scene._shopInventory[idx].name}`, '#FFD700');
+                // Re-render if shop is open
+                if (scene._shopOpen) scene._renderShopMenu();
+            }
+        };
+
         // Host: register world state getter for new peers
         network.setWorldStateGetter(() => {
             return {
@@ -3169,6 +3410,7 @@ class GameScene extends Phaser.Scene {
                 buildings: gameState.buildings.map(b => ({ type: b.type, x: b.x, y: b.y })),
                 raining: scene._rainActive,
                 rainDur: scene._rainActive ? Math.round(scene._rainDuration - scene._rainTimer) : 0,
+                shopSold: scene._shopInventory ? scene._shopInventory.map(w => w.sold) : [],
             };
         });
 
@@ -3191,6 +3433,12 @@ class GameScene extends Phaser.Scene {
                     if (!exists) {
                         scene._placeBuilding(b.type, b.x, b.y);
                     }
+                }
+            }
+            // Sync shop sold state from host
+            if (msg.shopSold && scene._shopInventory) {
+                for (let i = 0; i < msg.shopSold.length && i < scene._shopInventory.length; i++) {
+                    scene._shopInventory[i].sold = msg.shopSold[i];
                 }
             }
         };
@@ -3392,6 +3640,127 @@ class GameScene extends Phaser.Scene {
 
             return true;
         });
+    }
+
+    // --------------------------------------------------------
+    // Objectives System
+    // --------------------------------------------------------
+    _initObjectives() {
+        // Pick random objectives from the pool
+        const pool = [...OBJECTIVES];
+        const count = Math.min(OBJECTIVES_PER_SESSION, pool.length);
+        this._objectives = [];
+
+        for (let i = 0; i < count; i++) {
+            const idx = Math.floor(Math.random() * pool.length);
+            const template = pool.splice(idx, 1)[0];
+            // Pick a random difficulty tier for the target
+            const targets = template.target;
+            const tier = Math.floor(Math.random() * targets.length);
+            const target = targets[tier];
+            const desc = template.desc.replace('{n}', target);
+            this._objectives.push({
+                type: template.type,
+                desc,
+                target,
+                current: 0,
+                completed: false,
+                reward: template.reward,
+            });
+        }
+
+        // Initialize tracking counters
+        this._objCounters = {
+            wood_collected: 0,
+            stone_collected: 0,
+            metal_collected: 0,
+            gold_collected: 0,
+            enemies_killed: 0,
+            raiders_killed: 0,
+            archers_killed: 0,
+            mages_killed: 0,
+            waves_survived: 0,
+            fire_level: gameState.fireLevel,
+            fuel_added: 0,
+            buildings_built: 0,
+            second_camp_lit: 0,
+            trees_chopped: 0,
+            stones_mined: 0,
+        };
+
+        // Build the UI
+        const panel = document.getElementById('objectives-panel');
+        panel.style.display = 'flex';
+        const list = document.getElementById('objectives-list');
+        list.innerHTML = '';
+
+        for (let i = 0; i < this._objectives.length; i++) {
+            const obj = this._objectives[i];
+            const item = document.createElement('div');
+            item.className = 'objective-item';
+            item.id = `obj-${i}`;
+            item.innerHTML = `
+                <div class="objective-desc">${obj.desc}</div>
+                <div class="objective-progress-bg"><div class="objective-progress-fill" id="obj-fill-${i}" style="width:0%"></div></div>
+                <div class="objective-counter" id="obj-counter-${i}">0 / ${obj.target}</div>
+            `;
+            list.appendChild(item);
+        }
+    }
+
+    _trackObjective(type, value) {
+        if (!this._objectives) return;
+        // Update counter
+        if (type in this._objCounters) {
+            if (type === 'fire_level' || type === 'second_camp_lit') {
+                this._objCounters[type] = value; // absolute value
+            } else {
+                this._objCounters[type] += value; // incremental
+            }
+        }
+
+        // Check each objective
+        for (let i = 0; i < this._objectives.length; i++) {
+            const obj = this._objectives[i];
+            if (obj.completed) continue;
+            if (obj.type !== type) continue;
+
+            obj.current = Math.min(this._objCounters[type], obj.target);
+
+            // Update UI
+            const pct = Math.min(100, (obj.current / obj.target) * 100);
+            const fill = document.getElementById(`obj-fill-${i}`);
+            const counter = document.getElementById(`obj-counter-${i}`);
+            const item = document.getElementById(`obj-${i}`);
+            if (fill) fill.style.width = `${pct}%`;
+            if (counter) counter.textContent = `${obj.current} / ${obj.target}`;
+
+            // Complete!
+            if (obj.current >= obj.target && !obj.completed) {
+                obj.completed = true;
+                if (item) item.classList.add('completed');
+
+                // Grant reward
+                for (const [res, amount] of Object.entries(obj.reward)) {
+                    gameState.resources[res] = (gameState.resources[res] || 0) + amount;
+                }
+
+                // Visual feedback
+                this.showFloatingText(this.player.x, this.player.y - 50,
+                    'OBJECTIVE COMPLETE!', '#FFD700');
+                this.showFloatingText(this.player.x, this.player.y - 70,
+                    Object.entries(obj.reward).map(([r, a]) => `+${a} ${r}`).join('  '), '#88FF88');
+                audioEngine.playOneShot('pickup', 1.2);
+
+                // Check if all objectives are done
+                if (this._objectives.every(o => o.completed)) {
+                    this.time.delayedCall(1500, () => {
+                        this.showFloatingText(this.player.x, this.player.y - 60,
+                            'ALL OBJECTIVES COMPLETE!', '#FFD700');
+                    });
+                }
+            }
+        }
     }
 
     // --------------------------------------------------------

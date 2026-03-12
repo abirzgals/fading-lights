@@ -37,6 +37,7 @@ const network = {
     onEnemyProjectile: null,
     onSecondCampLit: null,
     onRainSync: null,
+    onShopPurchase: null,
 
     // Config
     SYNC_RATE: 100,
@@ -349,6 +350,10 @@ const network = {
 
             case 'rn': // rain sync
                 if (this.onRainSync) this.onRainSync(msg.active, msg.dur);
+                break;
+
+            case 'sp': // shop purchase
+                if (this.onShopPurchase) this.onShopPurchase(msg.idx, fromPeerId);
                 break;
 
             case 'c': // chat message

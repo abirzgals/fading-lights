@@ -338,6 +338,58 @@ function generateTextures(scene) {
     g.fillCircle(7, 6, 1.5);
     g.generateTexture('proj_magic', 16, 16);
 
+    // Wandering Merchant Shop — wooden stall with lantern and sign
+    g.clear();
+    // Base platform (wooden planks)
+    g.fillStyle(0x5D4E37, 1);
+    g.fillRect(4, 32, 40, 16);
+    g.fillStyle(0x4A3520, 0.8);
+    g.fillRect(4, 34, 40, 2); // plank line
+    g.fillRect(4, 40, 40, 2); // plank line
+    // Counter/table
+    g.fillStyle(0x6B5B3A, 1);
+    g.fillRect(6, 24, 36, 10);
+    g.fillStyle(0x7D6B4A, 0.6);
+    g.fillRect(8, 26, 32, 2); // highlight
+    // Awning (canopy)
+    g.fillStyle(0x8B2252, 0.9);
+    g.fillTriangle(0, 18, 24, 4, 48, 18);
+    g.fillStyle(0xA0335E, 0.6);
+    g.fillTriangle(6, 18, 24, 7, 42, 18); // lighter inner
+    // Awning stripes
+    g.fillStyle(0xCC9944, 0.5);
+    g.fillRect(10, 12, 4, 7);
+    g.fillRect(22, 8, 4, 11);
+    g.fillRect(34, 12, 4, 7);
+    // Support posts
+    g.fillStyle(0x4A3520, 1);
+    g.fillRect(6, 18, 3, 28);
+    g.fillRect(39, 18, 3, 28);
+    // Lantern (left post)
+    g.fillStyle(0xFFAA00, 0.9);
+    g.fillCircle(7, 16, 3);
+    g.fillStyle(0xFFDD44, 0.6);
+    g.fillCircle(7, 16, 2);
+    // Wares on counter (sword, potion, scroll)
+    g.fillStyle(0xC0C0C0, 0.9);
+    g.fillRect(12, 22, 2, 8); // sword blade
+    g.fillStyle(0x886622, 1);
+    g.fillRect(11, 29, 4, 2); // sword handle
+    g.fillStyle(0x44AA44, 0.8);
+    g.fillCircle(24, 27, 3); // potion
+    g.fillStyle(0xDDCC88, 0.7);
+    g.fillRect(32, 23, 6, 8); // scroll
+    g.fillStyle(0xBBAA77, 0.5);
+    g.fillRect(33, 24, 4, 6); // scroll inner
+    // Sign
+    g.fillStyle(0x5D4E37, 1);
+    g.fillRect(42, 6, 2, 14);
+    g.fillStyle(0x8B6914, 1);
+    g.fillRect(34, 4, 12, 8);
+    g.fillStyle(0xFFD700, 0.8);
+    g.fillCircle(40, 8, 2); // gold coin on sign
+    g.generateTexture('shop', 48, 48);
+
     // Attack slash
     g.clear();
     g.fillStyle(0xFFFFFF, 0.8);
