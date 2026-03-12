@@ -271,7 +271,7 @@ class GameScene extends Phaser.Scene {
             chatBtn.id = 'touch-chat-btn';
             chatBtn.className = 'touch-zone';
             chatBtn.textContent = 'CHAT';
-            chatBtn.style.cssText = 'position:absolute;bottom:100px;left:50%;transform:translateX(-50%);width:60px;height:36px;display:flex;align-items:center;justify-content:center;background:rgba(255,170,0,0.15);border:1px solid rgba(255,170,0,0.3);border-radius:6px;color:#FFD080;font-size:11px;z-index:150;';
+            chatBtn.style.cssText = 'position:absolute;bottom:12px;right:12px;width:50px;height:30px;display:flex;align-items:center;justify-content:center;background:rgba(255,170,0,0.15);border:1px solid rgba(255,170,0,0.3);border-radius:6px;color:#FFD080;font-size:10px;z-index:150;';
             document.getElementById('game-container').appendChild(chatBtn);
             chatBtn.addEventListener('touchend', (e) => {
                 e.preventDefault();
@@ -1595,7 +1595,7 @@ class GameScene extends Phaser.Scene {
 
         // Fill with darkness
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(5, 3, 10, 0.97)';
+        ctx.fillStyle = 'rgba(5, 3, 10, 0.94)';
         ctx.fillRect(0, 0, gameW, gameH);
 
         // Punch light holes
@@ -1619,9 +1619,10 @@ class GameScene extends Phaser.Scene {
 
         // Player has a small personal light
         const { x: px, y: py } = this.worldToScreen(this.player.x, this.player.y);
-        const playerLight = 50;
+        const playerLight = 60;
         const pg = ctx.createRadialGradient(px, py, 0, px, py, playerLight);
-        pg.addColorStop(0, 'rgba(0,0,0,0.7)');
+        pg.addColorStop(0, 'rgba(0,0,0,0.85)');
+        pg.addColorStop(0.5, 'rgba(0,0,0,0.4)');
         pg.addColorStop(1, 'rgba(0,0,0,0)');
         ctx.fillStyle = pg;
         ctx.beginPath();

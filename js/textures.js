@@ -27,11 +27,11 @@ function generateTextures(scene) {
     // Ground tiles
     for (let i = 0; i < 4; i++) {
         g.clear();
-        const base = [0x1a2a1a, 0x1c2c1c, 0x182818, 0x1b2b1b][i];
+        const base = [0x2d4a2d, 0x305030, 0x284428, 0x2c4c2c][i];
         g.fillStyle(base, 1);
         g.fillRect(0, 0, 32, 32);
         for (let d = 0; d < 8; d++) {
-            g.fillStyle(0x223322, 0.3);
+            g.fillStyle(0x3a5a3a, 0.3);
             g.fillRect(Math.random() * 30, Math.random() * 30, 2, 2);
         }
         g.generateTexture('ground' + i, 32, 32);
