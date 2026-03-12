@@ -286,6 +286,8 @@ const network = {
 
             case 'w': // world sync from host
                 this.worldSeed = msg.seed;
+                this._pendingWorldSync = msg; // buffer for late subscribers
+                this._pendingWorldSyncFrom = fromPeerId;
                 if (msg.hostName && peer.isHost) {
                     peer.name = msg.hostName;
                     peer.color = msg.hostColor || peer.color;

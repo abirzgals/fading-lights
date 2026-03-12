@@ -3488,6 +3488,21 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // Replay buffered world sync that arrived before GameScene was ready
+        if (network._pendingWorldSync) {
+            const msg = network._pendingWorldSync;
+            const fromId = network._pendingWorldSyncFrom;
+            // Re-apply host peer info
+            if (msg.hostName && fromId) {
+                const hostPeer = network.peers.get(fromId);
+                if (hostPeer && !scene.remotePlayers.has(fromId)) {
+                    network.onPeerJoined(fromId, msg.hostName, msg.hostColor || hostPeer.color);
+                }
+            }
+            network.onWorldSync(msg);
+            network._pendingWorldSync = null;
+        }
+
         // Show player count in HUD
         this._playerCountText = this.add.text(10, 70, '', {
             fontSize: '11px',
