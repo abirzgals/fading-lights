@@ -400,6 +400,30 @@ class GameScene extends Phaser.Scene {
 
         const isPath = (tx, ty) => pathTiles.has(`${tx},${ty}`);
 
+        // --- Draw road tiles on paths ---
+        for (const key of pathTiles) {
+            const [tx, ty] = key.split(',').map(Number);
+            const wx = tx * T;
+            const wy = ty * T;
+            // Check if this tile is surrounded by path tiles (inner) or on edge
+            let neighbors = 0;
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    if (dx === 0 && dy === 0) continue;
+                    if (pathTiles.has(`${tx + dx},${ty + dy}`)) neighbors++;
+                }
+            }
+            if (neighbors >= 5) {
+                // Inner road tile
+                const variant = (tx * 7 + ty * 13) % 4;
+                this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+            } else {
+                // Edge road tile (grass-dirt transition)
+                const variant = (tx * 11 + ty * 3) % 4;
+                this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+            }
+        }
+
         // --- Place trees using noise-driven density ---
         // Store occupied tile coords for collision grid
         this._occupiedTiles = new Set();

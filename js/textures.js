@@ -37,6 +37,43 @@ function generateTextures(scene) {
         g.generateTexture('ground' + i, 32, 32);
     }
 
+    // Road / dirt path tiles (4 variants for variety)
+    for (let i = 0; i < 4; i++) {
+        g.clear();
+        const base = [0x5C4A32, 0x584630, 0x54422E, 0x5A4834][i];
+        g.fillStyle(base, 1);
+        g.fillRect(0, 0, 32, 32);
+        // Dirt specks
+        for (let d = 0; d < 6; d++) {
+            g.fillStyle(0x6B5A40, 0.4);
+            g.fillRect(Math.random() * 28, Math.random() * 28, 3, 2);
+        }
+        // Small pebbles
+        for (let d = 0; d < 3; d++) {
+            g.fillStyle(0x7A6B50, 0.3);
+            g.fillCircle(Math.random() * 28 + 2, Math.random() * 28 + 2, 1);
+        }
+        g.generateTexture('road' + i, 32, 32);
+    }
+
+    // Road edge tiles (transition from road to grass)
+    for (let i = 0; i < 4; i++) {
+        g.clear();
+        const base = [0x3D5A33, 0x3A5630, 0x385230, 0x3C5834][i];
+        g.fillStyle(base, 1);
+        g.fillRect(0, 0, 32, 32);
+        // Mix of dirt and grass specks
+        for (let d = 0; d < 4; d++) {
+            g.fillStyle(0x5C4A32, 0.35);
+            g.fillRect(Math.random() * 28, Math.random() * 28, 4, 3);
+        }
+        for (let d = 0; d < 4; d++) {
+            g.fillStyle(0x4A6A3A, 0.3);
+            g.fillRect(Math.random() * 28, Math.random() * 28, 3, 2);
+        }
+        g.generateTexture('road_edge' + i, 32, 32);
+    }
+
     // Player (default green tshirt)
     generatePlayerTexture(scene, g, 'player', 0x557755);
 
