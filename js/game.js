@@ -565,6 +565,7 @@ class GameScene extends Phaser.Scene {
             // Random-walk maze: walk in cardinal directions, placing walls along the way
             // Creates corridors, L-shapes, and dead ends
             let wx = rwx, wy = rwy;
+            const placedRocks = []; // track placed rock positions for tree clearing
             const segmentCount = 12 + Math.floor(rng() * 14); // 12-25 wall segments per ruin
             const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
             let dir = dirs[Math.floor(rng() * 4)];
@@ -573,7 +574,7 @@ class GameScene extends Phaser.Scene {
                 // Place a wall segment (line of 2-5 rocks in current direction)
                 const segLen = 2 + Math.floor(rng() * 4);
                 for (let i = 0; i < segLen; i++) {
-                    placeRock(wx, wy);
+                    if (placeRock(wx, wy)) placedRocks.push({ tx: wx, ty: wy });
                     wx += dir[0];
                     wy += dir[1];
                 }
@@ -594,14 +595,17 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            // Clear trees inside/around the ruin footprint for visibility
-            const ruinCx = (rwx + wx) / 2, ruinCy = (rwy + wy) / 2;
-            const ruinR = Math.max(Math.abs(wx - rwx), Math.abs(wy - rwy)) / 2 + 3;
+            // Clear trees within 2 tiles of each placed rock for visibility
             for (const tree of [...this.trees.children.entries]) {
                 const ttx = Math.floor(tree.x / T);
                 const tty = Math.floor(tree.y / T);
-                const dx = ttx - ruinCx, dy = tty - ruinCy;
-                if (dx * dx + dy * dy < ruinR * ruinR) {
+                let nearRock = false;
+                for (const rk of placedRocks) {
+                    if (Math.abs(ttx - rk.tx) <= 2 && Math.abs(tty - rk.ty) <= 2) {
+                        nearRock = true; break;
+                    }
+                }
+                if (nearRock) {
                     this._occupiedTiles.delete(`${ttx},${tty}`);
                     tree.destroy();
                 }
