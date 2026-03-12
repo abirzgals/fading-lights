@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>The Fading Light</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="game-container">
+        <div id="hud" style="display:none">
+            <div class="hud-left">
+                <div class="hud-bar">
+                    <label>Health</label>
+                    <div class="bar-bg"><div class="bar-fill" id="health-fill" style="width:100%"></div></div>
+                </div>
+                <div class="hud-bar">
+                    <label>Fire</label>
+                    <div class="bar-bg"><div class="bar-fill" id="fuel-fill" style="width:100%"></div></div>
+                </div>
+            </div>
+            <div class="hud-right">
+                <div class="resource-row">
+                    <div class="resource-item"><span class="resource-icon" style="background:#8B6914"></span> <span id="res-wood">0</span></div>
+                    <div class="resource-item"><span class="resource-icon" style="background:#888"></span> <span id="res-stone">0</span></div>
+                    <div class="resource-item"><span class="resource-icon" style="background:#b87333"></span> <span id="res-metal">0</span></div>
+                    <div class="resource-item"><span class="resource-icon" style="background:#FFD700"></span> <span id="res-gold">0</span></div>
+                </div>
+            </div>
+        </div>
+        <div id="hint-text" style="display:none">WASD move | SPACE / LMB attack | E / RMB interact | TAB crafting | B build</div>
+        <div id="weapon-display"></div>
+        <div id="crafting-menu">
+            <h2>Crafting</h2>
+            <div id="craft-list"></div>
+        </div>
+        <div id="mobile-controls">
+            <div id="touch-joystick-zone" class="touch-zone">
+                <div id="touch-joystick-base"></div>
+                <div id="touch-joystick-thumb"></div>
+            </div>
+            <div id="touch-attack-btn" class="touch-zone">ATK</div>
+            <div id="touch-interact-btn" class="touch-zone">USE</div>
+        </div>
+        <div id="game-over-screen">
+            <h1>DARKNESS CONSUMED YOU</h1>
+            <p id="game-over-stats"></p>
+            <div class="go-buttons">
+                <button onclick="location.reload()">Try Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+    <script src="js/config.js"></script>
+    <script src="js/audio.js"></script>
+    <script src="js/network.js"></script>
+    <script src="js/mobile.js"></script>
+    <script src="js/textures.js"></script>
+    <script src="js/menu.js"></script>
+    <script src="js/game.js"></script>
+    <script src="js/main.js"></script>
+</body>
+</html>

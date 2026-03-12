@@ -1,0 +1,433 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    background: #000;
+    overflow: hidden;
+    font-family: 'Segoe UI', sans-serif;
+}
+
+#game-container {
+    position: relative;
+    width: 100vw;
+    height: 100vh;
+}
+
+/* ── HUD ── */
+#hud {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    padding: 12px 16px;
+    pointer-events: none;
+    z-index: 10;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.hud-left, .hud-right { display: flex; flex-direction: column; gap: 6px; }
+
+.hud-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hud-bar label {
+    color: #aaa;
+    font-size: clamp(10px, 1.2vw, 13px);
+    min-width: 50px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.bar-bg {
+    width: clamp(100px, 15vw, 180px);
+    height: clamp(8px, 1.2vw, 14px);
+    background: rgba(255,255,255,0.08);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.bar-fill {
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.3s;
+}
+
+#health-fill { background: linear-gradient(90deg, #c0392b, #e74c3c); }
+#fuel-fill   { background: linear-gradient(90deg, #d35400, #f39c12); }
+
+.resource-row {
+    display: flex;
+    gap: clamp(8px, 1.4vw, 16px);
+}
+
+.resource-item {
+    color: #ccc;
+    font-size: clamp(11px, 1.3vw, 14px);
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.resource-icon {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    display: inline-block;
+}
+
+/* ── Hint text ── */
+#hint-text {
+    position: absolute;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255,255,255,0.4);
+    font-size: clamp(10px, 1.2vw, 13px);
+    pointer-events: none;
+    z-index: 10;
+    text-align: center;
+    transition: opacity 0.5s;
+    white-space: nowrap;
+}
+
+#weapon-display {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    color: rgba(255,255,255,0.5);
+    font-size: clamp(10px, 1.2vw, 13px);
+    pointer-events: none;
+    z-index: 10;
+}
+
+/* ── Crafting menu ── */
+#crafting-menu {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(10, 10, 15, 0.95);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: clamp(16px, 2.5vw, 28px);
+    z-index: 20;
+    display: none;
+    min-width: clamp(260px, 30vw, 380px);
+    max-height: 80vh;
+    overflow-y: auto;
+    pointer-events: auto;
+}
+
+#crafting-menu h2 {
+    color: #f39c12;
+    font-size: clamp(14px, 1.6vw, 18px);
+    margin-bottom: 16px;
+    text-align: center;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+}
+
+.craft-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    margin-bottom: 6px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+}
+
+.craft-item:hover { background: rgba(255,255,255,0.07); border-color: rgba(243,156,18,0.3); }
+.craft-item.disabled { opacity: 0.35; cursor: default; }
+.craft-item.disabled:hover { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.06); }
+.craft-name { color: #e0e0e0; font-size: clamp(11px, 1.2vw, 14px); }
+.craft-cost { color: #888; font-size: clamp(10px, 1vw, 12px); }
+
+.craft-category {
+    color: #666;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 12px 0 6px;
+}
+
+/* ── Game Over ── */
+#game-over-screen {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.85);
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 30;
+}
+
+#game-over-screen h1 {
+    color: #c0392b;
+    font-size: clamp(28px, 5vw, 52px);
+    margin-bottom: 12px;
+    letter-spacing: 4px;
+    text-align: center;
+}
+
+#game-over-screen p {
+    color: #888;
+    font-size: clamp(12px, 1.5vw, 17px);
+    margin-bottom: 24px;
+}
+
+.go-buttons {
+    display: flex;
+    gap: 12px;
+}
+
+#game-over-screen button {
+    padding: 12px 32px;
+    background: rgba(243,156,18,0.2);
+    border: 1px solid rgba(243,156,18,0.4);
+    color: #f39c12;
+    font-size: clamp(12px, 1.3vw, 15px);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+#game-over-screen button:hover { background: rgba(243,156,18,0.35); }
+
+/* ── Scrollbar for crafting ── */
+#crafting-menu::-webkit-scrollbar { width: 4px; }
+#crafting-menu::-webkit-scrollbar-track { background: transparent; }
+#crafting-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+
+/* ── Name Input Overlay ── */
+#name-input-overlay {
+    position: absolute;
+    top: 38%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    z-index: 25;
+    pointer-events: auto;
+}
+
+#player-name-input {
+    width: 220px;
+    padding: 10px 16px;
+    background: rgba(10, 10, 15, 0.85);
+    border: 1px solid rgba(255, 136, 0, 0.3);
+    border-radius: 8px;
+    color: #FFaa66;
+    font-family: 'Georgia', serif;
+    font-size: 16px;
+    text-align: center;
+    outline: none;
+    letter-spacing: 1px;
+    transition: border-color 0.3s;
+}
+
+#player-name-input:focus {
+    border-color: rgba(255, 136, 0, 0.6);
+    box-shadow: 0 0 20px rgba(255, 100, 0, 0.15);
+}
+
+#player-name-input::placeholder {
+    color: rgba(255, 136, 0, 0.25);
+    font-style: italic;
+}
+
+/* ── Multiplayer Room UI ── */
+#multiplayer-section {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+}
+
+#mp-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.mp-btn {
+    padding: 8px 16px;
+    background: rgba(255, 136, 0, 0.15);
+    border: 1px solid rgba(255, 136, 0, 0.3);
+    border-radius: 6px;
+    color: #FF9944;
+    font-family: 'Segoe UI', sans-serif;
+    font-size: 11px;
+    letter-spacing: 1px;
+    cursor: pointer;
+    transition: background 0.2s, border-color 0.2s;
+    text-transform: uppercase;
+}
+
+.mp-btn:hover {
+    background: rgba(255, 136, 0, 0.3);
+    border-color: rgba(255, 136, 0, 0.5);
+}
+
+.mp-btn-join {
+    padding: 8px 12px;
+}
+
+.mp-or {
+    color: #555;
+    font-size: 11px;
+    font-style: italic;
+}
+
+#join-row {
+    display: flex;
+    gap: 4px;
+}
+
+#room-code-input {
+    width: 70px;
+    padding: 8px 10px;
+    background: rgba(10, 10, 15, 0.85);
+    border: 1px solid rgba(255, 136, 0, 0.25);
+    border-radius: 6px;
+    color: #FFaa66;
+    font-family: monospace;
+    font-size: 14px;
+    text-align: center;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    outline: none;
+}
+
+#room-code-input:focus {
+    border-color: rgba(255, 136, 0, 0.5);
+}
+
+#room-code-input::placeholder {
+    color: rgba(255, 136, 0, 0.2);
+    letter-spacing: 1px;
+}
+
+#room-status {
+    color: #887766;
+    font-family: monospace;
+    font-size: 11px;
+    min-height: 16px;
+    text-align: center;
+}
+
+#room-code-display {
+    font-family: monospace;
+    font-size: 32px;
+    letter-spacing: 8px;
+    color: #FFaa44;
+    text-shadow: 0 0 20px rgba(255, 136, 0, 0.4);
+    padding: 8px 16px;
+    background: rgba(255, 136, 0, 0.08);
+    border: 1px solid rgba(255, 136, 0, 0.2);
+    border-radius: 8px;
+    margin-top: 4px;
+}
+
+/* ── Mobile Touch Controls ── */
+#mobile-controls {
+    display: none;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: 0;
+    pointer-events: none;
+    z-index: 15;
+}
+
+.touch-zone {
+    position: absolute;
+    pointer-events: auto;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: none;
+}
+
+#touch-joystick-zone {
+    left: 0;
+    bottom: 0;
+    width: 45%;
+    height: 50%;
+}
+
+#touch-joystick-base {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 2px solid rgba(255, 255, 255, 0.15);
+    display: none;
+    pointer-events: none;
+}
+
+#touch-joystick-thumb {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: rgba(255, 136, 0, 0.3);
+    border: 2px solid rgba(255, 136, 0, 0.5);
+    display: none;
+    pointer-events: none;
+}
+
+#touch-attack-btn {
+    right: 20px;
+    bottom: 100px;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    background: rgba(255, 68, 0, 0.2);
+    border: 2px solid rgba(255, 68, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255, 136, 0, 0.6);
+    font-size: 12px;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+#touch-attack-btn:active {
+    background: rgba(255, 68, 0, 0.4);
+}
+
+#touch-interact-btn {
+    right: 110px;
+    bottom: 40px;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(0, 136, 255, 0.15);
+    border: 2px solid rgba(0, 136, 255, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(100, 180, 255, 0.6);
+    font-size: 11px;
+    font-family: monospace;
+}
+
+#touch-interact-btn:active {
+    background: rgba(0, 136, 255, 0.35);
+}
+
+@media (hover: none) and (pointer: coarse) {
+    #mobile-controls { display: block; }
+    #hint-text { display: none !important; }
+}
