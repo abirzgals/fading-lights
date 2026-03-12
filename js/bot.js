@@ -21,9 +21,9 @@
     const ATTACK_REACH = 40;
 
     // Resource thresholds for smart management
-    const WOOD_FEED_BATCH = 5;       // go feed when we accumulate this much wood
-    const STONE_TARGET = 25;         // mine stone until we have this much
-    const METAL_TARGET = 15;         // mine metal until we have this much
+    const WOOD_FEED_BATCH = 15;      // chop ~5 trees (15 wood) then feed trip
+    const STONE_TARGET = 25;
+    const METAL_TARGET = 15;
 
     // ---- Public API ----
     window.startAI = function() {
@@ -131,13 +131,24 @@
     // ---- What resource do we need most? ----
     function getResourceNeed() {
         const res = gameState.resources;
-        // Cycle: gather wood batch → feed → gather stone/metal for builds → repeat
-        // Wood is always the priority — fire leveling is key to survival
+        // Primary: chop wood until we have a feed batch
         if (res.wood < WOOD_FEED_BATCH) return 'wood';
-        // Once we have enough wood for a feed trip, gather other resources
-        if (res.stone < STONE_TARGET) return 'stone';
-        if (res.metal < METAL_TARGET) return 'metal';
-        return 'wood';
+        // Between feed trips: gather stone/metal if we need them for unlocked builds
+        const sc = getScene();
+        if (sc) {
+            for (const spot of sc.buildSpots) {
+                if (spot.built || !spot.unlocked) continue;
+                const building = BUILDINGS[spot.config.type];
+                if (!building) continue;
+                for (const [r, amt] of Object.entries(building.cost)) {
+                    if ((res[r] || 0) < amt) {
+                        if (r === 'stone') return 'stone';
+                        if (r === 'metal') return 'metal';
+                    }
+                }
+            }
+        }
+        return 'wood'; // default: keep feeding the fire
     }
 
     // ---- Goal selection ----
