@@ -379,9 +379,9 @@ body {
 
 #touch-joystick-zone {
     left: 0;
+    top: 0;
     bottom: 0;
     width: 45%;
-    height: 50%;
 }
 
 #touch-joystick-base {
