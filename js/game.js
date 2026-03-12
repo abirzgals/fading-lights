@@ -879,6 +879,9 @@ class GameScene extends Phaser.Scene {
     // Enemy System
     // --------------------------------------------------------
     updateSpawning(dt) {
+        // Don't spawn enemies until player has added fuel at least once
+        if (gameState.fuelAdded < 1) return;
+
         this.spawnTimer += dt * 1000;
         this.waveTimer += dt;
 
