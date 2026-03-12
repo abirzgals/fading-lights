@@ -104,6 +104,9 @@ class GameScene extends Phaser.Scene {
         for (const b of this.bonfires) {
             this.physics.add.collider(this.player, b);
         }
+        // Group-level enemy colliders (handles all enemies automatically, no per-spawn leak)
+        this.physics.add.collider(this.enemies, this.trees);
+        this.physics.add.collider(this.enemies, this.stones);
 
         // --- Camera ---
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -1855,10 +1858,6 @@ class GameScene extends Phaser.Scene {
         enemy.setData('wanderTimer', 0);
         enemy.body.setAllowGravity(false);
 
-        // Enemies collide with trees (navigate around them)
-        this.physics.add.collider(enemy, this.trees);
-        this.physics.add.collider(enemy, this.stones);
-
         // Subtle entrance: fade in
         enemy.setAlpha(0);
         this.tweens.add({ targets: enemy, alpha: 0.85, duration: 600 });
@@ -1954,9 +1953,6 @@ class GameScene extends Phaser.Scene {
         enemy.setData('raidPath', path);
         enemy.setData('raidPathIdx', 0);
         enemy.body.setAllowGravity(false);
-
-        this.physics.add.collider(enemy, this.trees);
-        this.physics.add.collider(enemy, this.stones);
 
         enemy.setAlpha(0);
         this.tweens.add({ targets: enemy, alpha: 0.85, duration: 600 });
@@ -3395,6 +3391,18 @@ class GameScene extends Phaser.Scene {
 
         // Host: register world state getter for new peers
         network.setWorldStateGetter(() => {
+            // Collect drops on ground for sync
+            const dropsData = [];
+            if (scene.drops && scene.drops.children) {
+                scene.drops.children.each(d => {
+                    if (d.active) {
+                        dropsData.push({
+                            x: Math.round(d.x), y: Math.round(d.y),
+                            res: d.getData('resourceType'),
+                        });
+                    }
+                });
+            }
             return {
                 seed: network.worldSeed,
                 bonfires: scene.bonfires.map(b => ({
@@ -3408,10 +3416,12 @@ class GameScene extends Phaser.Scene {
                 gameTime: gameState.time,
                 waveNumber: gameState.waveNumber,
                 fuelAdded: gameState.fuelAdded,
+                fireLevel: gameState.fireLevel,
                 buildings: gameState.buildings.map(b => ({ type: b.type, x: b.x, y: b.y })),
                 raining: scene._rainActive,
                 rainDur: scene._rainActive ? Math.round(scene._rainDuration - scene._rainTimer) : 0,
                 shopSold: scene._shopInventory ? scene._shopInventory.map(w => w.sold) : [],
+                drops: dropsData,
             };
         });
 
@@ -3419,6 +3429,8 @@ class GameScene extends Phaser.Scene {
         network.onWorldSync = (msg) => {
             if (msg.fuelAdded !== undefined) gameState.fuelAdded = msg.fuelAdded;
             if (msg.waveNumber !== undefined) gameState.waveNumber = msg.waveNumber;
+            if (msg.fireLevel !== undefined) gameState.fireLevel = msg.fireLevel;
+            if (msg.gameTime !== undefined) gameState.time = msg.gameTime;
             // Sync rain state from host
             if (msg.raining && !scene._rainActive) {
                 scene._rainDuration = msg.rainDur || 30;
@@ -3427,7 +3439,6 @@ class GameScene extends Phaser.Scene {
             // Sync buildings from host
             if (msg.buildings && msg.buildings.length) {
                 for (const b of msg.buildings) {
-                    // Only place if not already built at this spot
                     const exists = gameState.buildings.some(
                         existing => Math.abs(existing.x - b.x) < 5 && Math.abs(existing.y - b.y) < 5
                     );
@@ -3440,6 +3451,18 @@ class GameScene extends Phaser.Scene {
             if (msg.shopSold && scene._shopInventory) {
                 for (let i = 0; i < msg.shopSold.length && i < scene._shopInventory.length; i++) {
                     scene._shopInventory[i].sold = msg.shopSold[i];
+                }
+            }
+            // Sync drops on ground from host
+            if (msg.drops && msg.drops.length) {
+                for (const d of msg.drops) {
+                    const texKey = d.res + '_drop';
+                    if (scene.textures.exists(texKey)) {
+                        const drop = scene.drops.create(d.x, d.y, texKey);
+                        drop.setDepth(3);
+                        drop.setData('resourceType', d.res);
+                        drop.body.setAllowGravity(false);
+                    }
                 }
             }
         };
