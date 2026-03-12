@@ -32,17 +32,24 @@ const CONFIG = {
     MAX_ENEMIES: 15,
     FUEL_SPAWN_BURST: 2,       // enemies spawned when upgrading fire
 
-    // Build spots (predefined positions around bonfire, unlock by adding fuel)
-    // Each spot unlocks after cumulative fuel additions: 1, 3, 7, 15... (doubles each time)
+    // Fire camp levels: fuel needed to reach each level
+    // Level 1 = start, Level 2 = 5 fuel, Level 3 = 12, Level 4 = 22, Level 5 = 35
+    FIRE_LEVELS: [0, 5, 12, 22, 35, 55],
+
+    // Build spots — unlocked by fire camp level
     BUILD_SPOTS: [
-        { angle: 0,            dist: 4, type: 'TURRET',  label: 'Turret' },
-        { angle: Math.PI,      dist: 4, type: 'TURRET',  label: 'Turret' },
-        { angle: Math.PI / 2,  dist: 5, type: 'TURRET',  label: 'Turret' },
-        { angle: -Math.PI / 2, dist: 5, type: 'TURRET',  label: 'Turret' },
-        { angle: Math.PI / 4,  dist: 6, type: 'OUTPOST', label: 'Outpost' },
-        { angle: 3*Math.PI/4,  dist: 7, type: 'TURRET',  label: 'Turret' },
-        { angle: -Math.PI/4,   dist: 7, type: 'TURRET',  label: 'Turret' },
-        { angle: -3*Math.PI/4, dist: 7, type: 'OUTPOST', label: 'Outpost' },
+        // Level 2 unlocks: 2 turrets
+        { angle: 0,            dist: 4, type: 'TURRET',  label: 'Turret',  reqLevel: 2 },
+        { angle: Math.PI,      dist: 4, type: 'TURRET',  label: 'Turret',  reqLevel: 2 },
+        // Level 3 unlocks: 2 more spots (outpost + turret)
+        { angle: Math.PI / 2,  dist: 5, type: 'TURRET',  label: 'Turret',  reqLevel: 3 },
+        { angle: -Math.PI / 2, dist: 5, type: 'OUTPOST', label: 'Outpost', reqLevel: 3 },
+        // Level 4 unlocks: 2 more
+        { angle: Math.PI / 4,  dist: 6, type: 'TURRET',  label: 'Turret',  reqLevel: 4 },
+        { angle: -Math.PI / 4, dist: 6, type: 'TURRET',  label: 'Turret',  reqLevel: 4 },
+        // Level 5 unlocks: 2 more outposts
+        { angle: 3*Math.PI/4,  dist: 7, type: 'OUTPOST', label: 'Outpost', reqLevel: 5 },
+        { angle: -3*Math.PI/4, dist: 7, type: 'OUTPOST', label: 'Outpost', reqLevel: 5 },
     ],
 
     // Darkness
@@ -84,7 +91,7 @@ function createGameState() {
         hp: CONFIG.PLAYER_MAX_HP,
         resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
         fuelAdded: 0,        // cumulative wood put into fire
-        spotsUnlocked: 0,    // number of build spots revealed
+        fireLevel: 1,        // current fire camp level
         weapon: 'WOODEN_CLUB',
         armor: 0,
         unlockedWeapons: ['WOODEN_CLUB'],

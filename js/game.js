@@ -274,6 +274,8 @@ class GameScene extends Phaser.Scene {
             gold: document.getElementById('res-gold'),
             hint: document.getElementById('hint-text'),
             weapon: document.getElementById('weapon-display'),
+            fireLevelLabel: document.getElementById('fire-level-label'),
+            fireLevelFill: document.getElementById('fire-level-fill'),
         };
 
         // --- Build mode ghost ---
@@ -539,16 +541,12 @@ class GameScene extends Phaser.Scene {
                 costText.setText(parts.join(' '));
             }
 
-            // Fuel threshold: spot 0 = 1, spot 1 = 3, spot 2 = 7, spot 3 = 15...
-            // Each next costs double: need 1, then 2 more, then 4 more, then 8 more...
-            const fuelThreshold = Math.pow(2, i + 1) - 1;
-
             this.buildSpots.push({
                 config: spot,
                 index: i,
                 x: sx, y: sy,
                 sprite, label, costText,
-                fuelThreshold,
+                reqLevel: spot.reqLevel || 1,
                 unlocked: false,
                 built: false,
             });
@@ -559,7 +557,7 @@ class GameScene extends Phaser.Scene {
         for (const spot of this.buildSpots) {
             if (spot.built) continue;
             const wasUnlocked = spot.unlocked;
-            spot.unlocked = gameState.fuelAdded >= spot.fuelThreshold;
+            spot.unlocked = gameState.fireLevel >= spot.reqLevel;
 
             if (spot.unlocked && !wasUnlocked) {
                 // Newly unlocked — animate in
@@ -870,6 +868,21 @@ class GameScene extends Phaser.Scene {
                     bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD));
                     this.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
                     audioEngine.playFireFuel();
+
+                    // Check fire level up
+                    const levels = CONFIG.FIRE_LEVELS;
+                    const oldLevel = gameState.fireLevel;
+                    for (let lv = levels.length - 1; lv >= 0; lv--) {
+                        if (gameState.fuelAdded >= levels[lv]) {
+                            gameState.fireLevel = lv + 1;
+                            break;
+                        }
+                    }
+                    if (gameState.fireLevel > oldLevel) {
+                        this.showFloatingText(bonfire.x, bonfire.y - 50,
+                            `FIRE LEVEL ${gameState.fireLevel}!`, '#CC66FF');
+                        audioEngine.playWave();
+                    }
 
                     // Sync fuel addition to peers
                     const bIdx = this.bonfires.indexOf(bonfire);
@@ -1907,6 +1920,20 @@ class GameScene extends Phaser.Scene {
         this.hud.metal.textContent = gameState.resources.metal;
         this.hud.gold.textContent = gameState.resources.gold;
         this.hud.weapon.textContent = WEAPONS[gameState.weapon].name;
+
+        // Fire level progress
+        const levels = CONFIG.FIRE_LEVELS;
+        const lv = gameState.fireLevel;
+        this.hud.fireLevelLabel.textContent = `Lv.${lv}`;
+        if (lv < levels.length) {
+            const prevThresh = levels[lv - 1] || 0;
+            const nextThresh = levels[lv];
+            const progress = (gameState.fuelAdded - prevThresh) / (nextThresh - prevThresh);
+            this.hud.fireLevelFill.style.width = `${Math.min(100, progress * 100)}%`;
+        } else {
+            this.hud.fireLevelFill.style.width = '100%';
+            this.hud.fireLevelLabel.textContent = `Lv.${lv} MAX`;
+        }
     }
 
     // --------------------------------------------------------
