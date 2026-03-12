@@ -81,6 +81,10 @@ class GameScene extends Phaser.Scene {
         this.physics.add.collider(this.player, this.stones);
         this.physics.add.collider(this.player, this.metals);
         this.physics.add.collider(this.player, this.buildingsGroup);
+        // Bonfire collision
+        for (const b of this.bonfires) {
+            this.physics.add.collider(this.player, b);
+        }
 
         // --- Camera ---
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -292,46 +296,129 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     generateWorld(centerTile) {
         const worldSize = CONFIG.WORLD_TILES;
+        const T = CONFIG.TILE_SIZE;
         const cx = centerTile, cy = centerTile;
-        const clearRadius = 4;
-        const treeMinDist = 3;
         const rng = network.seededRandom(network.worldSeed);
 
-        // Poisson-like tree placement
-        const placed = [];
-        for (let attempt = 0; attempt < 2500; attempt++) {
-            const tx = Math.floor(rng() * (worldSize - 4)) + 2;
-            const ty = Math.floor(rng() * (worldSize - 4)) + 2;
+        // --- Perlin-like noise for natural density variation ---
+        // Simple value noise with interpolation
+        const noiseGrid = 16; // grid cells
+        const noiseVals = [];
+        for (let i = 0; i < noiseGrid * noiseGrid; i++) noiseVals.push(rng());
+        const getNoise = (tx, ty) => {
+            const gx = (tx / worldSize) * (noiseGrid - 1);
+            const gy = (ty / worldSize) * (noiseGrid - 1);
+            const ix = Math.floor(gx), iy = Math.floor(gy);
+            const fx = gx - ix, fy = gy - iy;
+            const ix1 = Math.min(ix + 1, noiseGrid - 1);
+            const iy1 = Math.min(iy + 1, noiseGrid - 1);
+            const a = noiseVals[iy * noiseGrid + ix];
+            const b = noiseVals[iy * noiseGrid + ix1];
+            const c = noiseVals[iy1 * noiseGrid + ix];
+            const d = noiseVals[iy1 * noiseGrid + ix1];
+            const top = a + (b - a) * fx;
+            const bot = c + (d - c) * fx;
+            return top + (bot - top) * fy;
+        };
 
-            // Skip clear zone around center
-            const dx = tx - cx, dy = ty - cy;
-            if (dx * dx + dy * dy < clearRadius * clearRadius) continue;
-
-            // Min distance check
-            let tooClose = false;
-            for (const p of placed) {
-                const pdx = tx - p.x, pdy = ty - p.y;
-                if (pdx * pdx + pdy * pdy < treeMinDist * treeMinDist) { tooClose = true; break; }
+        // --- Generate natural paths (winding roads from center outward) ---
+        const pathTiles = new Set(); // "tx,ty" strings for path tiles
+        const numPaths = 4 + Math.floor(rng() * 3); // 4-6 main paths
+        for (let p = 0; p < numPaths; p++) {
+            let angle = (p / numPaths) * Math.PI * 2 + (rng() - 0.5) * 0.6;
+            let px = cx, py = cy;
+            const pathLen = 30 + Math.floor(rng() * 40);
+            for (let step = 0; step < pathLen; step++) {
+                // Wander: angle drifts naturally
+                angle += (rng() - 0.5) * 0.4;
+                px += Math.cos(angle) * 1.2;
+                py += Math.sin(angle) * 1.2;
+                const tpx = Math.round(px), tpy = Math.round(py);
+                if (tpx < 1 || tpx >= worldSize - 1 || tpy < 1 || tpy >= worldSize - 1) break;
+                // Path width: 2-3 tiles
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (Math.abs(dx) + Math.abs(dy) <= 1 || rng() < 0.3) {
+                            pathTiles.add(`${tpx + dx},${tpy + dy}`);
+                        }
+                    }
+                }
             }
-            if (tooClose) continue;
-
-            placed.push({ x: tx, y: ty });
-            const wx = tx * CONFIG.TILE_SIZE + 16;
-            const wy = ty * CONFIG.TILE_SIZE + 16;
-            const tree = this.trees.create(wx, wy, 'tree');
-            tree.setDepth(3);
-            tree.body.setSize(16, 12);
-            tree.body.setOffset(8, 36);
-            tree.setData('hits', 0);
-            tree.setData('type', 'tree');
         }
 
-        // Starter stones near bonfire (visible on first screen)
-        const centerWx = cx * CONFIG.TILE_SIZE + 16;
-        const centerWy = cy * CONFIG.TILE_SIZE + 16;
-        for (let s = 0; s < 4; s++) {
+        // --- Generate clearings (open areas) ---
+        const clearings = [{ x: cx, y: cy, r: 5 }]; // bonfire clearing
+        const numClearings = 6 + Math.floor(rng() * 5);
+        for (let c = 0; c < numClearings; c++) {
             const angle = rng() * Math.PI * 2;
-            const dist = 80 + rng() * 60;
+            const dist = 10 + rng() * 50;
+            const clx = Math.round(cx + Math.cos(angle) * dist);
+            const cly = Math.round(cy + Math.sin(angle) * dist);
+            const clr = 3 + Math.floor(rng() * 4);
+            clearings.push({ x: clx, y: cly, r: clr });
+        }
+
+        const isClearing = (tx, ty) => {
+            for (const cl of clearings) {
+                const dx = tx - cl.x, dy = ty - cl.y;
+                if (dx * dx + dy * dy < cl.r * cl.r) return true;
+            }
+            return false;
+        };
+
+        const isPath = (tx, ty) => pathTiles.has(`${tx},${ty}`);
+
+        // --- Place trees using noise-driven density ---
+        // Store occupied tile coords for collision grid
+        this._occupiedTiles = new Set();
+
+        for (let tx = 2; tx < worldSize - 2; tx++) {
+            for (let ty = 2; ty < worldSize - 2; ty++) {
+                // Skip clearings and paths
+                if (isClearing(tx, ty)) continue;
+                if (isPath(tx, ty)) continue;
+
+                const noise = getNoise(tx, ty);
+                // Second octave for variety
+                const noise2 = getNoise(tx * 2.7 + 50, ty * 2.7 + 50);
+                const density = noise * 0.6 + noise2 * 0.4;
+
+                // Dense forest: density > 0.55 = thick woods (must chop through)
+                // Medium: 0.35-0.55 = scattered trees
+                // Low: < 0.35 = open area, few trees
+                let threshold;
+                if (density > 0.55) {
+                    threshold = 0.25; // ~75% chance of tree in dense areas
+                } else if (density > 0.35) {
+                    threshold = 0.7;  // ~30% chance in medium areas
+                } else {
+                    threshold = 0.94; // ~6% chance in open areas
+                }
+
+                if (rng() > threshold) continue;
+
+                // Min distance from center bonfire
+                const dcx = tx - cx, dcy = ty - cy;
+                if (dcx * dcx + dcy * dcy < 5 * 5) continue;
+
+                const wx = tx * T + 16;
+                const wy = ty * T + 16;
+                const tree = this.trees.create(wx, wy, 'tree');
+                tree.setDepth(3);
+                tree.body.setSize(16, 12);
+                tree.body.setOffset(8, 36);
+                tree.setData('hits', 0);
+                tree.setData('type', 'tree');
+                this._occupiedTiles.add(`${tx},${ty}`);
+            }
+        }
+
+        // --- Starter stones near bonfire ---
+        const centerWx = cx * T + 16;
+        const centerWy = cy * T + 16;
+        for (let s = 0; s < 5; s++) {
+            const angle = rng() * Math.PI * 2;
+            const dist = 70 + rng() * 50;
             const sx = centerWx + Math.cos(angle) * dist;
             const sy = centerWy + Math.sin(angle) * dist;
             const stone = this.stones.create(sx, sy, 'stone');
@@ -342,16 +429,19 @@ class GameScene extends Phaser.Scene {
             stone.setData('type', 'stone');
         }
 
-        // Stone clusters
-        for (let c = 0; c < 18; c++) {
+        // --- Stone clusters in clearings and along paths ---
+        for (let c = 0; c < 22; c++) {
             const scx = Math.floor(rng() * (worldSize - 20)) + 10;
             const scy = Math.floor(rng() * (worldSize - 20)) + 10;
             const sdx = scx - cx, sdy = scy - cy;
-            if (sdx * sdx + sdy * sdy < 8 * 8) continue;
-            const count = 2 + Math.floor(rng() * 4);
+            if (sdx * sdx + sdy * sdy < 6 * 6) continue;
+            const count = 2 + Math.floor(rng() * 3);
             for (let s = 0; s < count; s++) {
-                const sx = (scx + Math.floor(rng() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
-                const sy = (scy + Math.floor(rng() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
+                const stx = scx + Math.floor(rng() * 3 - 1);
+                const sty = scy + Math.floor(rng() * 3 - 1);
+                if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+                const sx = stx * T + 16;
+                const sy = sty * T + 16;
                 const stone = this.stones.create(sx, sy, 'stone');
                 stone.setDepth(2);
                 stone.body.setSize(20, 16);
@@ -361,16 +451,19 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Metal ore (outer regions only)
-        for (let c = 0; c < 10; c++) {
+        // --- Metal ore (medium-far regions, near clearings) ---
+        for (let c = 0; c < 12; c++) {
             const mx = Math.floor(rng() * (worldSize - 20)) + 10;
             const my = Math.floor(rng() * (worldSize - 20)) + 10;
             const mdx = mx - cx, mdy = my - cy;
-            if (mdx * mdx + mdy * mdy < 35 * 35) continue; // outer only
+            if (mdx * mdx + mdy * mdy < 25 * 25) continue;
             const count = 2 + Math.floor(rng() * 3);
             for (let m = 0; m < count; m++) {
-                const px = (mx + Math.floor(rng() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
-                const py = (my + Math.floor(rng() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
+                const mtx = mx + Math.floor(rng() * 3 - 1);
+                const mty = my + Math.floor(rng() * 3 - 1);
+                if (this._occupiedTiles.has(`${mtx},${mty}`)) continue;
+                const px = mtx * T + 16;
+                const py = mty * T + 16;
                 const ore = this.metals.create(px, py, 'metal');
                 ore.setDepth(2);
                 ore.body.setSize(20, 16);
@@ -379,6 +472,10 @@ class GameScene extends Phaser.Scene {
                 ore.setData('type', 'metal');
             }
         }
+
+        // Store for enemy spawning (free spaces)
+        this._pathTiles = pathTiles;
+        this._clearings = clearings;
     }
 
     // --------------------------------------------------------
@@ -1140,11 +1237,19 @@ class GameScene extends Phaser.Scene {
 
         const stats = ENEMIES[type];
         const radius = this.getLightRadius(mainBonfire);
-        const angle = Math.random() * Math.PI * 2;
-        const dist = radius + CONFIG.SPAWN_MARGIN + Math.random() * 100;
 
-        const sx = mainBonfire.x + Math.cos(angle) * dist;
-        const sy = mainBonfire.y + Math.sin(angle) * dist;
+        // Spawn in free space (try multiple positions, avoid trees)
+        let sx, sy;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = radius + CONFIG.SPAWN_MARGIN + Math.random() * 100;
+            sx = mainBonfire.x + Math.cos(angle) * dist;
+            sy = mainBonfire.y + Math.sin(angle) * dist;
+            // Check tile isn't occupied by a tree
+            const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
+            const tty = Math.floor(sy / CONFIG.TILE_SIZE);
+            if (!this._occupiedTiles || !this._occupiedTiles.has(`${ttx},${tty}`)) break;
+        }
 
         const textureKey = {
             SHADOW_WISP: 'enemy_wisp',
@@ -1167,7 +1272,14 @@ class GameScene extends Phaser.Scene {
         enemy.setData('xp', stats.xp);
         enemy.setData('targetsFire', stats.targetsFire || false);
         enemy.setData('attackCooldown', 0);
+        enemy.setData('aggro', false);
+        enemy.setData('wanderAngle', Math.random() * Math.PI * 2);
+        enemy.setData('wanderTimer', 0);
         enemy.body.setAllowGravity(false);
+
+        // Enemies collide with trees (navigate around them)
+        this.physics.add.collider(enemy, this.trees);
+        this.physics.add.collider(enemy, this.stones);
 
         // Subtle entrance: fade in
         enemy.setAlpha(0);
@@ -1238,48 +1350,76 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
+        const SIGHT_RANGE = 250; // pixels — enemies must see player to chase
+        const AGGRO_RANGE = 180; // once hit or very close, always aggro
+        const WANDER_SPEED = 0.35; // fraction of normal speed when wandering
+
         const enemyList = [...this.enemies.children.entries];
         for (const enemy of enemyList) {
             if (!enemy.active) continue;
 
             const targetsFire = enemy.getData('targetsFire');
-            let target;
+            const speed = enemy.getData('speed');
+            let cd = enemy.getData('attackCooldown') - dt * 1000;
+            enemy.setData('attackCooldown', cd);
 
             if (targetsFire) {
-                let nearestDist = Infinity;
+                // Fire-targeting enemies always beeline to nearest bonfire
+                let target = null, nearestDist = Infinity;
                 for (const b of this.bonfires) {
                     const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
                     if (d < nearestDist) { nearestDist = d; target = b; }
                 }
-            } else {
-                target = this.player;
-            }
-
-            if (!target) continue;
-
-            const speed = enemy.getData('speed');
-            const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, target.x, target.y);
-            enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-            enemy.setFlipX(Math.cos(angle) < 0);
-
-            if (!targetsFire) {
-                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
-                let cd = enemy.getData('attackCooldown') - dt * 1000;
-                enemy.setData('attackCooldown', cd);
-                if (dist < enemy.getData('size') + 16 && cd <= 0) {
-                    enemy.setData('attackCooldown', 1000);
-                    this.damagePlayer(enemy.getData('damage'));
-                    this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
-                }
-            } else {
-                for (const b of this.bonfires) {
-                    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
-                    if (d < 30) {
-                        const fuel = b.getData('fuel');
-                        b.setData('fuel', Math.max(0, fuel - 10));
-                        this.showFloatingText(b.x, b.y - 20, '-FUEL', '#4444FF');
+                if (target) {
+                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, target.x, target.y);
+                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                    enemy.setFlipX(Math.cos(angle) < 0);
+                    if (nearestDist < 30) {
+                        const fuel = target.getData('fuel');
+                        target.setData('fuel', Math.max(0, fuel - 10));
+                        this.showFloatingText(target.x, target.y - 20, '-FUEL', '#4444FF');
                         this.damageEnemy(enemy, 9999);
                     }
+                }
+            } else {
+                // Player-targeting enemies: sight-based aggro
+                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                let aggro = enemy.getData('aggro');
+
+                // Gain aggro: player in sight range or very close
+                if (!aggro && (distToPlayer < SIGHT_RANGE || distToPlayer < AGGRO_RANGE)) {
+                    aggro = true;
+                    enemy.setData('aggro', true);
+                }
+                // Lose aggro if player gets very far
+                if (aggro && distToPlayer > SIGHT_RANGE * 2.5) {
+                    aggro = false;
+                    enemy.setData('aggro', false);
+                }
+
+                if (aggro) {
+                    // Chase player
+                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                    enemy.setFlipX(Math.cos(angle) < 0);
+
+                    // Attack when close
+                    if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
+                        enemy.setData('attackCooldown', 1000);
+                        this.damagePlayer(enemy.getData('damage'));
+                        this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                    }
+                } else {
+                    // Wander: slow random movement
+                    let wt = enemy.getData('wanderTimer') - dt;
+                    if (wt <= 0) {
+                        wt = 2 + Math.random() * 3;
+                        enemy.setData('wanderAngle', Math.random() * Math.PI * 2);
+                    }
+                    enemy.setData('wanderTimer', wt);
+                    const wa = enemy.getData('wanderAngle');
+                    enemy.setVelocity(Math.cos(wa) * speed * WANDER_SPEED, Math.sin(wa) * speed * WANDER_SPEED);
+                    enemy.setFlipX(Math.cos(wa) < 0);
                 }
             }
 
@@ -1343,6 +1483,7 @@ class GameScene extends Phaser.Scene {
         // Host: apply damage authoritatively
         let hp = enemy.getData('hp') - amount;
         enemy.setData('hp', hp);
+        enemy.setData('aggro', true); // always aggro when hit
         this.showFloatingText(enemy.x, enemy.y - 20, `-${amount}`, '#FFAA00');
 
         // Flash white
