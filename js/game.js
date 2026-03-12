@@ -1595,7 +1595,7 @@ class GameScene extends Phaser.Scene {
 
         // Fill with darkness
         ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(5, 3, 10, 0.94)';
+        ctx.fillStyle = 'rgba(2, 1, 5, 1.0)';
         ctx.fillRect(0, 0, gameW, gameH);
 
         // Punch light holes
