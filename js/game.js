@@ -1033,9 +1033,10 @@ class GameScene extends Phaser.Scene {
         const fuelRatio = bonfire.getData('fuel') / bonfire.getData('maxFuel');
         const base = bonfire.getData('isMain') ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
-        // sqrt curve: early fuel gives noticeable radius boost, diminishing returns at high fuel
+        // Fire level multiplier: each level significantly increases radius
+        const levelMult = bonfire.getData('isMain') ? (1.0 + (gameState.fireLevel - 1) * 0.7) : 1.0;
         const scaledRatio = Math.sqrt(fuelRatio);
-        return Math.max(CONFIG.BONFIRE_MIN_RADIUS, base * scaledRatio * flicker);
+        return Math.max(CONFIG.BONFIRE_MIN_RADIUS, base * scaledRatio * flicker * levelMult);
     }
 
     // --------------------------------------------------------
