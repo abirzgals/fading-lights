@@ -215,12 +215,13 @@ class GameScene extends Phaser.Scene {
         const cx = centerTile, cy = centerTile;
         const clearRadius = 4;
         const treeMinDist = 3;
+        const rng = network.seededRandom(network.worldSeed);
 
         // Poisson-like tree placement
         const placed = [];
         for (let attempt = 0; attempt < 2500; attempt++) {
-            const tx = Math.floor(Math.random() * (worldSize - 4)) + 2;
-            const ty = Math.floor(Math.random() * (worldSize - 4)) + 2;
+            const tx = Math.floor(rng() * (worldSize - 4)) + 2;
+            const ty = Math.floor(rng() * (worldSize - 4)) + 2;
 
             // Skip clear zone around center
             const dx = tx - cx, dy = ty - cy;
@@ -247,14 +248,14 @@ class GameScene extends Phaser.Scene {
 
         // Stone clusters
         for (let c = 0; c < 18; c++) {
-            const scx = Math.floor(Math.random() * (worldSize - 20)) + 10;
-            const scy = Math.floor(Math.random() * (worldSize - 20)) + 10;
+            const scx = Math.floor(rng() * (worldSize - 20)) + 10;
+            const scy = Math.floor(rng() * (worldSize - 20)) + 10;
             const sdx = scx - cx, sdy = scy - cy;
             if (sdx * sdx + sdy * sdy < 8 * 8) continue;
-            const count = 2 + Math.floor(Math.random() * 4);
+            const count = 2 + Math.floor(rng() * 4);
             for (let s = 0; s < count; s++) {
-                const sx = (scx + Math.floor(Math.random() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
-                const sy = (scy + Math.floor(Math.random() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
+                const sx = (scx + Math.floor(rng() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
+                const sy = (scy + Math.floor(rng() * 4 - 2)) * CONFIG.TILE_SIZE + 16;
                 const stone = this.stones.create(sx, sy, 'stone');
                 stone.setDepth(2);
                 stone.body.setSize(20, 16);
@@ -266,14 +267,14 @@ class GameScene extends Phaser.Scene {
 
         // Metal ore (outer regions only)
         for (let c = 0; c < 10; c++) {
-            const mx = Math.floor(Math.random() * (worldSize - 20)) + 10;
-            const my = Math.floor(Math.random() * (worldSize - 20)) + 10;
+            const mx = Math.floor(rng() * (worldSize - 20)) + 10;
+            const my = Math.floor(rng() * (worldSize - 20)) + 10;
             const mdx = mx - cx, mdy = my - cy;
             if (mdx * mdx + mdy * mdy < 35 * 35) continue; // outer only
-            const count = 2 + Math.floor(Math.random() * 3);
+            const count = 2 + Math.floor(rng() * 3);
             for (let m = 0; m < count; m++) {
-                const px = (mx + Math.floor(Math.random() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
-                const py = (my + Math.floor(Math.random() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
+                const px = (mx + Math.floor(rng() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
+                const py = (my + Math.floor(rng() * 3 - 1)) * CONFIG.TILE_SIZE + 16;
                 const ore = this.metals.create(px, py, 'metal');
                 ore.setDepth(2);
                 ore.body.setSize(20, 16);
@@ -591,23 +592,7 @@ class GameScene extends Phaser.Scene {
                     this.showFloatingText(obj.x, obj.y - 20, `${hits}/${maxHits}`, '#FFaa00');
                     audioEngine.playChop();
                     if (hits >= maxHits) {
-                        const ox = obj.x, oy = obj.y;
-                        // Drop resources
-                        for (let i = 0; i < dropAmount; i++) {
-                            const drop = this.drops.create(
-                                ox + Phaser.Math.Between(-12, 12),
-                                oy + Phaser.Math.Between(-12, 12),
-                                dropType + '_drop'
-                            );
-                            drop.setDepth(3);
-                            drop.setData('resourceType', dropType);
-                            drop.body.setAllowGravity(false);
-                        }
-                        if (obj.getData('type') === 'tree') {
-                            const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
-                            this.time.delayedCall(30000, () => stump.destroy());
-                        }
-                        obj.destroy();
+                        this._destroyResource(obj, dropType, dropAmount, true);
                     }
                 }
             }
@@ -663,6 +648,12 @@ class GameScene extends Phaser.Scene {
                     this.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
                     audioEngine.playFireFuel();
 
+                    // Sync fuel addition to peers
+                    const bIdx = this.bonfires.indexOf(bonfire);
+                    if (network.peerCount > 0) {
+                        network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD });
+                    }
+
                     // Upgrading fire angers the darkness — spawn a small burst
                     const burst = CONFIG.FUEL_SPAWN_BURST + Math.floor(gameState.waveNumber / 3);
                     const maxSpawn = CONFIG.MAX_ENEMIES - this.enemies.countActive();
@@ -684,6 +675,54 @@ class GameScene extends Phaser.Scene {
         // Build mode placement
         if (gameState.buildMode && gameState.buildType) {
             this.placeBuilding();
+        }
+    }
+
+    _destroyResource(obj, dropType, dropAmount, broadcast) {
+        const ox = obj.x, oy = obj.y;
+        const resType = obj.getData('type');
+        // Drop resources
+        for (let i = 0; i < dropAmount; i++) {
+            const drop = this.drops.create(
+                ox + Phaser.Math.Between(-12, 12),
+                oy + Phaser.Math.Between(-12, 12),
+                dropType + '_drop'
+            );
+            drop.setDepth(3);
+            drop.setData('resourceType', dropType);
+            drop.body.setAllowGravity(false);
+        }
+        if (resType === 'tree') {
+            const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
+            this.time.delayedCall(30000, () => stump.destroy());
+        }
+        obj.destroy();
+
+        // Broadcast to peers so they remove the same resource
+        if (broadcast && network.peerCount > 0) {
+            network.broadcastReliable({
+                t: 'rd', resType, x: Math.round(ox), y: Math.round(oy),
+            });
+        }
+    }
+
+    // Handle resource destroyed by peer
+    _onResourceDestroyed(resType, x, y) {
+        const group = resType === 'tree' ? this.trees :
+                      resType === 'stone' ? this.stones : this.metals;
+        const dropType = resType === 'tree' ? 'wood' :
+                         resType === 'stone' ? 'stone' : 'metal';
+        const dropAmount = resType === 'tree' ? CONFIG.WOOD_PER_TREE :
+                           resType === 'stone' ? CONFIG.STONE_PER_DEPOSIT : CONFIG.METAL_PER_DEPOSIT;
+        // Find closest matching resource
+        let closest = null, closestDist = 20;
+        for (const obj of group.children.entries) {
+            if (!obj.active) continue;
+            const d = Phaser.Math.Distance.Between(x, y, obj.x, obj.y);
+            if (d < closestDist) { closestDist = d; closest = obj; }
+        }
+        if (closest) {
+            this._destroyResource(closest, dropType, dropAmount, false);
         }
     }
 
@@ -879,6 +918,8 @@ class GameScene extends Phaser.Scene {
     // Enemy System
     // --------------------------------------------------------
     updateSpawning(dt) {
+        // Only host spawns enemies
+        if (!network.isHost) return;
         // Don't spawn enemies until player has added fuel at least once
         if (gameState.fuelAdded < 1) return;
 
@@ -948,8 +989,10 @@ class GameScene extends Phaser.Scene {
             FOG_CRAWLER: 'enemy_crawler',
         }[type];
 
+        const enemyId = this._enemyIdCounter++;
         const enemy = this.enemies.create(sx, sy, textureKey);
         enemy.setDepth(5);
+        enemy.setData('enemyId', enemyId);
         enemy.setData('type', type);
         enemy.setData('hp', stats.hp + gameState.waveNumber * 2);
         enemy.setData('maxHp', stats.hp + gameState.waveNumber * 2);
@@ -968,10 +1011,68 @@ class GameScene extends Phaser.Scene {
         // Roar on spawn (30% chance, not every enemy)
         if (Math.random() < 0.3) audioEngine.playEnemyRoar();
 
+        // Broadcast spawn to clients
+        if (network.isHost && network.peerCount > 0) {
+            network.broadcastReliable({
+                t: 'es', id: enemyId, type, x: Math.round(sx), y: Math.round(sy),
+                hp: enemy.getData('hp'),
+            });
+        }
+
         return enemy;
     }
 
+    // Create enemy from host sync data (client-side)
+    _createEnemyFromSync(id, type, x, y, hp) {
+        const stats = ENEMIES[type];
+        if (!stats) return null;
+        const textureKey = {
+            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
+            FOG_CRAWLER: 'enemy_crawler',
+        }[type];
+        const enemy = this.enemies.create(x, y, textureKey);
+        enemy.setDepth(5);
+        enemy.setData('enemyId', id);
+        enemy.setData('type', type);
+        enemy.setData('hp', hp);
+        enemy.setData('maxHp', hp);
+        enemy.setData('damage', stats.damage);
+        enemy.setData('speed', stats.speed);
+        enemy.setData('size', stats.size);
+        enemy.setData('xp', stats.xp);
+        enemy.setData('targetsFire', stats.targetsFire || false);
+        enemy.setData('attackCooldown', 0);
+        enemy.body.setAllowGravity(false);
+        enemy.setAlpha(0);
+        this.tweens.add({ targets: enemy, alpha: 0.85, duration: 600 });
+        return enemy;
+    }
+
+    _findEnemyById(id) {
+        for (const e of this.enemies.children.entries) {
+            if (e.active && e.getData('enemyId') === id) return e;
+        }
+        return null;
+    }
+
     updateEnemies(dt) {
+        // Clients: only check for enemy attacks on local player (positions come from host)
+        if (!network.isHost) {
+            for (const enemy of this.enemies.children.entries) {
+                if (!enemy.active) continue;
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                let cd = enemy.getData('attackCooldown') - dt * 1000;
+                enemy.setData('attackCooldown', cd);
+                if (dist < enemy.getData('size') + 16 && cd <= 0) {
+                    enemy.setData('attackCooldown', 1000);
+                    this.damagePlayer(enemy.getData('damage'));
+                    this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                }
+            }
+            return;
+        }
+
         const enemyList = [...this.enemies.children.entries];
         for (const enemy of enemyList) {
             if (!enemy.active) continue;
@@ -1034,6 +1135,18 @@ class GameScene extends Phaser.Scene {
     }
 
     damageEnemy(enemy, amount) {
+        const enemyId = enemy.getData('enemyId');
+
+        // Client: send damage to host, show visual feedback only
+        if (!network.isHost) {
+            network.sendEnemyDamage(enemyId, amount);
+            this.showFloatingText(enemy.x, enemy.y - 20, `-${amount}`, '#FFAA00');
+            enemy.setTint(0xFFFFFF);
+            this.time.delayedCall(80, () => { if (enemy.active) enemy.clearTint(); });
+            return;
+        }
+
+        // Host: apply damage authoritatively
         let hp = enemy.getData('hp') - amount;
         enemy.setData('hp', hp);
         this.showFloatingText(enemy.x, enemy.y - 20, `-${amount}`, '#FFAA00');
@@ -1049,39 +1162,87 @@ class GameScene extends Phaser.Scene {
         enemy.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
 
         if (hp <= 0) {
-            gameState.kills++;
-            audioEngine.playEnemyDeath();
-
-            // Drop gold
-            const enemyType = enemy.getData('type');
-            const goldAmount = ENEMIES[enemyType] ? ENEMIES[enemyType].gold || 1 : 1;
-            for (let i = 0; i < goldAmount; i++) {
-                const drop = this.drops.create(
-                    enemy.x + Phaser.Math.Between(-14, 14),
-                    enemy.y + Phaser.Math.Between(-14, 14),
-                    'gold_drop'
-                );
-                drop.setDepth(3);
-                drop.setData('resourceType', 'gold');
-                drop.body.setAllowGravity(false);
-            }
-
-            // Death particles
-            const emitter = this.add.particles(enemy.x, enemy.y, 'particle', {
-                speed: { min: 30, max: 80 },
-                lifespan: 500,
-                scale: { start: 0.4, end: 0 },
-                alpha: { start: 0.7, end: 0 },
-                tint: [0x220033, 0x440066, 0x110022],
-                quantity: 8,
-                blendMode: 'ADD',
-                emitting: false,
-            });
-            emitter.explode(8);
-            this.time.delayedCall(600, () => emitter.destroy());
-
-            enemy.destroy();
+            this._killEnemy(enemy);
         }
+    }
+
+    _killEnemy(enemy) {
+        const enemyId = enemy.getData('enemyId');
+        gameState.kills++;
+        audioEngine.playEnemyDeath();
+
+        // Drop gold
+        const enemyType = enemy.getData('type');
+        const goldAmount = ENEMIES[enemyType] ? ENEMIES[enemyType].gold || 1 : 1;
+        for (let i = 0; i < goldAmount; i++) {
+            const drop = this.drops.create(
+                enemy.x + Phaser.Math.Between(-14, 14),
+                enemy.y + Phaser.Math.Between(-14, 14),
+                'gold_drop'
+            );
+            drop.setDepth(3);
+            drop.setData('resourceType', 'gold');
+            drop.body.setAllowGravity(false);
+        }
+
+        // Death particles
+        const emitter = this.add.particles(enemy.x, enemy.y, 'particle', {
+            speed: { min: 30, max: 80 },
+            lifespan: 500,
+            scale: { start: 0.4, end: 0 },
+            alpha: { start: 0.7, end: 0 },
+            tint: [0x220033, 0x440066, 0x110022],
+            quantity: 8,
+            blendMode: 'ADD',
+            emitting: false,
+        });
+        emitter.explode(8);
+        this.time.delayedCall(600, () => emitter.destroy());
+
+        // Broadcast death to clients
+        if (network.isHost) {
+            network.broadcastEnemyDeath(enemyId);
+        }
+
+        enemy.destroy();
+    }
+
+    // Client: handle enemy death from host
+    _onEnemyDied(enemyId) {
+        const enemy = this._findEnemyById(enemyId);
+        if (!enemy) return;
+        gameState.kills++;
+        audioEngine.playEnemyDeath();
+
+        // Death particles
+        const emitter = this.add.particles(enemy.x, enemy.y, 'particle', {
+            speed: { min: 30, max: 80 },
+            lifespan: 500,
+            scale: { start: 0.4, end: 0 },
+            alpha: { start: 0.7, end: 0 },
+            tint: [0x220033, 0x440066, 0x110022],
+            quantity: 8,
+            blendMode: 'ADD',
+            emitting: false,
+        });
+        emitter.explode(8);
+        this.time.delayedCall(600, () => emitter.destroy());
+
+        // Drop gold locally for client
+        const enemyType = enemy.getData('type');
+        const goldAmount = ENEMIES[enemyType] ? ENEMIES[enemyType].gold || 1 : 1;
+        for (let i = 0; i < goldAmount; i++) {
+            const drop = this.drops.create(
+                enemy.x + Phaser.Math.Between(-14, 14),
+                enemy.y + Phaser.Math.Between(-14, 14),
+                'gold_drop'
+            );
+            drop.setDepth(3);
+            drop.setData('resourceType', 'gold');
+            drop.body.setAllowGravity(false);
+        }
+
+        enemy.destroy();
     }
 
     // --------------------------------------------------------
@@ -1502,6 +1663,89 @@ class GameScene extends Phaser.Scene {
             });
         };
 
+        // Enemy sync from host (positions update)
+        network.onEnemySync = (enemies) => {
+            if (network.isHost) return;
+            const isKeyframe = enemies.length > 0 && enemies[0].type !== undefined;
+            for (const eData of enemies) {
+                const enemy = scene._findEnemyById(eData.id);
+                if (enemy) {
+                    // Update position smoothly
+                    enemy.setData('targetX', eData.x);
+                    enemy.setData('targetY', eData.y);
+                    if (eData.hp !== undefined) enemy.setData('hp', eData.hp);
+                    if (eData.fx !== undefined) enemy.setFlipX(eData.fx < 0);
+                } else if (eData.type) {
+                    // Enemy doesn't exist yet — create it (only from keyframes/spawns)
+                    scene._createEnemyFromSync(eData.id, eData.type, eData.x, eData.y, eData.hp);
+                }
+            }
+            // On keyframes, remove enemies that host no longer has
+            if (isKeyframe) {
+                const hostIds = new Set(enemies.map(e => e.id));
+                for (const e of [...scene.enemies.children.entries]) {
+                    if (e.active && !hostIds.has(e.getData('enemyId'))) {
+                        e.destroy();
+                    }
+                }
+            }
+        };
+
+        // Enemy spawn from host (individual spawn events)
+        network.onEnemySpawn = (msg) => {
+            if (network.isHost) return;
+            if (!scene._findEnemyById(msg.id)) {
+                scene._createEnemyFromSync(msg.id, msg.type, msg.x, msg.y, msg.hp);
+            }
+        };
+
+        // Resource destroyed by peer
+        network.onResourceEvent = (msg) => {
+            if (msg.t === 'rd' && msg.resType) {
+                scene._onResourceDestroyed(msg.resType, msg.x, msg.y);
+            }
+        };
+
+        // Enemy death from host
+        network.onEnemyDied = (enemyId) => {
+            scene._onEnemyDied(enemyId);
+        };
+
+        // Host: handle enemy damage from client
+        network.onEnemyDamage = (enemyId, damage, fromPeerId) => {
+            const enemy = scene._findEnemyById(enemyId);
+            if (enemy) {
+                let hp = enemy.getData('hp') - damage;
+                enemy.setData('hp', hp);
+                scene.showFloatingText(enemy.x, enemy.y - 20, `-${damage}`, '#FFAA00');
+                enemy.setTint(0xFFFFFF);
+                scene.time.delayedCall(80, () => { if (enemy.active) enemy.clearTint(); });
+                if (hp <= 0) {
+                    scene._killEnemy(enemy);
+                }
+            }
+        };
+
+        // Bonfire fuel sync from peers
+        network.onFuelAdded = (bonfireIdx, amount) => {
+            if (bonfireIdx >= 0 && bonfireIdx < scene.bonfires.length) {
+                const bonfire = scene.bonfires[bonfireIdx];
+                const fuel = bonfire.getData('fuel');
+                const maxFuel = bonfire.getData('maxFuel');
+                bonfire.setData('fuel', Math.min(maxFuel, fuel + amount));
+                gameState.fuelAdded++;
+                scene.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
+            }
+        };
+
+        // Bonfire sync from host (periodic fuel levels)
+        network.onBonfireSync = (bonfires) => {
+            if (network.isHost) return;
+            for (let i = 0; i < bonfires.length && i < scene.bonfires.length; i++) {
+                scene.bonfires[i].setData('fuel', bonfires[i].fuel);
+            }
+        };
+
         // Host: register world state getter for new peers
         network.setWorldStateGetter(() => {
             return {
@@ -1513,8 +1757,15 @@ class GameScene extends Phaser.Scene {
                 })),
                 gameTime: gameState.time,
                 waveNumber: gameState.waveNumber,
+                fuelAdded: gameState.fuelAdded,
             };
         });
+
+        // World sync handler (client receives seed, bonfire state, etc.)
+        network.onWorldSync = (msg) => {
+            if (msg.fuelAdded !== undefined) gameState.fuelAdded = msg.fuelAdded;
+            if (msg.waveNumber !== undefined) gameState.waveNumber = msg.waveNumber;
+        };
 
         // Materialize any peers that connected before callbacks were set (race condition fix)
         for (const [peerId, peer] of network.peers) {
@@ -1547,16 +1798,57 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        // Host: broadcast enemy state
-        if (network.isHost) {
+        // Host: broadcast enemy positions + bonfire state
+        if (network.isHost && network.peerCount > 0) {
             this._hostSyncTimer += dt * 1000;
             if (this._hostSyncTimer >= network.HOST_SYNC_RATE) {
                 this._hostSyncTimer = 0;
-                // Broadcast bonfire fuel levels (less frequently)
-                if (Math.floor(gameState.time) % 2 === 0) {
+                this._enemySyncCounter = (this._enemySyncCounter || 0) + 1;
+                const isKeyframe = this._enemySyncCounter % 5 === 0;
+
+                const enemies = [];
+                for (const e of this.enemies.children.entries) {
+                    if (!e.active) continue;
+                    const id = e.getData('enemyId');
+                    const x = Math.round(e.x);
+                    const y = Math.round(e.y);
+                    const hp = e.getData('hp');
+                    const prev = this._prevEnemyState?.[id];
+
+                    if (isKeyframe) {
+                        // Keyframe: full state
+                        enemies.push({ id, type: e.getData('type'), x, y, hp, fx: e.flipX ? -1 : 1 });
+                    } else if (!prev || Math.abs(prev.x - x) > 2 || Math.abs(prev.y - y) > 2 || prev.hp !== hp) {
+                        // Delta: only changed enemies
+                        enemies.push({ id, x, y, hp, fx: e.flipX ? -1 : 1 });
+                    }
+
+                    if (!this._prevEnemyState) this._prevEnemyState = {};
+                    this._prevEnemyState[id] = { x, y, hp };
+                }
+
+                if (enemies.length > 0 || isKeyframe) {
+                    network.broadcastEnemies(enemies);
+                }
+
+                // Broadcast bonfire fuel levels every 2 seconds
+                if (this._enemySyncCounter % 10 === 0) {
                     network.broadcastBonfires(this.bonfires.map(b => ({
                         fuel: Math.round(b.getData('fuel') * 10) / 10,
                     })));
+                }
+            }
+        }
+
+        // Client: interpolate enemy positions from host data
+        if (!network.isHost) {
+            for (const e of this.enemies.children.entries) {
+                if (!e.active) continue;
+                const tx = e.getData('targetX');
+                const ty = e.getData('targetY');
+                if (tx !== undefined) {
+                    e.x += (tx - e.x) * 0.2;
+                    e.y += (ty - e.y) * 0.2;
                 }
             }
         }

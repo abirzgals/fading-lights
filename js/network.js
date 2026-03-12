@@ -28,6 +28,7 @@ const network = {
     onBonfireSync: null,
     onEnemyDamage: null,
     onEnemyDied: null,
+    onEnemySpawn: null,
     onFuelAdded: null,
 
     // Config
@@ -383,8 +384,24 @@ const network = {
                 if (this.onEnemySync) this.onEnemySync(msg.enemies);
                 break;
 
-            case 'r': // resource event from host
+            case 'r': // resource event
                 if (this.onResourceEvent) this.onResourceEvent(msg);
+                break;
+
+            case 'rd': // resource destroyed by peer
+                if (this.onResourceEvent) this.onResourceEvent(msg);
+                // Host relays to other clients
+                if (this.isHost) {
+                    for (const [id, p] of this.peers) {
+                        if (id !== peerId && p.conn && p.conn.open) {
+                            try { p.conn.send(JSON.stringify(msg)); } catch {}
+                        }
+                    }
+                }
+                break;
+
+            case 'es': // enemy spawn from host
+                if (!this.isHost && this.onEnemySpawn) this.onEnemySpawn(msg);
                 break;
 
             case 'b': // bonfire sync from host
@@ -403,6 +420,14 @@ const network = {
 
             case 'f': // fuel added to bonfire
                 if (this.onFuelAdded) this.onFuelAdded(msg.bonfireIdx, msg.amount);
+                // Host relays to other clients
+                if (this.isHost) {
+                    for (const [id, p] of this.peers) {
+                        if (id !== peerId && p.conn && p.conn.open) {
+                            try { p.conn.send(JSON.stringify(msg)); } catch {}
+                        }
+                    }
+                }
                 break;
 
             case 'new_peer': // host tells us about another peer
