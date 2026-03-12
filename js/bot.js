@@ -21,8 +21,7 @@
     const ATTACK_REACH = 40;
 
     // Resource thresholds for smart management
-    const WOOD_FEED_THRESHOLD = 5;   // feed when we have this much wood
-    const WOOD_RESERVE = 3;          // always keep some wood in reserve
+    const WOOD_FEED_BATCH = 5;       // go feed when we accumulate this much wood
     const STONE_TARGET = 25;         // mine stone until we have this much
     const METAL_TARGET = 15;         // mine metal until we have this much
 
@@ -132,16 +131,12 @@
     // ---- What resource do we need most? ----
     function getResourceNeed() {
         const res = gameState.resources;
-        const bonfire = getScene().bonfires[0];
-        const fuelRatio = bonfire.getData('fuel') / bonfire.getData('maxFuel');
-
-        // Always need wood for fuel
-        if (res.wood < WOOD_FEED_THRESHOLD && fuelRatio < 0.8) return 'wood';
-        // Need stone for buildings
+        // Cycle: gather wood batch → feed → gather stone/metal for builds → repeat
+        // Wood is always the priority — fire leveling is key to survival
+        if (res.wood < WOOD_FEED_BATCH) return 'wood';
+        // Once we have enough wood for a feed trip, gather other resources
         if (res.stone < STONE_TARGET) return 'stone';
-        // Need metal for advanced buildings/weapons
         if (res.metal < METAL_TARGET) return 'metal';
-        // Default: keep chopping wood (fuel is always needed)
         return 'wood';
     }
 
@@ -170,10 +165,11 @@
             return { type: 'kill', target: bestEnemy, x: bestEnemy.x, y: bestEnemy.y };
         }
 
-        // PRIORITY 2: Feed bonfire — AGGRESSIVE fuel management
-        // Feed if: fuel < 80% and we have wood to spare, or fuel < 40% (emergency)
-        const shouldFeed = (fuelRatio < 0.4 && res.wood >= 1) ||
-                           (fuelRatio < 0.8 && res.wood > WOOD_RESERVE);
+        // PRIORITY 2: Feed bonfire — level up ASAP
+        // Feed whenever we have a batch of wood (fire level = cumulative fuel added)
+        // Emergency: feed immediately if fuel is dangerously low
+        const shouldFeed = res.wood >= WOOD_FEED_BATCH ||
+                           (fuelRatio < 0.5 && res.wood >= 1);
         if (shouldFeed) {
             return { type: 'feed', x: bx, y: by };
         }
@@ -285,12 +281,12 @@
                 const bd = dist(p.x, p.y, currentGoal.x, currentGoal.y);
                 if (bd < CONFIG.INTERACT_RADIUS) {
                     p.setVelocity(0, 0);
-                    // Feed repeatedly while at bonfire and have wood to spare
-                    if (gameState.resources.wood > WOOD_RESERVE) {
+                    // Dump ALL wood into fire — leveling up is the #1 priority
+                    if (gameState.resources.wood > 0) {
                         sc.playerInteract();
                         feedCount++;
                     } else {
-                        currentGoal = null; // done feeding, go gather more
+                        currentGoal = null; // out of wood, go gather more
                     }
                 } else {
                     if (!currentPath) pathTo(sc, currentGoal.x, currentGoal.y);
