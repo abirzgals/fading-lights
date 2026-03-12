@@ -208,18 +208,15 @@ class MenuScene extends Phaser.Scene {
             return name;
         };
 
-        // START GAME — try default room with quick timeout, then solo
+        // START GAME — join default MAIN room (full retry for server wakeup)
         this._startGame = async () => {
             const name = this._getName();
             const statusEl = document.getElementById('room-status');
             if (statusEl) statusEl.textContent = 'Connecting...';
             this._setupWakeProgress();
 
-            // Try to join the default room (quick: single attempt only)
-            const origTimeout = network.WAKE_TIMEOUT;
-            network.WAKE_TIMEOUT = 0; // no retry loop — single fast attempt
+            // Try to join the default MAIN room (full retry with wakeup countdown)
             const joined = await network.joinRoom(name, network.playerColor, 'MAIN');
-            network.WAKE_TIMEOUT = origTimeout;
 
             if (joined) {
                 if (statusEl) {
@@ -230,11 +227,9 @@ class MenuScene extends Phaser.Scene {
                 return;
             }
 
-            // Server awake but no room? Try hosting the default room (single attempt)
+            // Could not join — try hosting the MAIN room
             network.disconnect();
-            network.WAKE_TIMEOUT = 0;
             const hostOk = await network._createRoomWithCode(name, network.playerColor, 'MAIN');
-            network.WAKE_TIMEOUT = origTimeout;
 
             if (statusEl) {
                 if (hostOk) {
@@ -244,7 +239,7 @@ class MenuScene extends Phaser.Scene {
                     statusEl.textContent = 'Playing solo';
                 }
             }
-            setTimeout(() => this._launchGame(), hostOk ? 1200 : 400);
+            setTimeout(() => this._launchGame(), hostOk ? 2000 : 400);
         };
 
         // CREATE ROOM — host a multiplayer game
