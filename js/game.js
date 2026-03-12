@@ -546,6 +546,8 @@ class GameScene extends Phaser.Scene {
         bonfire.setData('fuel', isMain ? CONFIG.BONFIRE_MAX_FUEL : CONFIG.BONFIRE_MAX_FUEL * 0.6);
         bonfire.setData('maxFuel', CONFIG.BONFIRE_MAX_FUEL);
         bonfire.setData('isMain', isMain);
+        bonfire.setData('campFuelAdded', isMain ? gameState.fuelAdded : 0);
+        bonfire.setData('campFireLevel', isMain ? gameState.fireLevel : 1);
 
         // Fire particle emitter
         const emitter = this.add.particles(x, y - 8, 'particle', {
@@ -626,6 +628,8 @@ class GameScene extends Phaser.Scene {
         bonfire.setData('isMain', false);
         bonfire.setData('isSecondCamp', true);
         bonfire.setData('lit', false);
+        bonfire.setData('campFuelAdded', 0);
+        bonfire.setData('campFireLevel', 1);
         bonfire.setAlpha(0.3); // dim/dark until lit
 
         // No fire emitter initially — will be created on first light
@@ -647,6 +651,64 @@ class GameScene extends Phaser.Scene {
 
         this.bonfires.push(bonfire);
         this._secondCampBonfire = bonfire;
+    }
+
+    // Create build spots for the second camp when it levels up
+    _updateSecondCampBuildSpots(bonfire, level) {
+        const cx = bonfire.x;
+        const cy = bonfire.y;
+        const T = CONFIG.TILE_SIZE;
+
+        // Only add spots that match this level and haven't been created yet
+        for (const spot of CONFIG.BUILD_SPOTS) {
+            if (spot.reqLevel > level) continue;
+            // Check if already exists for this camp
+            const sx = cx + Math.cos(spot.angle) * spot.dist * T;
+            const sy = cy + Math.sin(spot.angle) * spot.dist * T;
+            const exists = this.buildSpots.some(
+                s => Math.abs(s.x - sx) < 10 && Math.abs(s.y - sy) < 10
+            );
+            if (exists) continue;
+
+            const sprite = this.add.image(sx, sy, 'build_spot');
+            sprite.setDepth(3).setAlpha(0).setScale(0.8);
+            const building = BUILDINGS[spot.type];
+            const label = this.add.text(sx, sy - 18, spot.label, {
+                fontSize: '8px', fontFamily: 'monospace',
+                color: '#FFCC00', stroke: '#000000', strokeThickness: 2,
+            }).setOrigin(0.5).setDepth(50).setAlpha(0);
+
+            let costStr = '';
+            if (building) {
+                for (const [res, amt] of Object.entries(building.cost)) {
+                    costStr += `${res}:${amt} `;
+                }
+            }
+            const costText = this.add.text(sx, sy + 14, costStr.trim(), {
+                fontSize: '7px', fontFamily: 'monospace',
+                color: '#AAAAAA', stroke: '#000000', strokeThickness: 2,
+            }).setOrigin(0.5).setDepth(50).setAlpha(0);
+
+            const newSpot = {
+                x: sx, y: sy,
+                sprite, label, costText,
+                config: spot,
+                reqLevel: spot.reqLevel,
+                unlocked: true,
+                built: false,
+                campBonfire: bonfire,
+            };
+            this.buildSpots.push(newSpot);
+
+            // Animate in
+            sprite.setVisible(true);
+            label.setVisible(true);
+            costText.setVisible(true);
+            this.tweens.add({ targets: sprite, alpha: 0.7, duration: 800 });
+            this.tweens.add({ targets: label, alpha: 0.8, duration: 800 });
+            this.tweens.add({ targets: costText, alpha: 0.6, duration: 800 });
+            this.showFloatingText(sx, sy - 35, 'NEW BUILD SPOT!', '#FF8800');
+        }
     }
 
     // --------------------------------------------------------
@@ -697,7 +759,11 @@ class GameScene extends Phaser.Scene {
         for (const spot of this.buildSpots) {
             if (spot.built) continue;
             const wasUnlocked = spot.unlocked;
-            spot.unlocked = gameState.fireLevel >= spot.reqLevel;
+            // Use per-camp level if spot belongs to a specific camp
+            const campLevel = spot.campBonfire
+                ? (spot.campBonfire.getData('campFireLevel') || 1)
+                : (this.bonfires[0]?.getData('campFireLevel') || gameState.fireLevel);
+            spot.unlocked = campLevel >= spot.reqLevel;
 
             if (spot.unlocked && !wasUnlocked) {
                 // Newly unlocked — animate in
@@ -1018,25 +1084,44 @@ class GameScene extends Phaser.Scene {
                         this._lightSecondCamp(bonfire);
                     }
 
-                    // Only count toward fire level if main bonfire
+                    // Track per-camp fuel added and level
+                    const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
+                    bonfire.setData('campFuelAdded', campFuelAdded);
+
+                    // Also update global fuelAdded for main camp (backwards compat)
                     if (bonfire.getData('isMain')) {
-                        gameState.fuelAdded++;
+                        gameState.fuelAdded = campFuelAdded;
                     }
 
-                    // Check fire level up
+                    // Check fire level up for this camp
                     const levels = CONFIG.FIRE_LEVELS;
-                    const oldLevel = gameState.fireLevel;
+                    const oldLevel = bonfire.getData('campFireLevel') || 1;
+                    let newLevel = 1;
                     for (let lv = levels.length - 1; lv >= 0; lv--) {
-                        if (gameState.fuelAdded >= levels[lv]) {
-                            gameState.fireLevel = lv + 1;
+                        if (campFuelAdded >= levels[lv]) {
+                            newLevel = lv + 1;
                             break;
                         }
                     }
-                    if (gameState.fireLevel > oldLevel) {
+                    bonfire.setData('campFireLevel', newLevel);
+
+                    if (newLevel > oldLevel) {
                         this.showFloatingText(bonfire.x, bonfire.y - 50,
-                            `FIRE LEVEL ${gameState.fireLevel}!`, '#CC66FF');
+                            `CAMP LEVEL ${newLevel}!`, '#CC66FF');
                         audioEngine.playWave();
+                        // Create build spots for second camp on level up
+                        if (bonfire.getData('isSecondCamp')) {
+                            this._updateSecondCampBuildSpots(bonfire, newLevel);
+                        }
                     }
+
+                    // Update active camp for dashboard
+                    this._activeCamp = bonfire;
+                    // Keep gameState.fireLevel as the max of all camps
+                    gameState.fireLevel = Math.max(
+                        this.bonfires[0]?.getData('campFireLevel') || 1,
+                        this._secondCampBonfire?.getData('campFireLevel') || 1
+                    );
 
                     // Sync fuel addition to peers
                     const bIdx = this.bonfires.indexOf(bonfire);
@@ -1188,7 +1273,9 @@ class GameScene extends Phaser.Scene {
         const base = bonfire.getData('isMain') ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
         // Fire level multiplier: each level significantly increases radius
-        const levelMult = bonfire.getData('isMain') ? (1.0 + (gameState.fireLevel - 1) * 0.5) : 1.0;
+        const campLevel = bonfire.getData('campFireLevel') || 1;
+        const isUpgradeable = bonfire.getData('isMain') || bonfire.getData('isSecondCamp');
+        const levelMult = isUpgradeable ? (1.0 + (campLevel - 1) * 0.5) : 1.0;
         const scaledRatio = Math.sqrt(fuelRatio);
         return Math.max(CONFIG.BONFIRE_MIN_RADIUS, base * scaledRatio * flicker * levelMult);
     }
@@ -2594,26 +2681,33 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     updateHUD() {
         this.hud.health.style.width = `${(gameState.hp / CONFIG.PLAYER_MAX_HP) * 100}%`;
-        const mainFuel = this.bonfires[0] ? this.bonfires[0].getData('fuel') / this.bonfires[0].getData('maxFuel') : 0;
-        this.hud.fuel.style.width = `${mainFuel * 100}%`;
+
+        // Show active (last-fed) camp's fuel in dashboard
+        const activeCamp = this._activeCamp || this.bonfires[0];
+        const campFuel = activeCamp ? activeCamp.getData('fuel') / activeCamp.getData('maxFuel') : 0;
+        this.hud.fuel.style.width = `${campFuel * 100}%`;
+
         this.hud.wood.textContent = gameState.resources.wood;
         this.hud.stone.textContent = gameState.resources.stone;
         this.hud.metal.textContent = gameState.resources.metal;
         this.hud.gold.textContent = gameState.resources.gold;
         this.hud.weapon.textContent = WEAPONS[gameState.weapon].name;
 
-        // Fire level progress
+        // Show active camp's fire level progress
         const levels = CONFIG.FIRE_LEVELS;
-        const lv = gameState.fireLevel;
-        this.hud.fireLevelLabel.textContent = `Lv.${lv}`;
+        const campFuelAdded = activeCamp ? (activeCamp.getData('campFuelAdded') || 0) : gameState.fuelAdded;
+        const lv = activeCamp ? (activeCamp.getData('campFireLevel') || 1) : gameState.fireLevel;
+        const campName = activeCamp === this.bonfires[0] ? 'Main' :
+                         activeCamp?.getData('isSecondCamp') ? 'Camp 2' : 'Outpost';
+        this.hud.fireLevelLabel.textContent = `${campName} Lv.${lv}`;
         if (lv < levels.length) {
             const prevThresh = levels[lv - 1] || 0;
             const nextThresh = levels[lv];
-            const progress = (gameState.fuelAdded - prevThresh) / (nextThresh - prevThresh);
+            const progress = (campFuelAdded - prevThresh) / (nextThresh - prevThresh);
             this.hud.fireLevelFill.style.width = `${Math.min(100, progress * 100)}%`;
         } else {
             this.hud.fireLevelFill.style.width = '100%';
-            this.hud.fireLevelLabel.textContent = `Lv.${lv} MAX`;
+            this.hud.fireLevelLabel.textContent = `${campName} Lv.${lv} MAX`;
         }
     }
 
@@ -2822,10 +2916,34 @@ class GameScene extends Phaser.Scene {
                 const fuel = bonfire.getData('fuel');
                 const maxFuel = bonfire.getData('maxFuel');
                 bonfire.setData('fuel', Math.min(maxFuel, fuel + amount));
-                if (bonfire.getData('isMain')) gameState.fuelAdded++;
+
+                // Update per-camp tracking
+                const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
+                bonfire.setData('campFuelAdded', campFuelAdded);
+                if (bonfire.getData('isMain')) gameState.fuelAdded = campFuelAdded;
+
+                // Check camp level up
+                const levels = CONFIG.FIRE_LEVELS;
+                let newLevel = 1;
+                for (let lv = levels.length - 1; lv >= 0; lv--) {
+                    if (campFuelAdded >= levels[lv]) { newLevel = lv + 1; break; }
+                }
+                const oldLevel = bonfire.getData('campFireLevel') || 1;
+                bonfire.setData('campFireLevel', newLevel);
+                if (newLevel > oldLevel && bonfire.getData('isSecondCamp')) {
+                    scene._updateSecondCampBuildSpots(bonfire, newLevel);
+                }
+
+                // Update global fire level
+                gameState.fireLevel = Math.max(
+                    scene.bonfires[0]?.getData('campFireLevel') || 1,
+                    scene._secondCampBonfire?.getData('campFireLevel') || 1
+                );
+
                 if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
                     scene._lightSecondCamp(bonfire);
                 }
+                scene._activeCamp = bonfire;
                 scene.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
             }
         };
@@ -2846,6 +2964,9 @@ class GameScene extends Phaser.Scene {
                     x: b.x, y: b.y,
                     fuel: b.getData('fuel'),
                     isMain: b.getData('isMain'),
+                    campFuelAdded: b.getData('campFuelAdded') || 0,
+                    campFireLevel: b.getData('campFireLevel') || 1,
+                    lit: b.getData('lit') !== false,
                 })),
                 gameTime: gameState.time,
                 waveNumber: gameState.waveNumber,
