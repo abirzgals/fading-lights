@@ -1,4 +1,6 @@
-const CACHE_NAME = 'fading-light-0.5.5';
+importScripts('./js/config.js');
+
+const CACHE_NAME = 'fading-light-' + GAME_VERSION;
 const ASSETS = [
     './',
     './index.html',

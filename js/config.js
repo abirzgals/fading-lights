@@ -2,6 +2,8 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
+const GAME_VERSION = '0.5.6';
+
 const CONFIG = {
     // World
     WORLD_TILES: 150,
