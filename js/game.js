@@ -1102,7 +1102,7 @@ class GameScene extends Phaser.Scene {
             this.spawnTimer = 0;
 
             // Early game: spawn 1 at a time. Ramps up with waves.
-            const count = gameState.waveNumber < 2 ? 1 : Math.min(3, Math.floor(gameState.waveNumber / 2));
+            const count = gameState.waveNumber < 3 ? 1 : Math.min(2, Math.floor(gameState.waveNumber / 3));
             for (let i = 0; i < count; i++) {
                 this.spawnEnemy();
             }
@@ -1120,21 +1120,22 @@ class GameScene extends Phaser.Scene {
         const waveBonus = Math.min(gameState.waveNumber * 0.05, 0.4);
 
         if (lightLevel <= 1) {
-            type = roll < 0.8 - waveBonus ? 'SHADOW_WISP' : 'SHADOW_STALKER';
+            type = roll < 0.85 - waveBonus ? 'SHADOW_WISP' : 'SHADOW_STALKER';
         } else if (lightLevel <= 2) {
-            if (roll < 0.3) type = 'SHADOW_WISP';
-            else if (roll < 0.8 - waveBonus) type = 'SHADOW_STALKER';
+            if (roll < 0.45) type = 'SHADOW_WISP';
+            else if (roll < 0.88 - waveBonus) type = 'SHADOW_STALKER';
             else type = 'SHADOW_BEAST';
         } else if (lightLevel <= 3) {
-            if (roll < 0.1) type = 'SHADOW_WISP';
-            else if (roll < 0.4) type = 'SHADOW_STALKER';
-            else if (roll < 0.85 - waveBonus) type = 'SHADOW_BEAST';
+            if (roll < 0.25) type = 'SHADOW_WISP';
+            else if (roll < 0.6) type = 'SHADOW_STALKER';
+            else if (roll < 0.92 - waveBonus) type = 'SHADOW_BEAST';
             else type = 'SHADOW_LORD';
         } else {
-            if (roll < 0.2) type = 'FOG_CRAWLER';
-            else if (roll < 0.5) type = 'SHADOW_BEAST';
-            else if (roll < 0.8) type = 'SHADOW_LORD';
-            else type = 'SHADOW_STALKER';
+            if (roll < 0.15) type = 'FOG_CRAWLER';
+            else if (roll < 0.45) type = 'SHADOW_WISP';
+            else if (roll < 0.75) type = 'SHADOW_STALKER';
+            else if (roll < 0.92 - waveBonus) type = 'SHADOW_BEAST';
+            else type = 'SHADOW_LORD';
         }
 
         const stats = ENEMIES[type];

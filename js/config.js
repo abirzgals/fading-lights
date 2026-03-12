@@ -27,9 +27,9 @@ const CONFIG = {
     FUEL_PER_WOOD: 15,
 
     // Enemies
-    SPAWN_INTERVAL: 6000,
+    SPAWN_INTERVAL: 9000,
     SPAWN_MARGIN: 120,
-    MAX_ENEMIES: 25,
+    MAX_ENEMIES: 15,
     FUEL_SPAWN_BURST: 2,       // enemies spawned when upgrading fire
 
     // Build spots (predefined positions around bonfire, unlock by adding fuel)
