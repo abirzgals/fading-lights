@@ -32,6 +32,12 @@ const CONFIG = {
     MAX_ENEMIES: 15,
     FUEL_SPAWN_BURST: 2,       // enemies spawned when upgrading fire
 
+    // Raider system (camp level 2+)
+    RAID_SPAWN_INTERVAL: 12000,  // ms between raid spawns
+    RAID_SIGHT_RANGE: 160,       // px — raider notices player
+    RAID_LEASH_RANGE: 280,       // px — raider gives up chasing player
+    RAID_ATTACK_RANGE: 35,       // px — raider attacks camp bonfire/buildings
+
     // Fire camp levels: fuel needed to reach each level
     // Level 1 = start, Level 2 = 5 fuel, Level 3 = 12, Level 4 = 22, Level 5 = 35
     FIRE_LEVELS: [0, 5, 12, 22, 35, 55],

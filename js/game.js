@@ -1221,6 +1221,21 @@ class GameScene extends Phaser.Scene {
                 this.spawnEnemy();
             }
         }
+
+        // Raid spawns: from fire level 2+, enemies spawn far away and march to camp
+        if (gameState.fireLevel >= 2) {
+            this.raidSpawnTimer = (this.raidSpawnTimer || 0) + dt * 1000;
+            // Spawn faster at higher levels
+            const raidInterval = CONFIG.RAID_SPAWN_INTERVAL / (1 + (gameState.fireLevel - 2) * 0.3);
+            if (this.raidSpawnTimer >= raidInterval && this.enemies.countActive() < CONFIG.MAX_ENEMIES + 5) {
+                this.raidSpawnTimer = 0;
+                // Spawn 1-3 raiders depending on fire level
+                const raidCount = Math.min(3, 1 + Math.floor((gameState.fireLevel - 2) / 1));
+                for (let i = 0; i < raidCount; i++) {
+                    this.spawnRaider();
+                }
+            }
+        }
     }
 
     spawnEnemy() {
@@ -1316,6 +1331,86 @@ class GameScene extends Phaser.Scene {
         return enemy;
     }
 
+    // Spawn a raider — spawns far in the dark, marches toward camp
+    spawnRaider() {
+        const mainBonfire = this.bonfires[0];
+        const lightRadius = this.getLightRadius(mainBonfire);
+
+        // Pick raider type based on fire level
+        let type;
+        const roll = Math.random();
+        if (gameState.fireLevel <= 2) {
+            type = roll < 0.6 ? 'SHADOW_WISP' : 'SHADOW_STALKER';
+        } else if (gameState.fireLevel <= 3) {
+            if (roll < 0.3) type = 'SHADOW_WISP';
+            else if (roll < 0.75) type = 'SHADOW_STALKER';
+            else type = 'SHADOW_BEAST';
+        } else {
+            if (roll < 0.15) type = 'SHADOW_WISP';
+            else if (roll < 0.45) type = 'SHADOW_STALKER';
+            else if (roll < 0.8) type = 'SHADOW_BEAST';
+            else type = 'SHADOW_LORD';
+        }
+
+        const stats = ENEMIES[type];
+
+        // Spawn far outside light — 2x to 3x light radius away
+        let sx, sy;
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = lightRadius * 2 + Math.random() * lightRadius;
+            sx = mainBonfire.x + Math.cos(angle) * dist;
+            sy = mainBonfire.y + Math.sin(angle) * dist;
+            const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
+            const tty = Math.floor(sy / CONFIG.TILE_SIZE);
+            if (!this._occupiedTiles || !this._occupiedTiles.has(`${ttx},${tty}`)) break;
+        }
+
+        const textureKey = {
+            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
+            FOG_CRAWLER: 'enemy_crawler',
+        }[type];
+
+        const enemyId = this._enemyIdCounter++;
+        const enemy = this.enemies.create(sx, sy, textureKey);
+        enemy.setDepth(5);
+        enemy.setData('enemyId', enemyId);
+        enemy.setData('type', type);
+        enemy.setData('hp', stats.hp + gameState.waveNumber * 2);
+        enemy.setData('maxHp', stats.hp + gameState.waveNumber * 2);
+        enemy.setData('damage', stats.damage);
+        enemy.setData('speed', stats.speed * 1.1); // raiders are slightly faster
+        enemy.setData('size', stats.size);
+        enemy.setData('xp', stats.xp);
+        enemy.setData('targetsFire', false);
+        enemy.setData('attackCooldown', 0);
+        enemy.setData('aggro', false);
+        // Raider-specific data
+        enemy.setData('isRaider', true);
+        enemy.setData('raidMode', 'march'); // 'march' = heading to camp, 'chase' = chasing player
+        enemy.setData('raidTargetX', mainBonfire.x);
+        enemy.setData('raidTargetY', mainBonfire.y);
+        enemy.body.setAllowGravity(false);
+
+        this.physics.add.collider(enemy, this.trees);
+        this.physics.add.collider(enemy, this.stones);
+
+        enemy.setAlpha(0);
+        this.tweens.add({ targets: enemy, alpha: 0.85, duration: 600 });
+
+        // Broadcast spawn to clients
+        if (network.isHost && network.peerCount > 0) {
+            network.broadcastReliable({
+                t: 'es', id: enemyId, type, x: Math.round(sx), y: Math.round(sy),
+                hp: enemy.getData('hp'), raider: true,
+                rtx: Math.round(mainBonfire.x), rty: Math.round(mainBonfire.y),
+            });
+        }
+
+        return enemy;
+    }
+
     // Create enemy from host sync data (client-side)
     _createEnemyFromSync(id, type, x, y, hp) {
         const stats = ENEMIES[type];
@@ -1398,8 +1493,62 @@ class GameScene extends Phaser.Scene {
                         this.damageEnemy(enemy, 9999);
                     }
                 }
+            } else if (enemy.getData('isRaider')) {
+                // RAIDER AI: march to camp, but chase player if spotted
+                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                let raidMode = enemy.getData('raidMode'); // 'march' or 'chase'
+
+                // Spot player → switch to chase
+                if (raidMode === 'march' && distToPlayer < CONFIG.RAID_SIGHT_RANGE) {
+                    raidMode = 'chase';
+                    enemy.setData('raidMode', 'chase');
+                    enemy.setData('aggro', true);
+                }
+                // Lost player → return to march
+                if (raidMode === 'chase' && distToPlayer > CONFIG.RAID_LEASH_RANGE) {
+                    raidMode = 'march';
+                    enemy.setData('raidMode', 'march');
+                    enemy.setData('aggro', false);
+                }
+
+                if (raidMode === 'chase') {
+                    // Chase player
+                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                    enemy.setFlipX(Math.cos(angle) < 0);
+
+                    if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
+                        enemy.setData('attackCooldown', 1000);
+                        this.damagePlayer(enemy.getData('damage'));
+                        this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                    }
+                } else {
+                    // March to camp — target nearest bonfire or building
+                    const tx = enemy.getData('raidTargetX');
+                    const ty = enemy.getData('raidTargetY');
+                    const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                    enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                    enemy.setFlipX(Math.cos(angle) < 0);
+
+                    // Attack bonfire when close
+                    if (distToTarget < CONFIG.RAID_ATTACK_RANGE) {
+                        // Drain fuel from nearest bonfire
+                        let nearestBonfire = null, nearestDist = 60;
+                        for (const b of this.bonfires) {
+                            const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
+                            if (d < nearestDist) { nearestDist = d; nearestBonfire = b; }
+                        }
+                        if (nearestBonfire && cd <= 0) {
+                            enemy.setData('attackCooldown', 1500);
+                            const fuel = nearestBonfire.getData('fuel');
+                            nearestBonfire.setData('fuel', Math.max(0, fuel - 3));
+                            this.showFloatingText(nearestBonfire.x, nearestBonfire.y - 20, '-FUEL', '#8844FF');
+                        }
+                    }
+                }
             } else {
-                // Player-targeting enemies: sight-based aggro
+                // Normal AI: sight-based aggro toward player
                 const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let aggro = enemy.getData('aggro');
 
@@ -1501,6 +1650,7 @@ class GameScene extends Phaser.Scene {
         let hp = enemy.getData('hp') - amount;
         enemy.setData('hp', hp);
         enemy.setData('aggro', true); // always aggro when hit
+        if (enemy.getData('isRaider')) enemy.setData('raidMode', 'chase'); // raiders chase when hit
         this.showFloatingText(enemy.x, enemy.y - 20, `-${amount}`, '#FFAA00');
 
         // Flash white
