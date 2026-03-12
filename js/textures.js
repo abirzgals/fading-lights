@@ -116,7 +116,7 @@ function generateTextures(scene) {
     g.fillCircle(22, 22, 6);
     g.generateTexture('stone', 32, 32);
 
-    // Metal ore
+    // Metal ore (small, destructible)
     g.clear();
     g.fillStyle(0x5C4033, 1);
     g.fillCircle(16, 20, 12);
@@ -125,6 +125,46 @@ function generateTextures(scene) {
     g.fillCircle(20, 22, 4);
     g.fillCircle(16, 14, 3);
     g.generateTexture('metal', 32, 32);
+
+    // Rock wall (unbreakable, 64x48 — large boulder formation)
+    g.clear();
+    g.fillStyle(0x4A4A4A, 1);
+    g.fillEllipse(32, 30, 58, 36);
+    g.fillStyle(0x555555, 0.7);
+    g.fillEllipse(24, 24, 32, 22);
+    g.fillEllipse(42, 26, 28, 20);
+    g.fillStyle(0x3A3A3A, 0.8);
+    g.fillEllipse(32, 36, 44, 20);
+    // Cracks and highlights
+    g.fillStyle(0x606060, 0.4);
+    g.fillRect(18, 22, 6, 2);
+    g.fillRect(38, 28, 8, 2);
+    g.fillStyle(0x383838, 0.5);
+    g.fillRect(26, 32, 12, 1);
+    g.generateTexture('rock_wall', 64, 48);
+
+    // Metal mine (large, mineable — 48x48 with copper veins)
+    g.clear();
+    g.fillStyle(0x444444, 1);
+    g.fillEllipse(24, 28, 44, 36);
+    g.fillStyle(0x505050, 0.7);
+    g.fillEllipse(18, 22, 24, 18);
+    g.fillEllipse(32, 24, 20, 16);
+    // Entrance/cavity
+    g.fillStyle(0x222222, 0.9);
+    g.fillEllipse(24, 30, 16, 12);
+    // Copper veins
+    g.fillStyle(0xCC7733, 0.9);
+    g.fillRect(8, 18, 6, 3);
+    g.fillRect(34, 16, 5, 3);
+    g.fillRect(12, 34, 7, 2);
+    g.fillStyle(0xDD8844, 0.7);
+    g.fillCircle(10, 20, 2);
+    g.fillCircle(38, 18, 2);
+    g.fillCircle(14, 36, 2);
+    g.fillStyle(0xBB6622, 0.6);
+    g.fillRect(28, 36, 8, 2);
+    g.generateTexture('metal_mine', 48, 48);
 
     // Bonfire
     g.clear();

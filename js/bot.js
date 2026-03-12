@@ -115,6 +115,8 @@
         };
         if (sc.stones) markBlocked(sc.stones);
         if (sc.metals) markBlocked(sc.metals);
+        if (sc.rockWalls) markBlocked(sc.rockWalls);
+        if (sc.metalMines) markBlocked(sc.metalMines);
         // Also mark buildings and bonfires
         for (const b of sc.bonfires) {
             const tx = Math.floor(b.x / T), ty = Math.floor(b.y / T);
@@ -499,8 +501,15 @@
         // Gather resources (keep going even at moderate HP)
         if (hpRatio > 0.35) {
             const need = getResourceNeed();
-            const group = need === 'wood' ? sc.trees : need === 'stone' ? sc.stones : sc.metals;
-            const target = findNearest(group, px, py, bx, by, safeR);
+            let group = need === 'wood' ? sc.trees : need === 'stone' ? sc.stones : sc.metals;
+            let target = findNearest(group, px, py, bx, by, safeR);
+            // Also check metal mines when needing metal
+            if (need === 'metal' && sc.metalMines) {
+                const mineTarget = findNearest(sc.metalMines, px, py, bx, by, safeR);
+                if (mineTarget && (!target || d(px, py, mineTarget.x, mineTarget.y) < d(px, py, target.x, target.y))) {
+                    target = mineTarget;
+                }
+            }
             if (target) {
                 return { type: need === 'wood' ? 'chop' : 'mine', target, x: target.x, y: target.y };
             }

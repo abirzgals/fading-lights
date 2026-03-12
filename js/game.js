@@ -532,6 +532,60 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // --- Unbreakable rock walls (large boulder formations) ---
+        this.rockWalls = this.physics.add.staticGroup();
+        for (let r = 0; r < 18; r++) {
+            // Place rock walls in clusters of 1-3
+            const rwx = Math.floor(rng() * (worldSize - 20)) + 10;
+            const rwy = Math.floor(rng() * (worldSize - 20)) + 10;
+            const rdx = rwx - cx, rdy = rwy - cy;
+            if (rdx * rdx + rdy * rdy < 8 * 8) continue; // not too close to center
+            const clusterSize = 1 + Math.floor(rng() * 3);
+            for (let c = 0; c < clusterSize; c++) {
+                const rtx = rwx + Math.floor(rng() * 3 - 1);
+                const rty = rwy + Math.floor(rng() * 2 - 1);
+                if (this._occupiedTiles.has(`${rtx},${rty}`)) continue;
+                if (isPath(rtx, rty)) continue;
+                const rx = rtx * T + 16;
+                const ry = rty * T + 16;
+                const rock = this.rockWalls.create(rx, ry, 'rock_wall');
+                rock.setDepth(2);
+                rock.body.setSize(48, 28);
+                rock.body.setOffset(8, 14);
+                rock.body.setImmovable(true);
+                rock.setData('type', 'rock_wall');
+                this._occupiedTiles.add(`${rtx},${rty}`);
+                // Also block adjacent tile since texture is 64px wide
+                const adjTx = rtx + 1;
+                if (adjTx < worldSize) this._occupiedTiles.add(`${adjTx},${rty}`);
+            }
+        }
+        this.physics.add.collider(this.player, this.rockWalls);
+        this.physics.add.collider(this.enemies, this.rockWalls);
+
+        // --- Metal mines (large, mineable deposits with lots of metal) ---
+        this.metalMines = this.physics.add.staticGroup();
+        for (let m = 0; m < 6; m++) {
+            const mmx = Math.floor(rng() * (worldSize - 30)) + 15;
+            const mmy = Math.floor(rng() * (worldSize - 30)) + 15;
+            const mmdx = mmx - cx, mmdy = mmy - cy;
+            if (mmdx * mmdx + mmdy * mmdy < 15 * 15) continue; // not too close
+            if (this._occupiedTiles.has(`${mmx},${mmy}`)) continue;
+            if (isPath(mmx, mmy)) continue;
+            const mx = mmx * T + 16;
+            const my = mmy * T + 16;
+            const mine = this.metalMines.create(mx, my, 'metal_mine');
+            mine.setDepth(2);
+            mine.body.setSize(36, 30);
+            mine.body.setOffset(6, 12);
+            mine.body.setImmovable(true);
+            mine.setData('type', 'metal_mine');
+            mine.setData('remaining', 300);
+            this._occupiedTiles.add(`${mmx},${mmy}`);
+        }
+        this.physics.add.collider(this.player, this.metalMines);
+        this.physics.add.collider(this.enemies, this.metalMines);
+
         // --- Second camp (unlit) at the edge of level 5 radius ---
         // Place deterministically using seeded RNG so both host + client agree
         const secondCampAngle = rng() * Math.PI * 2;
@@ -1335,6 +1389,49 @@ class GameScene extends Phaser.Scene {
         hitResources(this.trees, CONFIG.TREE_HITS, 'wood', CONFIG.WOOD_PER_TREE);
         hitResources(this.stones, CONFIG.STONE_HITS, 'stone', CONFIG.STONE_PER_DEPOSIT);
         hitResources(this.metals, CONFIG.METAL_HITS, 'metal', CONFIG.METAL_PER_DEPOSIT);
+
+        // Rock walls — unbreakable, show feedback
+        for (const rock of this.rockWalls.children.entries) {
+            if (!rock.active) continue;
+            const dist = Phaser.Math.Distance.Between(ax, ay, rock.x, rock.y);
+            if (dist < weapon.range + 28) {
+                this.showFloatingText(rock.x, rock.y - 20, 'Unbreakable', '#999999');
+            }
+        }
+
+        // Hit metal mines — each hit ejects 1 metal drop, doesn't destroy the mine
+        for (const mine of this.metalMines.children.entries) {
+            if (!mine.active) continue;
+            const dist = Phaser.Math.Distance.Between(ax, ay, mine.x, mine.y);
+            if (dist < weapon.range + 24) {
+                const remaining = mine.getData('remaining') - 1;
+                mine.setData('remaining', remaining);
+                // Eject a metal drop in a random direction
+                const ejectAngle = Math.random() * Math.PI * 2;
+                const ejectDist = 16 + Math.random() * 20;
+                const dx = mine.x + Math.cos(ejectAngle) * ejectDist;
+                const dy = mine.y + Math.sin(ejectAngle) * ejectDist;
+                const drop = this.drops.create(dx, dy, 'metal_drop');
+                drop.setDepth(3);
+                drop.setData('resourceType', 'metal');
+                drop.body.setAllowGravity(false);
+                audioEngine.playChop();
+                network.broadcastAction('chop', mine.x, mine.y);
+                this.showFloatingText(mine.x, mine.y - 28, `${remaining} left`, '#CC8844');
+                if (remaining <= 0) {
+                    // Mine depleted — destroy it
+                    mine.destroy();
+                    this.showFloatingText(mine.x, mine.y - 20, 'DEPLETED', '#888888');
+                }
+                // Broadcast drop to peers
+                if (network.peerCount > 0) {
+                    network.broadcastReliable({
+                        t: 'md', x: Math.round(mine.x), y: Math.round(mine.y),
+                        dx: Math.round(dx), dy: Math.round(dy), remaining,
+                    });
+                }
+            }
+        }
 
         // Check hits on enemies (copy array to avoid mutation during iteration)
         const enemyTargets = [...this.enemies.children.entries];
@@ -3342,6 +3439,32 @@ class GameScene extends Phaser.Scene {
         network.onResourceEvent = (msg) => {
             if (msg.t === 'rd' && msg.resType) {
                 scene._onResourceDestroyed(msg.resType, msg.x, msg.y, msg.drops, msg.dropType);
+            }
+        };
+
+        // Metal mine hit by peer — create drop and update remaining
+        network.onMineHit = (msg) => {
+            if (msg.t === 'md') {
+                // Create the ejected metal drop
+                const drop = scene.drops.create(msg.dx, msg.dy, 'metal_drop');
+                drop.setDepth(3);
+                drop.setData('resourceType', 'metal');
+                drop.body.setAllowGravity(false);
+                // Update mine remaining count
+                if (msg.remaining <= 0) {
+                    // Find and destroy the depleted mine
+                    for (const mine of scene.metalMines.children.entries) {
+                        if (!mine.active) continue;
+                        const d = Phaser.Math.Distance.Between(msg.x, msg.y, mine.x, mine.y);
+                        if (d < 20) { mine.destroy(); break; }
+                    }
+                } else {
+                    for (const mine of scene.metalMines.children.entries) {
+                        if (!mine.active) continue;
+                        const d = Phaser.Math.Distance.Between(msg.x, msg.y, mine.x, mine.y);
+                        if (d < 20) { mine.setData('remaining', msg.remaining); break; }
+                    }
+                }
             }
         };
 

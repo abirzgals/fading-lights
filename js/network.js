@@ -32,6 +32,7 @@ const network = {
     onEnemySpawn: null,
     onFuelAdded: null,
     onDropPickup: null,
+    onMineHit: null,
     onChat: null,
     onBuildingPlaced: null,
     onBuildingDestroyed: null,
@@ -317,6 +318,10 @@ const network = {
                     if (!this._pendingResourceEvents) this._pendingResourceEvents = [];
                     this._pendingResourceEvents.push(msg);
                 }
+                break;
+
+            case 'md': // metal mine hit
+                if (this.onMineHit) this.onMineHit(msg);
                 break;
 
             case 'es': // enemy spawn from host
