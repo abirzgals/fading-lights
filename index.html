@@ -84,7 +84,16 @@
     <script src="js/menu.js"></script>
     <script src="js/game.js"></script>
     <script src="js/main.js"></script>
+    <script src="js/bot.js"></script>
     <script>
+        // Expose game scene for bot AI (updated when GameScene starts)
+        window._gs = null;
+        const _origCreate = GameScene.prototype.create;
+        GameScene.prototype.create = function() {
+            _origCreate.call(this);
+            window._gs = this;
+        };
+
         // Register service worker for PWA
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(() => {});
