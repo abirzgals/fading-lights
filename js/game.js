@@ -1991,7 +1991,7 @@ class GameScene extends Phaser.Scene {
             network.broadcastReliable({
                 t: 'es', id: enemyId, type, x: Math.round(sx), y: Math.round(sy),
                 hp: enemy.getData('hp'), raider: true,
-                rtx: Math.round(mainBonfire.x), rty: Math.round(mainBonfire.y),
+                rtx: Math.round(target.x), rty: Math.round(target.y),
             });
         }
 
