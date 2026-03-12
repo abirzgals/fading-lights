@@ -67,6 +67,10 @@ class AudioEngine {
     async init() {
         if (this.started) return;
         this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+        // Resume suspended context (required by most browsers)
+        if (this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 0.5;
         this.masterGain.connect(this.ctx.destination);
@@ -84,6 +88,13 @@ class AudioEngine {
             this.startLoop(key, fadeInMs);
         }
         this.pendingLoops = [];
+    }
+
+    // Ensure context is running (call before any playback)
+    async ensureResumed() {
+        if (this.ctx && this.ctx.state === 'suspended') {
+            await this.ctx.resume();
+        }
     }
 
     async loadSound(key, file) {
@@ -109,6 +120,7 @@ class AudioEngine {
         }
         if (!this.buffers[key]) return;
         if (this.loopSources[key]) return;
+        this.ensureResumed();
 
         const cfg = AUDIO_CONFIG[key];
         const source = this.ctx.createBufferSource();
@@ -117,7 +129,7 @@ class AudioEngine {
 
         const gain = this.ctx.createGain();
         if (fadeInMs > 0) {
-            gain.gain.value = 0;
+            gain.gain.setValueAtTime(0, this.ctx.currentTime);
             gain.gain.linearRampToValueAtTime(cfg.volume, this.ctx.currentTime + fadeInMs / 1000);
         } else {
             gain.gain.value = cfg.volume;
@@ -156,6 +168,7 @@ class AudioEngine {
     // --- ONE-SHOTS ---
     playOneShot(key, volumeScale = 1.0, pitchVariation = 0) {
         if (!this.started || !this.buffers[key]) return;
+        this.ensureResumed();
         const cfg = AUDIO_CONFIG[key];
 
         const source = this.ctx.createBufferSource();
@@ -225,6 +238,18 @@ class AudioEngine {
 const audioEngine = new AudioEngine();
 
 // Start audio on first user interaction (browser requirement)
-const initAudio = () => audioEngine.init();
-document.addEventListener('keydown', initAudio, { once: true });
-document.addEventListener('click', initAudio, { once: true });
+// Mobile browsers require touchstart specifically
+const initAudio = () => {
+    audioEngine.init();
+    // Remove all listeners after first trigger
+    document.removeEventListener('keydown', initAudio);
+    document.removeEventListener('click', initAudio);
+    document.removeEventListener('touchstart', initAudio);
+    document.removeEventListener('touchend', initAudio);
+    document.removeEventListener('pointerdown', initAudio);
+};
+document.addEventListener('keydown', initAudio);
+document.addEventListener('click', initAudio);
+document.addEventListener('touchstart', initAudio);
+document.addEventListener('touchend', initAudio);
+document.addEventListener('pointerdown', initAudio);
