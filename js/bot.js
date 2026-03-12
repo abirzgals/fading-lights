@@ -59,13 +59,30 @@
     }
 
     function pathTo(sc, tx, ty) {
-        const path = sc._findPath(sc.player.x, sc.player.y, tx, ty);
+        const px = sc.player.x, py = sc.player.y;
+        // Try exact target first
+        let path = sc._findPath(px, py, tx, ty);
+        if (!path) {
+            // Target tile is blocked (tree/stone) — aim for adjacent walkable tile
+            const T = CONFIG.TILE_SIZE;
+            const angle = Math.atan2(py - ty, px - tx); // toward player
+            // Try offset positions around target
+            const offsets = [
+                { x: Math.cos(angle) * T, y: Math.sin(angle) * T },      // toward player
+                { x: T, y: 0 }, { x: -T, y: 0 }, { x: 0, y: T }, { x: 0, y: -T },
+                { x: T, y: T }, { x: -T, y: T }, { x: T, y: -T }, { x: -T, y: -T },
+            ];
+            for (const off of offsets) {
+                path = sc._findPath(px, py, tx + off.x, ty + off.y);
+                if (path) break;
+            }
+        }
         if (path && path.length > 0) {
             currentPath = path;
             pathIdx = 0;
             return true;
         }
-        // Fallback: direct move (no obstacles on short range)
+        // Final fallback: direct move
         currentPath = [{ x: tx, y: ty }];
         pathIdx = 0;
         return true;
