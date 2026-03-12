@@ -463,7 +463,7 @@ class GameScene extends Phaser.Scene {
                 tree.setDepth(3);
                 tree.body.setSize(22, 28);
                 tree.body.setOffset(5, 22);
-                tree.body.setImmovable(true);
+
                 tree.setData('hits', 0);
                 tree.setData('type', 'tree');
                 this._occupiedTiles.add(`${tx},${ty}`);
@@ -482,7 +482,7 @@ class GameScene extends Phaser.Scene {
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
-            stone.body.setImmovable(true);
+
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
         }
@@ -526,7 +526,7 @@ class GameScene extends Phaser.Scene {
                 ore.setDepth(2);
                 ore.body.setSize(24, 20);
                 ore.body.setOffset(4, 10);
-                ore.body.setImmovable(true);
+
                 ore.setData('hits', 0);
                 ore.setData('type', 'metal');
             }
@@ -552,7 +552,7 @@ class GameScene extends Phaser.Scene {
                 rock.setDepth(2);
                 rock.body.setSize(48, 28);
                 rock.body.setOffset(8, 14);
-                rock.body.setImmovable(true);
+
                 rock.setData('type', 'rock_wall');
                 this._occupiedTiles.add(`${rtx},${rty}`);
                 // Also block adjacent tile since texture is 64px wide
@@ -578,7 +578,7 @@ class GameScene extends Phaser.Scene {
             mine.setDepth(2);
             mine.body.setSize(36, 30);
             mine.body.setOffset(6, 12);
-            mine.body.setImmovable(true);
+
             mine.setData('type', 'metal_mine');
             mine.setData('remaining', 300);
             this._occupiedTiles.add(`${mmx},${mmy}`);
@@ -625,7 +625,7 @@ class GameScene extends Phaser.Scene {
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
-            stone.body.setImmovable(true);
+
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
         }
