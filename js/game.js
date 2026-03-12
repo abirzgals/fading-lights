@@ -407,8 +407,8 @@ class GameScene extends Phaser.Scene {
                 const wy = ty * T + 16;
                 const tree = this.trees.create(wx, wy, 'tree');
                 tree.setDepth(3);
-                tree.body.setSize(16, 12);
-                tree.body.setOffset(8, 36);
+                tree.body.setSize(16, 26);
+                tree.body.setOffset(8, 24);
                 tree.setData('hits', 0);
                 tree.setData('type', 'tree');
                 this._occupiedTiles.add(`${tx},${ty}`);
