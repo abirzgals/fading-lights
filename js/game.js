@@ -1362,9 +1362,10 @@ class GameScene extends Phaser.Scene {
                 const fuel = bonfire.getData('fuel');
                 const maxFuel = bonfire.getData('maxFuel');
                 if (fuel < maxFuel) {
-                    gameState.resources.wood--;
-                    bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD));
-                    this.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
+                    const spend = Math.min(10, gameState.resources.wood, Math.ceil((maxFuel - fuel) / CONFIG.FUEL_PER_WOOD));
+                    gameState.resources.wood -= spend;
+                    bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD * spend));
+                    this.showFloatingText(bonfire.x, bonfire.y - 20, `+${spend} FUEL`, '#FF8800');
                     audioEngine.playFireFuel();
                     network.broadcastAction('fire_fuel', bonfire.x, bonfire.y);
 
@@ -1417,7 +1418,7 @@ class GameScene extends Phaser.Scene {
                     // Sync fuel addition to peers
                     const bIdx = this.bonfires.indexOf(bonfire);
                     if (network.peerCount > 0) {
-                        network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD });
+                        network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD * spend });
                     }
 
                     // Upgrading fire angers the darkness — spawn a small burst
