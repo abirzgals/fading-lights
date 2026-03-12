@@ -93,6 +93,7 @@ class GameScene extends Phaser.Scene {
         this._proximityIdleTime = 0; // seconds near another player while both idle
         this._healTickTimer = 0;
         this._enemyIdCounter = 0; // unique IDs for enemies (host)
+        this._destroyedResources = []; // track destroyed trees/stones for rejoining players
         this._setupNetwork();
 
         // --- Collisions ---
@@ -1464,6 +1465,9 @@ class GameScene extends Phaser.Scene {
         if (resType === 'stone') this._trackObjective('stones_mined', 1);
         obj.destroy();
 
+        // Track destroyed resources so rejoining players get the right map state
+        this._destroyedResources.push({ resType, x: Math.round(ox), y: Math.round(oy) });
+
         // Broadcast to peers so they remove the same resource
         if (broadcast && network.peerCount > 0) {
             network.broadcastReliable({
@@ -2508,6 +2512,9 @@ class GameScene extends Phaser.Scene {
             network.broadcastEnemyDeath(enemyId);
         }
 
+        // Clean up prev state cache to prevent memory leak
+        if (this._prevEnemyState) delete this._prevEnemyState[enemyId];
+
         enemy.destroy();
     }
 
@@ -3422,6 +3429,7 @@ class GameScene extends Phaser.Scene {
                 rainDur: scene._rainActive ? Math.round(scene._rainDuration - scene._rainTimer) : 0,
                 shopSold: scene._shopInventory ? scene._shopInventory.map(w => w.sold) : [],
                 drops: dropsData,
+                destroyed: scene._destroyedResources || [],
             };
         });
 
@@ -3463,6 +3471,12 @@ class GameScene extends Phaser.Scene {
                         drop.setData('resourceType', d.res);
                         drop.body.setAllowGravity(false);
                     }
+                }
+            }
+            // Remove resources that were destroyed before we joined
+            if (msg.destroyed && msg.destroyed.length) {
+                for (const d of msg.destroyed) {
+                    scene._onResourceDestroyed(d.resType, d.x, d.y);
                 }
             }
         };
