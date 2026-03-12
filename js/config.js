@@ -62,11 +62,11 @@ const WEAPONS = {
 };
 
 const ENEMIES = {
-    SHADOW_WISP:    { name: 'Shadow Wisp',    hp: 20,  damage: 5,  speed: 130, xp: 5,  size: 12, color: 0x4444AA, gold: 1 },
-    SHADOW_STALKER: { name: 'Shadow Stalker', hp: 50,  damage: 12, speed: 95,  xp: 15, size: 18, color: 0x6622AA, gold: 2 },
-    SHADOW_BEAST:   { name: 'Shadow Beast',   hp: 120, damage: 25, speed: 65,  xp: 35, size: 28, color: 0x440066, gold: 4 },
-    SHADOW_LORD:    { name: 'Shadow Lord',    hp: 300, damage: 40, speed: 55,  xp: 100, size: 36, color: 0x220044, gold: 10 },
-    FOG_CRAWLER:    { name: 'Fog Crawler',    hp: 80,  damage: 0,  speed: 75,  xp: 25, size: 22, color: 0x333355, targetsFire: true, gold: 3 },
+    SHADOW_WISP:    { name: 'Shadow Wisp',    hp: 14,  damage: 5,  speed: 104, xp: 5,  size: 12, color: 0x4444AA, gold: 1 },
+    SHADOW_STALKER: { name: 'Shadow Stalker', hp: 35,  damage: 12, speed: 76,  xp: 15, size: 18, color: 0x6622AA, gold: 2 },
+    SHADOW_BEAST:   { name: 'Shadow Beast',   hp: 84,  damage: 25, speed: 52,  xp: 35, size: 28, color: 0x440066, gold: 4 },
+    SHADOW_LORD:    { name: 'Shadow Lord',    hp: 210, damage: 40, speed: 44,  xp: 100, size: 36, color: 0x220044, gold: 10 },
+    FOG_CRAWLER:    { name: 'Fog Crawler',    hp: 56,  damage: 0,  speed: 60,  xp: 25, size: 22, color: 0x333355, targetsFire: true, gold: 3 },
 };
 
 const BUILDINGS = {

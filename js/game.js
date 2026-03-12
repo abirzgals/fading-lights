@@ -30,6 +30,7 @@ class GameScene extends Phaser.Scene {
         this.buildingsGroup = this.physics.add.staticGroup();
         this.enemies = this.physics.add.group();
         this.allies = this.physics.add.group();
+        this.enemyHpGraphics = this.add.graphics().setDepth(50);
 
         // --- World Generation ---
         this.generateWorld(centerTile);
@@ -525,6 +526,7 @@ class GameScene extends Phaser.Scene {
         this.updatePlayer(dt, time, delta);
         this.updateBonfires(dt);
         this.updateEnemies(dt);
+        this.drawEnemyHealth();
         this.updateAllies(dt);
         this.updateTurrets(dt);
         this.updateDropPickup();
@@ -1215,6 +1217,35 @@ class GameScene extends Phaser.Scene {
                     }
                 }
             }
+        }
+    }
+
+    drawEnemyHealth() {
+        const g = this.enemyHpGraphics;
+        g.clear();
+        for (const enemy of this.enemies.children.entries) {
+            if (!enemy.active) continue;
+            const hp = enemy.getData('hp');
+            const maxHp = enemy.getData('maxHp');
+            if (hp >= maxHp) continue; // full health = no indicator
+            const ratio = Math.max(0, hp / maxHp);
+            const size = enemy.getData('size') || 14;
+            const radius = size * 0.6 + 4;
+            const x = enemy.x;
+            const y = enemy.y - size - 6;
+            // Background circle (dark)
+            g.lineStyle(2.5, 0x000000, 0.5);
+            g.beginPath();
+            g.arc(x, y, radius, 0, Math.PI * 2);
+            g.strokePath();
+            // Health arc (pac-man style: colored arc proportional to remaining HP)
+            const color = ratio > 0.5 ? 0x44FF44 : ratio > 0.25 ? 0xFFAA00 : 0xFF3333;
+            const startAngle = -Math.PI / 2;
+            const endAngle = startAngle + ratio * Math.PI * 2;
+            g.lineStyle(2.5, color, 0.85);
+            g.beginPath();
+            g.arc(x, y, radius, startAngle, endAngle);
+            g.strokePath();
         }
     }
 
