@@ -208,18 +208,43 @@ class MenuScene extends Phaser.Scene {
             return name;
         };
 
-        // START GAME — solo play (use CREATE ROOM / JOIN for multiplayer)
-        this._startGame = () => {
+        // START GAME — try default room with quick timeout, then solo
+        this._startGame = async () => {
             const name = this._getName();
-            network.isHost = true;
-            network.worldSeed = network.generateSeed();
-            network.playerName = name;
             const statusEl = document.getElementById('room-status');
-            if (statusEl) {
-                statusEl.textContent = 'Playing solo';
-                statusEl.style.color = '#44FF44';
+            if (statusEl) statusEl.textContent = 'Connecting...';
+            this._setupWakeProgress();
+
+            // Try to join the default room (quick: single attempt only)
+            const origTimeout = network.WAKE_TIMEOUT;
+            network.WAKE_TIMEOUT = 0; // no retry loop — single fast attempt
+            const joined = await network.joinRoom(name, network.playerColor, 'MAIN');
+            network.WAKE_TIMEOUT = origTimeout;
+
+            if (joined) {
+                if (statusEl) {
+                    statusEl.textContent = 'Connected! Joining game...';
+                    statusEl.style.color = '#44FF44';
+                }
+                setTimeout(() => this._launchGame(), 800);
+                return;
             }
-            setTimeout(() => this._launchGame(), 400);
+
+            // Server awake but no room? Try hosting the default room (single attempt)
+            network.disconnect();
+            network.WAKE_TIMEOUT = 0;
+            const hostOk = await network._createRoomWithCode(name, network.playerColor, 'MAIN');
+            network.WAKE_TIMEOUT = origTimeout;
+
+            if (statusEl) {
+                if (hostOk) {
+                    statusEl.textContent = 'Hosting — waiting for players...';
+                    statusEl.style.color = '#44FF44';
+                } else {
+                    statusEl.textContent = 'Playing solo';
+                }
+            }
+            setTimeout(() => this._launchGame(), hostOk ? 1200 : 400);
         };
 
         // CREATE ROOM — host a multiplayer game
