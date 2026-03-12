@@ -32,6 +32,7 @@ const network = {
     onFuelAdded: null,
     onDropPickup: null,
     onChat: null,
+    onBuildingPlaced: null,
 
     // Config
     SYNC_RATE: 100,
@@ -324,6 +325,10 @@ const network = {
 
             case 'f': // fuel added to bonfire
                 if (this.onFuelAdded) this.onFuelAdded(msg.bonfireIdx, msg.amount);
+                break;
+
+            case 'bl': // building placed
+                if (this.onBuildingPlaced) this.onBuildingPlaced(msg.bType, msg.x, msg.y);
                 break;
 
             case 'c': // chat message

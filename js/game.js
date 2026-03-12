@@ -599,32 +599,13 @@ class GameScene extends Phaser.Scene {
                     gameState.resources[res] -= amount;
                 }
 
-                // Place building
-                const texKey = 'building_' + spot.config.type.toLowerCase();
-                const placed = this.buildingsGroup.create(spot.x, spot.y, texKey);
-                placed.setDepth(4);
-                placed.setData('type', spot.config.type);
-                placed.setData('hp', building.hp);
-                if (building.attackRange) {
-                    placed.setData('attackRange', building.attackRange);
-                    placed.setData('attackDamage', building.attackDamage);
-                    placed.setData('attackSpeed', building.attackSpeed);
-                    placed.setData('lastAttack', 0);
-                }
-                gameState.buildings.push({ type: spot.config.type, x: spot.x, y: spot.y });
+                this._placeBuilding(spot.config.type, spot.x, spot.y);
 
-                // Handle building effects
-                if (spot.config.type === 'OUTPOST') {
-                    this.createBonfire(spot.x, spot.y, false);
+                // Broadcast to peers
+                if (network.peerCount > 0) {
+                    network.broadcastReliable({ t: 'bl', bType: spot.config.type, x: spot.x, y: spot.y });
                 }
 
-                // Hide spot markers
-                spot.built = true;
-                spot.sprite.destroy();
-                spot.label.destroy();
-                spot.costText.destroy();
-
-                this.showFloatingText(spot.x, spot.y - 20, `Built ${building.name}!`, '#00FF88');
                 audioEngine.playBuild();
                 return true;
             }
@@ -1662,10 +1643,48 @@ class GameScene extends Phaser.Scene {
         });
     }
 
+    // Place a building at a build spot (shared by local build + network sync)
+    _placeBuilding(type, x, y) {
+        const building = BUILDINGS[type];
+        if (!building) return;
+
+        const texKey = 'building_' + type.toLowerCase();
+        const placed = this.buildingsGroup.create(x, y, texKey);
+        placed.setDepth(4);
+        placed.setData('type', type);
+        placed.setData('hp', building.hp);
+        if (building.attackRange) {
+            placed.setData('attackRange', building.attackRange);
+            placed.setData('attackDamage', building.attackDamage);
+            placed.setData('attackSpeed', building.attackSpeed);
+            placed.setData('lastAttack', 0);
+        }
+        gameState.buildings.push({ type, x, y });
+
+        // Handle building effects
+        if (type === 'OUTPOST') {
+            this.createBonfire(x, y, false);
+        }
+
+        // Mark matching build spot as built
+        for (const spot of this.buildSpots) {
+            if (!spot.built && Math.abs(spot.x - x) < 5 && Math.abs(spot.y - y) < 5) {
+                spot.built = true;
+                spot.sprite.destroy();
+                spot.label.destroy();
+                spot.costText.destroy();
+                break;
+            }
+        }
+
+        this.showFloatingText(x, y - 20, `Built ${building.name}!`, '#00FF88');
+    }
+
     // --------------------------------------------------------
     // Turret Auto-Attack
     // --------------------------------------------------------
     updateTurrets(dt) {
+        if (!network.isHost) return; // turret damage is host-authoritative
         const buildings = this.buildingsGroup.children.entries;
         for (const b of buildings) {
             if (!b.active) continue;
@@ -2135,6 +2154,11 @@ class GameScene extends Phaser.Scene {
             }
         };
 
+        // Building placed by peer
+        network.onBuildingPlaced = (type, x, y) => {
+            scene._placeBuilding(type, x, y);
+        };
+
         // Bonfire fuel sync from peers
         network.onFuelAdded = (bonfireIdx, amount) => {
             if (bonfireIdx >= 0 && bonfireIdx < scene.bonfires.length) {
@@ -2167,6 +2191,7 @@ class GameScene extends Phaser.Scene {
                 gameTime: gameState.time,
                 waveNumber: gameState.waveNumber,
                 fuelAdded: gameState.fuelAdded,
+                buildings: gameState.buildings.map(b => ({ type: b.type, x: b.x, y: b.y })),
             };
         });
 
@@ -2174,6 +2199,18 @@ class GameScene extends Phaser.Scene {
         network.onWorldSync = (msg) => {
             if (msg.fuelAdded !== undefined) gameState.fuelAdded = msg.fuelAdded;
             if (msg.waveNumber !== undefined) gameState.waveNumber = msg.waveNumber;
+            // Sync buildings from host
+            if (msg.buildings && msg.buildings.length) {
+                for (const b of msg.buildings) {
+                    // Only place if not already built at this spot
+                    const exists = gameState.buildings.some(
+                        existing => Math.abs(existing.x - b.x) < 5 && Math.abs(existing.y - b.y) < 5
+                    );
+                    if (!exists) {
+                        scene._placeBuilding(b.type, b.x, b.y);
+                    }
+                }
+            }
         };
 
         // Materialize any peers that connected before callbacks were set (race condition fix)
