@@ -2,7 +2,7 @@
 // GAME LAUNCH — Phaser config with proper scaling
 // ============================================================
 
-const GAME_VERSION = '0.5.2';
+const GAME_VERSION = '0.5.3';
 
 const game = new Phaser.Game({
     type: Phaser.AUTO,

@@ -108,6 +108,15 @@ class GameScene extends Phaser.Scene {
         // Group-level enemy colliders (handles all enemies automatically, no per-spawn leak)
         this.physics.add.collider(this.enemies, this.trees);
         this.physics.add.collider(this.enemies, this.stones);
+        // Rock walls & metal mines (created in generateWorld, colliders set here after player exists)
+        if (this.rockWalls) {
+            this.physics.add.collider(this.player, this.rockWalls);
+            this.physics.add.collider(this.enemies, this.rockWalls);
+        }
+        if (this.metalMines) {
+            this.physics.add.collider(this.player, this.metalMines);
+            this.physics.add.collider(this.enemies, this.metalMines);
+        }
 
         // --- Camera ---
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -560,8 +569,7 @@ class GameScene extends Phaser.Scene {
                 if (adjTx < worldSize) this._occupiedTiles.add(`${adjTx},${rty}`);
             }
         }
-        this.physics.add.collider(this.player, this.rockWalls);
-        this.physics.add.collider(this.enemies, this.rockWalls);
+        // Colliders added in create() after player is created
 
         // --- Metal mines (large, mineable deposits with lots of metal) ---
         this.metalMines = this.physics.add.staticGroup();
@@ -583,8 +591,7 @@ class GameScene extends Phaser.Scene {
             mine.setData('remaining', 300);
             this._occupiedTiles.add(`${mmx},${mmy}`);
         }
-        this.physics.add.collider(this.player, this.metalMines);
-        this.physics.add.collider(this.enemies, this.metalMines);
+        // Colliders added in create() after player is created
 
         // --- Second camp (unlit) at the edge of level 5 radius ---
         // Place deterministically using seeded RNG so both host + client agree
