@@ -71,6 +71,8 @@ class GameScene extends Phaser.Scene {
         this.remotePlayers = new Map(); // peerId -> { sprite, nameLabel, state, targetX, targetY }
         this._syncTimer = 0;
         this._hostSyncTimer = 0;
+        this._proximityIdleTime = 0; // seconds near another player while both idle
+        this._healTickTimer = 0;
         this._enemyIdCounter = 0; // unique IDs for enemies (host)
         this._setupNetwork();
 
@@ -540,6 +542,7 @@ class GameScene extends Phaser.Scene {
         gameState.time += dt;
 
         this.updatePlayer(dt, time, delta);
+        this.updateProximityHealing(dt);
         this.updateBonfires(dt);
         this.updateEnemies(dt);
         this.drawEnemyHealth();
@@ -846,6 +849,44 @@ class GameScene extends Phaser.Scene {
         }
         if (closest) {
             this._destroyResource(closest, dropType, dropAmount, false);
+        }
+    }
+
+    // --------------------------------------------------------
+    // Proximity Healing — idle near another player for 3s to heal
+    // --------------------------------------------------------
+    updateProximityHealing(dt) {
+        if (this.remotePlayers.size === 0 || gameState.hp >= CONFIG.PLAYER_MAX_HP) {
+            this._proximityIdleTime = 0;
+            return;
+        }
+
+        const p = this.player;
+        const isIdle = Math.abs(p.body.velocity.x) < 5 && Math.abs(p.body.velocity.y) < 5;
+        if (!isIdle) { this._proximityIdleTime = 0; return; }
+
+        // Check if any remote player is nearby (within 80px)
+        let nearbyPlayer = null;
+        for (const [, remote] of this.remotePlayers) {
+            const d = Phaser.Math.Distance.Between(p.x, p.y, remote.sprite.x, remote.sprite.y);
+            if (d < 80) { nearbyPlayer = remote; break; }
+        }
+
+        if (!nearbyPlayer) { this._proximityIdleTime = 0; return; }
+
+        this._proximityIdleTime += dt;
+        if (this._proximityIdleTime < 3) return;
+
+        // Heal every 0.8 seconds
+        this._healTickTimer += dt;
+        if (this._healTickTimer >= 0.8) {
+            this._healTickTimer = 0;
+            const healAmount = 3;
+            gameState.hp = Math.min(CONFIG.PLAYER_MAX_HP, gameState.hp + healAmount);
+            // Green + floating text at player position
+            this.showFloatingText(p.x, p.y - 30, '+' + healAmount, '#00FF66');
+            // Also show a + near the other player
+            this.showFloatingText(nearbyPlayer.sprite.x, nearbyPlayer.sprite.y - 30, '+', '#00FF66');
         }
     }
 
