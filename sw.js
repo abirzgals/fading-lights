@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fading-light-0.5.3';
+const CACHE_NAME = 'fading-light-0.5.4';
 const ASSETS = [
     './',
     './index.html',

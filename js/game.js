@@ -541,32 +541,80 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // --- Unbreakable rock walls (large boulder formations) ---
+        // --- Unbreakable rock walls (maze-like ruins) ---
+        // Few formations (5), but each is a large maze chunk — like ruined city walls
         this.rockWalls = this.physics.add.staticGroup();
-        for (let r = 0; r < 18; r++) {
-            // Place rock walls in clusters of 1-3
-            const rwx = Math.floor(rng() * (worldSize - 20)) + 10;
-            const rwy = Math.floor(rng() * (worldSize - 20)) + 10;
-            const rdx = rwx - cx, rdy = rwy - cy;
-            if (rdx * rdx + rdy * rdy < 8 * 8) continue; // not too close to center
-            const clusterSize = 1 + Math.floor(rng() * 3);
-            for (let c = 0; c < clusterSize; c++) {
-                const rtx = rwx + Math.floor(rng() * 3 - 1);
-                const rty = rwy + Math.floor(rng() * 2 - 1);
-                if (this._occupiedTiles.has(`${rtx},${rty}`)) continue;
-                if (isPath(rtx, rty)) continue;
-                const rx = rtx * T + 16;
-                const ry = rty * T + 16;
-                const rock = this.rockWalls.create(rx, ry, 'rock_wall');
-                rock.setDepth(2);
-                rock.body.setSize(48, 28);
-                rock.body.setOffset(8, 14);
-                rock.refreshBody();
-                rock.setData('type', 'rock_wall');
-                this._occupiedTiles.add(`${rtx},${rty}`);
-                // Also block adjacent tile since texture is 64px wide
-                const adjTx = rtx + 1;
-                if (adjTx < worldSize) this._occupiedTiles.add(`${adjTx},${rty}`);
+        const placeRock = (rtx, rty) => {
+            if (rtx < 2 || rtx >= worldSize - 2 || rty < 2 || rty >= worldSize - 2) return false;
+            if (this._occupiedTiles.has(`${rtx},${rty}`)) return false;
+            if (isPath(rtx, rty)) return false;
+            const rx = rtx * T + 16;
+            const ry = rty * T + 16;
+            const rock = this.rockWalls.create(rx, ry, 'rock_wall');
+            rock.setDepth(2);
+            rock.body.setSize(48, 28);
+            rock.body.setOffset(8, 14);
+            rock.refreshBody();
+            rock.setData('type', 'rock_wall');
+            this._occupiedTiles.add(`${rtx},${rty}`);
+            const adjTx = rtx + 1;
+            if (adjTx < worldSize) this._occupiedTiles.add(`${adjTx},${rty}`);
+            return true;
+        };
+
+        for (let r = 0; r < 5; r++) {
+            // Pick origin far from center
+            let rwx, rwy, attempts = 0;
+            do {
+                rwx = Math.floor(rng() * (worldSize - 30)) + 15;
+                rwy = Math.floor(rng() * (worldSize - 30)) + 15;
+                attempts++;
+            } while (attempts < 20 && (rwx - cx) * (rwx - cx) + (rwy - cy) * (rwy - cy) < 20 * 20);
+            if (attempts >= 20) continue;
+
+            // Random-walk maze: walk in cardinal directions, placing walls along the way
+            // Creates corridors, L-shapes, and dead ends
+            let wx = rwx, wy = rwy;
+            const segmentCount = 12 + Math.floor(rng() * 14); // 12-25 wall segments per ruin
+            const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+            let dir = dirs[Math.floor(rng() * 4)];
+
+            for (let s = 0; s < segmentCount; s++) {
+                // Place a wall segment (line of 2-5 rocks in current direction)
+                const segLen = 2 + Math.floor(rng() * 4);
+                for (let i = 0; i < segLen; i++) {
+                    placeRock(wx, wy);
+                    wx += dir[0];
+                    wy += dir[1];
+                }
+
+                // Turn: pick a perpendicular direction (maze-like corners)
+                if (rng() < 0.7) {
+                    // Turn 90 degrees
+                    if (dir[0] !== 0) {
+                        dir = [0, rng() < 0.5 ? 1 : -1];
+                    } else {
+                        dir = [rng() < 0.5 ? 1 : -1, 0];
+                    }
+                }
+                // Occasionally leave a gap (doorway/opening in the wall)
+                if (rng() < 0.25) {
+                    wx += dir[0] * 2;
+                    wy += dir[1] * 2;
+                }
+            }
+
+            // Clear trees inside/around the ruin footprint for visibility
+            const ruinCx = (rwx + wx) / 2, ruinCy = (rwy + wy) / 2;
+            const ruinR = Math.max(Math.abs(wx - rwx), Math.abs(wy - rwy)) / 2 + 3;
+            for (const tree of [...this.trees.children.entries]) {
+                const ttx = Math.floor(tree.x / T);
+                const tty = Math.floor(tree.y / T);
+                const dx = ttx - ruinCx, dy = tty - ruinCy;
+                if (dx * dx + dy * dy < ruinR * ruinR) {
+                    this._occupiedTiles.delete(`${ttx},${tty}`);
+                    tree.destroy();
+                }
             }
         }
         // Colliders added in create() after player is created
@@ -577,7 +625,7 @@ class GameScene extends Phaser.Scene {
             const mmx = Math.floor(rng() * (worldSize - 30)) + 15;
             const mmy = Math.floor(rng() * (worldSize - 30)) + 15;
             const mmdx = mmx - cx, mmdy = mmy - cy;
-            if (mmdx * mmdx + mmdy * mmdy < 15 * 15) continue; // not too close
+            if (mmdx * mmdx + mmdy * mmdy < 25 * 25) continue; // not too close
             if (this._occupiedTiles.has(`${mmx},${mmy}`)) continue;
             if (isPath(mmx, mmy)) continue;
             const mx = mmx * T + 16;
