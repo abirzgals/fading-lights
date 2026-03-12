@@ -1436,8 +1436,9 @@ class GameScene extends Phaser.Scene {
     updateSpawning(dt) {
         // Only host spawns enemies
         if (!network.isHost) return;
-        // Don't spawn enemies until player has added fuel at least once
-        if (gameState.fuelAdded < 1) return;
+        // Don't spawn enemies until any camp has been fueled at least once
+        const anyFueled = this.bonfires.some(b => (b.getData('campFuelAdded') || 0) >= 1);
+        if (!anyFueled) return;
 
         this.spawnTimer += dt * 1000;
         this.waveTimer += dt;
@@ -1450,27 +1451,35 @@ class GameScene extends Phaser.Scene {
             audioEngine.playWave();
         }
 
+        // Base spawns: normal enemies from the darkness
+        const maxLevel = gameState.fireLevel;
         if (this.spawnTimer >= CONFIG.SPAWN_INTERVAL && this.enemies.countActive() < CONFIG.MAX_ENEMIES) {
             this.spawnTimer = 0;
-
-            // Early game: spawn 1 at a time. Ramps up with waves.
             const count = gameState.waveNumber < 3 ? 1 : Math.min(2, Math.floor(gameState.waveNumber / 3));
             for (let i = 0; i < count; i++) {
                 this.spawnEnemy();
             }
         }
 
-        // Raid spawns: from fire level 2+, enemies spawn far away and march to camp
-        if (gameState.fireLevel >= 2) {
+        // Raid spawns: tower-defense waves from level 2+ of ANY camp
+        if (maxLevel >= 2) {
             this.raidSpawnTimer = (this.raidSpawnTimer || 0) + dt * 1000;
-            // Spawn faster at higher levels
-            const raidInterval = CONFIG.RAID_SPAWN_INTERVAL / (1 + (gameState.fireLevel - 2) * 0.3);
-            if (this.raidSpawnTimer >= raidInterval && this.enemies.countActive() < CONFIG.MAX_ENEMIES + 5) {
+            // Faster raids at higher levels, more aggressive scaling
+            const raidInterval = CONFIG.RAID_SPAWN_INTERVAL / (1 + (maxLevel - 2) * 0.4);
+            if (this.raidSpawnTimer >= raidInterval && this.enemies.countActive() < CONFIG.MAX_ENEMIES + 8) {
                 this.raidSpawnTimer = 0;
-                // Spawn 1-3 raiders depending on fire level
-                const raidCount = Math.min(3, 1 + Math.floor((gameState.fireLevel - 2) / 1));
+                // More raiders at higher levels (2-4)
+                const raidCount = Math.min(4, 1 + Math.floor((maxLevel - 1)));
+                // Target a random fueled camp
+                const fueledCamps = this.bonfires.filter(b =>
+                    (b.getData('campFuelAdded') || 0) >= 1 && b.getData('fuel') > 0
+                );
+                const targetCamp = fueledCamps.length > 0
+                    ? fueledCamps[Math.floor(Math.random() * fueledCamps.length)]
+                    : this.bonfires[0];
+
                 for (let i = 0; i < raidCount; i++) {
-                    this.spawnRaider();
+                    this.spawnRaider(targetCamp);
                 }
             }
         }
@@ -1577,9 +1586,9 @@ class GameScene extends Phaser.Scene {
     }
 
     // Spawn a raider — spawns far in the dark, marches toward camp
-    spawnRaider() {
-        const mainBonfire = this.bonfires[0];
-        const lightRadius = this.getLightRadius(mainBonfire);
+    spawnRaider(targetCamp) {
+        const target = targetCamp || this.bonfires[0];
+        const lightRadius = this.getLightRadius(target);
 
         // Pick raider type based on fire level
         let type;
@@ -1608,8 +1617,8 @@ class GameScene extends Phaser.Scene {
         for (let attempt = 0; attempt < 10; attempt++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = lightRadius * 2 + Math.random() * lightRadius;
-            sx = mainBonfire.x + Math.cos(angle) * dist;
-            sy = mainBonfire.y + Math.sin(angle) * dist;
+            sx = target.x + Math.cos(angle) * dist;
+            sy = target.y + Math.sin(angle) * dist;
             const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
             const tty = Math.floor(sy / CONFIG.TILE_SIZE);
             if (!this._occupiedTiles || !this._occupiedTiles.has(`${ttx},${tty}`)) break;
@@ -1619,6 +1628,7 @@ class GameScene extends Phaser.Scene {
             SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
+            SHADOW_ARCHER: 'enemy_archer', VOID_MAGE: 'enemy_mage',
         }[type];
 
         const enemyId = this._enemyIdCounter++;
@@ -1639,8 +1649,8 @@ class GameScene extends Phaser.Scene {
         // Raider-specific data
         enemy.setData('isRaider', true);
         enemy.setData('raidMode', 'march'); // 'march' = heading to camp, 'chase' = chasing player
-        enemy.setData('raidTargetX', mainBonfire.x);
-        enemy.setData('raidTargetY', mainBonfire.y);
+        enemy.setData('raidTargetX', target.x);
+        enemy.setData('raidTargetY', target.y);
         enemy.body.setAllowGravity(false);
 
         this.physics.add.collider(enemy, this.trees);
@@ -1793,6 +1803,7 @@ class GameScene extends Phaser.Scene {
             SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
+            SHADOW_ARCHER: 'enemy_archer', VOID_MAGE: 'enemy_mage',
         }[type];
         const enemy = this.enemies.create(x, y, textureKey);
         enemy.setDepth(5);

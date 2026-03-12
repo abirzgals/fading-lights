@@ -41,7 +41,7 @@ const CONFIG = {
     RAIN_START_LEVEL: 2,          // fire level needed before rain starts
 
     // Raider system (camp level 2+)
-    RAID_SPAWN_INTERVAL: 12000,  // ms between raid spawns
+    RAID_SPAWN_INTERVAL: 8000,   // ms between raid spawns (tower-defense pace)
     RAID_SIGHT_RANGE: 160,       // px — raider notices player
     RAID_LEASH_RANGE: 280,       // px — raider gives up chasing player
     RAID_ATTACK_RANGE: 35,       // px — raider attacks camp bonfire/buildings
