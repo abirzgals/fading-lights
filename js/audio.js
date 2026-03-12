@@ -188,6 +188,24 @@ class AudioEngine {
         return source;
     }
 
+    // --- SPATIAL ONE-SHOT ---
+    // Play a sound at a world position — volume scales with distance from local player
+    playOneShotAt(key, worldX, worldY, pitchVariation = 0) {
+        const sc = window._gs;
+        if (!sc || !sc.player) return;
+        const dist = Math.hypot(worldX - sc.player.x, worldY - sc.player.y);
+        const nearDist = 60;   // full volume within this range
+        const farDist = 500;   // silent beyond this range
+        if (dist > farDist) return;
+        let vol = 1.0;
+        if (dist > nearDist) {
+            vol = 1.0 - (dist - nearDist) / (farDist - nearDist);
+            vol = vol * vol; // quadratic falloff for natural feel
+        }
+        if (vol < 0.02) return;
+        this.playOneShot(key, vol, pitchVariation);
+    }
+
     // --- CONVENIENCE METHODS ---
     // Uses fallback to 'attack' sound if dedicated file is missing
     playAttack()     { this.playOneShot('attack', 1.0, 0.05); }

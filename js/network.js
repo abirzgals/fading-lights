@@ -22,6 +22,7 @@ const network = {
     onPeerLeft: null,
     onPeerState: null,
     onPeerAttack: null,
+    onPeerAction: null,  // sound-producing actions (chop, pickup, feed, build, hit)
     onWorldSync: null,
     onEnemySync: null,
     onResourceEvent: null,
@@ -284,6 +285,10 @@ const network = {
                 if (this.onPeerAttack) this.onPeerAttack(fromPeerId, msg);
                 break;
 
+            case 'pa': // peer action sound (chop, pickup, feed, build, hit)
+                if (this.onPeerAction) this.onPeerAction(fromPeerId, msg);
+                break;
+
             case 'w': // world sync from host
                 this.worldSeed = msg.seed;
                 this._pendingWorldSync = msg; // buffer for late subscribers
@@ -430,6 +435,10 @@ const network = {
 
     broadcastAttack(data) {
         this._broadcast({ t: 'a', ...data });
+    },
+
+    broadcastAction(soundKey, x, y) {
+        this._broadcast({ t: 'pa', snd: soundKey, x: Math.round(x), y: Math.round(y) });
     },
 
     broadcastReliable(data) {

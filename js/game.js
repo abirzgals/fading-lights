@@ -1085,6 +1085,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 audioEngine.playBuild();
+                network.broadcastAction('build', spot.x, spot.y);
                 return true;
             }
         }
@@ -1295,6 +1296,7 @@ class GameScene extends Phaser.Scene {
                     obj.setData('hits', hits);
                     this.showFloatingText(obj.x, obj.y - 20, `${hits}/${maxHits}`, '#FFaa00');
                     audioEngine.playChop();
+                    network.broadcastAction('chop', obj.x, obj.y);
                     if (hits >= maxHits) {
                         this._destroyResource(obj, dropType, dropAmount, true);
                     }
@@ -1316,6 +1318,7 @@ class GameScene extends Phaser.Scene {
                 if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
                 this.damageEnemy(enemy, dmg);
                 audioEngine.playHit();
+                network.broadcastAction('hit', enemy.x, enemy.y);
             }
         }
 
@@ -1359,6 +1362,7 @@ class GameScene extends Phaser.Scene {
                     bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD));
                     this.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
                     audioEngine.playFireFuel();
+                    network.broadcastAction('fire_fuel', bonfire.x, bonfire.y);
 
                     // Light up second camp on first fuel
                     if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
@@ -2857,6 +2861,7 @@ class GameScene extends Phaser.Scene {
                 this._trackObjective(type + '_collected', 1);
                 this.showFloatingText(drop.x, drop.y - 10, `+1 ${type}`, '#88FF88');
                 audioEngine.playPickup();
+                network.broadcastAction('pickup', drop.x, drop.y);
                 // Broadcast pickup to peers so they remove the drop
                 if (network.peerCount > 0) {
                     network.broadcastReliable({ t: 'dp', x: Math.round(drop.x), y: Math.round(drop.y), res: type });
@@ -2963,6 +2968,7 @@ class GameScene extends Phaser.Scene {
 
         this.showFloatingText(bx, by - 20, `Built ${building.name}!`, '#00FF88');
         audioEngine.playBuild();
+        network.broadcastAction('build', bx, by);
         gameState.buildMode = false;
         gameState.buildType = null;
         this.buildGhost.setVisible(false);
@@ -3215,6 +3221,13 @@ class GameScene extends Phaser.Scene {
                 duration: 200,
                 onComplete: () => slash.destroy()
             });
+            // Spatial attack sound
+            audioEngine.playOneShotAt('attack', data.ax, data.ay, 0.05);
+        };
+
+        // Peer action sounds (chop, pickup, feed, build, hit)
+        network.onPeerAction = (peerId, msg) => {
+            audioEngine.playOneShotAt(msg.snd, msg.x, msg.y, 0.1);
         };
 
         // Chat message from peer
