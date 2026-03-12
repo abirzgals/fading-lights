@@ -208,36 +208,18 @@ class MenuScene extends Phaser.Scene {
             return name;
         };
 
-        // START GAME — auto-join default room (first player = host)
-        this._startGame = async () => {
+        // START GAME — solo play (use CREATE ROOM / JOIN for multiplayer)
+        this._startGame = () => {
             const name = this._getName();
+            network.isHost = true;
+            network.worldSeed = network.generateSeed();
+            network.playerName = name;
             const statusEl = document.getElementById('room-status');
-            if (statusEl) statusEl.textContent = 'Connecting...';
-            this._setupWakeProgress();
-
-            // Try to join the default room first (someone else is hosting)
-            const joined = await network.joinRoom(name, network.playerColor, 'MAIN');
-            if (joined) {
-                if (statusEl) {
-                    statusEl.textContent = 'Connected! Joining game...';
-                    statusEl.style.color = '#44FF44';
-                }
-                setTimeout(() => this._launchGame(), 800);
-                return;
-            }
-
-            // No host found — we become the host of default room
-            network.disconnect(); // clean up failed join attempt
-            const hostOk = await network._createRoomWithCode(name, network.playerColor, 'MAIN');
             if (statusEl) {
-                if (hostOk) {
-                    statusEl.textContent = 'Hosting — waiting for players...';
-                    statusEl.style.color = '#44FF44';
-                } else {
-                    statusEl.textContent = 'Playing solo';
-                }
+                statusEl.textContent = 'Playing solo';
+                statusEl.style.color = '#44FF44';
             }
-            setTimeout(() => this._launchGame(), 1200);
+            setTimeout(() => this._launchGame(), 400);
         };
 
         // CREATE ROOM — host a multiplayer game
