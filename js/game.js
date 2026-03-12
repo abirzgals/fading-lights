@@ -585,7 +585,12 @@ class GameScene extends Phaser.Scene {
                 if (!building) continue;
 
                 if (!this.canAfford(building.cost)) {
-                    this.showFloatingText(spot.x, spot.y - 20, 'Not enough resources!', '#FF4444');
+                    const missing = [];
+                    for (const [res, amt] of Object.entries(building.cost)) {
+                        const have = gameState.resources[res] || 0;
+                        if (have < amt) missing.push(`${res}: ${have}/${amt}`);
+                    }
+                    this.showFloatingText(spot.x, spot.y - 20, `Need: ${missing.join(', ')}`, '#FF4444');
                     return true; // consumed the interact
                 }
 
@@ -728,6 +733,23 @@ class GameScene extends Phaser.Scene {
         const wantAttack = kbAttack || mobileAttack || this._mouseLeftHeld;
         if (wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
             if (this._mouseLeftHeld) this.updateFacingToMouse(this.input.activePointer);
+            // Mobile/keyboard: auto-face nearest choppable resource if in range
+            if (!this._mouseLeftHeld) {
+                const weapon = WEAPONS[gameState.weapon];
+                let nearRes = null, nearDist = weapon.range + 20;
+                for (const group of [this.trees, this.stones, this.metals]) {
+                    for (const obj of group.children.entries) {
+                        if (!obj.active) continue;
+                        const d = Phaser.Math.Distance.Between(p.x, p.y, obj.x, obj.y);
+                        if (d < nearDist) { nearDist = d; nearRes = obj; }
+                    }
+                }
+                if (nearRes) {
+                    const a = Phaser.Math.Angle.Between(p.x, p.y, nearRes.x, nearRes.y);
+                    p.facing = { x: Math.cos(a), y: Math.sin(a) };
+                    if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+                }
+            }
             this.playerAttack();
         }
 
