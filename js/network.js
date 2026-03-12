@@ -1,8 +1,8 @@
 // ============================================================
-// NETWORK MODULE — WebRTC P2P multiplayer via PeerJS (no custom server!)
-// Uses free PeerJS cloud signaling: 0.peerjs.com
-// Host = first player (authoritative for enemies, world, bonfires)
-// Star topology: all clients connect to host, host relays
+// NETWORK MODULE — WebSocket relay multiplayer (no WebRTC!)
+// Connects to centralized relay server for 100% internet reliability
+// Host = first player in room (authoritative for enemies, world)
+// Star topology: server relays all messages
 // ============================================================
 
 const network = {
@@ -10,10 +10,10 @@ const network = {
     peerId: null,
     playerName: '',
     playerColor: 0x557755,
-    peer: null,              // PeerJS instance
-    peers: new Map(),        // peerId -> { name, color, conn, state }
+    ws: null,                // WebSocket connection
+    peers: new Map(),        // peerId -> { name, color, state, lastUpdate, isHost }
     connected: false,
-    roomCode: '',            // 4-char room code
+    roomCode: '',
     isHost: false,
     worldSeed: 0,
 
@@ -34,9 +34,18 @@ const network = {
     onChat: null,
 
     // Config
-    ROOM_PREFIX: 'fading-light-',
     SYNC_RATE: 100,
     HOST_SYNC_RATE: 200,
+
+    // Relay server URL — change this after deploying to Render
+    RELAY_URL: (() => {
+        // Auto-detect: use localhost in dev, deployed URL in production
+        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+            return 'ws://localhost:9090';
+        }
+        // TODO: Replace with your Render deployment URL
+        return 'wss://fading-light-relay.onrender.com';
+    })(),
 
     // Available tshirt colors
     TSHIRT_COLORS: [
@@ -45,7 +54,7 @@ const network = {
     ],
 
     generateRoomCode() {
-        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; // no ambiguous chars
+        const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
         let code = '';
         for (let i = 0; i < 4; i++) code += chars[Math.floor(Math.random() * chars.length)];
         return code;
@@ -78,306 +87,161 @@ const network = {
         this.playerName = name;
     },
 
-    // Host: create room and wait for players
-    createRoom(name, color) {
-        this.playerName = name;
-        this.playerColor = color;
-        this.isHost = true;
-        this.worldSeed = this.generateSeed();
-        this.roomCode = this.generateRoomCode();
-
-        const hostId = this.ROOM_PREFIX + this.roomCode;
-
-        return new Promise((resolve, reject) => {
-            this.peer = new Peer(hostId);
-
-            const timeout = setTimeout(() => {
-                console.warn('PeerJS connection timeout, playing solo.');
-                resolve(false);
-            }, 8000);
-
-            this.peer.on('open', (id) => {
-                clearTimeout(timeout);
-                this.peerId = id;
-                this.connected = true;
-                console.log('HOST room created. Code:', this.roomCode, 'Seed:', this.worldSeed);
-
-                // Listen for incoming connections
-                this.peer.on('connection', (conn) => {
-                    this._handleIncomingConnection(conn);
-                });
-
-                resolve(true);
-            });
-
-            this.peer.on('error', (err) => {
-                clearTimeout(timeout);
-                if (err.type === 'unavailable-id') {
-                    // Room code collision — regenerate
-                    this.peer.destroy();
-                    this.roomCode = this.generateRoomCode();
-                    this.createRoom(name, color).then(resolve).catch(reject);
-                    return;
-                }
-                console.warn('PeerJS error:', err.type, err.message);
-                resolve(false);
-            });
-        });
-    },
-
-    // Host: create room with a specific code
-    _createRoomWithCode(name, color, code) {
-        this.playerName = name;
-        this.playerColor = color;
-        this.isHost = true;
-        this.worldSeed = this.generateSeed();
-        this.roomCode = code;
-
-        const hostId = this.ROOM_PREFIX + code;
-
+    // Connect to relay server and join/create a room
+    _connectWS(roomCode) {
         return new Promise((resolve) => {
-            this.peer = new Peer(hostId);
-
             const timeout = setTimeout(() => {
-                console.warn('PeerJS connection timeout, playing solo.');
+                console.warn('WebSocket connection timeout');
                 resolve(false);
             }, 8000);
 
-            this.peer.on('open', (id) => {
+            try {
+                this.ws = new WebSocket(this.RELAY_URL);
+            } catch (e) {
                 clearTimeout(timeout);
-                this.peerId = id;
-                this.connected = true;
-                console.log('HOST room created. Code:', code, 'Seed:', this.worldSeed);
-
-                this.peer.on('connection', (conn) => {
-                    this._handleIncomingConnection(conn);
-                });
-
-                resolve(true);
-            });
-
-            this.peer.on('error', (err) => {
-                clearTimeout(timeout);
-                console.warn('PeerJS error:', err.type, err.message);
+                console.warn('WebSocket creation failed:', e);
                 resolve(false);
-            });
-        });
-    },
+                return;
+            }
 
-    // Client: join existing room by code
-    joinRoom(name, color, roomCode) {
-        this.playerName = name;
-        this.playerColor = color;
-        this.isHost = false;
-        this.roomCode = roomCode.toUpperCase();
+            this.ws.onopen = () => {
+                // Send join message
+                this.ws.send(JSON.stringify({
+                    type: 'join',
+                    roomCode: roomCode,
+                    name: this.playerName,
+                    color: this.playerColor,
+                }));
+            };
 
-        const hostId = this.ROOM_PREFIX + this.roomCode;
+            this.ws.onmessage = (event) => {
+                let msg;
+                try { msg = JSON.parse(event.data); } catch { return; }
 
-        return new Promise((resolve, reject) => {
-            this.peer = new Peer(); // random ID
-
-            const timeout = setTimeout(() => {
-                console.warn('PeerJS connection timeout, playing solo.');
-                this.isHost = true;
-                this.worldSeed = this.generateSeed();
-                resolve(false);
-            }, 8000);
-
-            this.peer.on('open', (id) => {
-                this.peerId = id;
-
-                // Connect to host
-                const conn = this.peer.connect(hostId, {
-                    metadata: { name, color },
-                    reliable: true,
-                });
-
-                conn.on('open', () => {
+                if (msg.type === 'joined') {
                     clearTimeout(timeout);
+                    this.peerId = msg.peerId;
+                    this.isHost = msg.isHost;
+                    this.roomCode = msg.roomCode;
                     this.connected = true;
 
-                    // Send our intro
-                    conn.send(JSON.stringify({
-                        t: 'intro',
-                        name: this.playerName,
-                        color: this.playerColor,
-                    }));
+                    if (this.isHost) {
+                        this.worldSeed = this.generateSeed();
+                    }
 
-                    // Set up host connection
-                    const peerData = {
-                        name: 'Host',
-                        color: 0x557755,
-                        conn,
-                        state: null,
-                        lastUpdate: 0,
-                        isHost: true,
-                    };
-                    this.peers.set(hostId, peerData);
-                    this._setupConnection(conn, hostId);
+                    // Register existing peers
+                    for (const p of msg.peers) {
+                        this.peers.set(p.peerId, {
+                            name: p.name,
+                            color: p.color,
+                            state: null,
+                            lastUpdate: 0,
+                            isHost: p.isHost,
+                        });
+                    }
 
-                    console.log('Connected to host room:', this.roomCode);
+                    console.log(`Connected to room ${msg.roomCode} as ${msg.isHost ? 'HOST' : 'CLIENT'}. Peers: ${msg.peers.length}`);
                     resolve(true);
-                });
+                    return;
+                }
 
-                conn.on('error', (err) => {
-                    clearTimeout(timeout);
-                    console.warn('Connection to host failed:', err);
-                    this.isHost = true;
-                    this.worldSeed = this.generateSeed();
-                    resolve(false);
-                });
-            });
-
-            this.peer.on('error', (err) => {
-                clearTimeout(timeout);
-                console.warn('PeerJS error:', err.type, err.message);
-                this.isHost = true;
-                this.worldSeed = this.generateSeed();
-                resolve(false);
-            });
-        });
-    },
-
-    // Backwards-compatible connect method (used by game.js)
-    connect(name, color, roomId) {
-        // If already connected (room was set up in menu), just resolve
-        if (this.connected) {
-            return Promise.resolve(true);
-        }
-        // Fallback: create a solo game
-        this.isHost = true;
-        this.worldSeed = this.generateSeed();
-        return Promise.resolve(false);
-    },
-
-    _handleIncomingConnection(conn) {
-        const peerId = conn.peer;
-        const meta = conn.metadata || {};
-
-        conn.on('open', () => {
-            const peerData = {
-                name: meta.name || 'Player',
-                color: meta.color || this.getRandomColor(),
-                conn,
-                state: null,
-                lastUpdate: 0,
+                // Handle other server messages
+                this._handleServerMessage(msg);
             };
-            this.peers.set(peerId, peerData);
-            this._setupConnection(conn, peerId);
 
-            // Send world state to new peer
-            conn.send(JSON.stringify({
-                t: 'w',
-                seed: this.worldSeed,
-                hostName: this.playerName,
-                hostColor: this.playerColor,
-            }));
-
-            // Tell new peer about existing peers
-            const peerList = [];
-            for (const [id, p] of this.peers) {
-                if (id !== peerId) {
-                    peerList.push({ peerId: id, name: p.name, color: p.color });
+            this.ws.onclose = () => {
+                clearTimeout(timeout);
+                if (!this.connected) {
+                    resolve(false);
+                    return;
                 }
-            }
-            if (peerList.length > 0) {
-                conn.send(JSON.stringify({ t: 'peer_list', peers: peerList }));
-            }
+                console.log('WebSocket disconnected');
+                this.connected = false;
+            };
 
-            // Tell existing peers about new peer
-            for (const [id, p] of this.peers) {
-                if (id !== peerId && p.conn) {
-                    try {
-                        p.conn.send(JSON.stringify({
-                            t: 'new_peer',
-                            peerId,
-                            name: peerData.name,
-                            color: peerData.color,
-                        }));
-                    } catch {}
-                }
-            }
-
-            // Notify game
-            if (this.onPeerJoined) this.onPeerJoined(peerId, peerData.name, peerData.color);
-            console.log(`${peerData.name} joined the game`);
-
-            // Send full world state if getter registered
-            if (this._getWorldState) {
-                const worldState = this._getWorldState();
-                conn.send(JSON.stringify({ t: 'w', ...worldState }));
-            }
+            this.ws.onerror = (err) => {
+                clearTimeout(timeout);
+                console.warn('WebSocket error:', err);
+                resolve(false);
+            };
         });
     },
 
-    _setupConnection(conn, peerId) {
-        conn.on('data', (raw) => {
-            const msg = typeof raw === 'string' ? JSON.parse(raw) : raw;
-            this._handlePeerMessage(peerId, msg);
-        });
+    _handleServerMessage(msg) {
+        switch (msg.type) {
+            case 'peer_joined': {
+                const { peerId, name, color } = msg;
+                this.peers.set(peerId, {
+                    name,
+                    color,
+                    state: null,
+                    lastUpdate: 0,
+                    isHost: false,
+                });
+                if (this.onPeerJoined) this.onPeerJoined(peerId, name, color);
+                console.log(`${name} joined the game`);
 
-        conn.on('close', () => {
-            this._removePeer(peerId);
-        });
+                // Host: send world state to new peer
+                if (this.isHost && this._getWorldState) {
+                    const worldState = this._getWorldState();
+                    this._sendTo(peerId, {
+                        t: 'w',
+                        seed: this.worldSeed,
+                        hostName: this.playerName,
+                        hostColor: this.playerColor,
+                        ...worldState,
+                    });
+                }
+                break;
+            }
 
-        conn.on('error', () => {
-            this._removePeer(peerId);
-        });
+            case 'peer_left': {
+                this._removePeer(msg.peerId);
+                break;
+            }
+
+            case 'host_changed': {
+                const newHostId = msg.newHostId;
+                if (newHostId === this.peerId) {
+                    this.isHost = true;
+                    console.log('You are now the HOST');
+                }
+                // Update peer host status
+                for (const [id, peer] of this.peers) {
+                    peer.isHost = (id === newHostId);
+                }
+                break;
+            }
+
+            case 'game': {
+                // Game message relayed from another peer
+                this._handleGameMessage(msg.from, msg.data);
+                break;
+            }
+        }
     },
 
-    _handlePeerMessage(peerId, msg) {
-        const peer = this.peers.get(peerId);
+    _handleGameMessage(fromPeerId, msg) {
+        const peer = this.peers.get(fromPeerId);
         if (!peer) return;
 
         switch (msg.t) {
-            case 'intro':
-                // Client sent their info
-                peer.name = msg.name;
-                peer.color = msg.color;
-                break;
-
-            case 's': // state update (position, facing, moving)
-                // If this is a relayed message (from another client via host), skip — handled below
-                if (msg.from && msg.from !== peerId) break;
+            case 's': // state update (position, facing)
                 peer.state = msg;
                 peer.lastUpdate = Date.now();
-                if (this.onPeerState) this.onPeerState(peerId, msg);
-                // Host relays position to other clients
-                if (this.isHost) {
-                    const relay = JSON.stringify({ ...msg, from: peerId });
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(relay); } catch {}
-                        }
-                    }
-                }
-                break;
-
-            case 's_relay': // relayed state from host (for client-to-client via host)
-                if (this.onPeerState) this.onPeerState(msg.from, msg);
+                if (this.onPeerState) this.onPeerState(fromPeerId, msg);
                 break;
 
             case 'a': // attack
-                if (msg.from && msg.from !== peerId) break;
-                if (this.onPeerAttack) this.onPeerAttack(peerId, msg);
-                // Host relays attacks to other clients
-                if (this.isHost) {
-                    const relay = JSON.stringify({ ...msg, from: peerId });
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(relay); } catch {}
-                        }
-                    }
-                }
+                if (this.onPeerAttack) this.onPeerAttack(fromPeerId, msg);
                 break;
 
             case 'w': // world sync from host
                 this.worldSeed = msg.seed;
-                // Update host peer info
                 if (msg.hostName && peer.isHost) {
                     peer.name = msg.hostName;
                     peer.color = msg.hostColor || peer.color;
-                    if (this.onPeerJoined) this.onPeerJoined(peerId, peer.name, peer.color);
+                    if (this.onPeerJoined) this.onPeerJoined(fromPeerId, peer.name, peer.color);
                 }
                 if (this.onWorldSync) this.onWorldSync(msg);
                 break;
@@ -390,16 +254,8 @@ const network = {
                 if (this.onResourceEvent) this.onResourceEvent(msg);
                 break;
 
-            case 'rd': // resource destroyed by peer
+            case 'rd': // resource destroyed
                 if (this.onResourceEvent) this.onResourceEvent(msg);
-                // Host relays to other clients
-                if (this.isHost) {
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(JSON.stringify(msg)); } catch {}
-                        }
-                    }
-                }
                 break;
 
             case 'es': // enemy spawn from host
@@ -412,7 +268,7 @@ const network = {
 
             case 'k': // enemy damage (from client to host)
                 if (this.isHost && this.onEnemyDamage) {
-                    this.onEnemyDamage(msg.enemyId, msg.damage, peerId);
+                    this.onEnemyDamage(msg.enemyId, msg.damage, fromPeerId);
                 }
                 break;
 
@@ -420,177 +276,109 @@ const network = {
                 if (this.onEnemyDied) this.onEnemyDied(msg.enemyId);
                 break;
 
-            case 'dp': // drop picked up by peer
+            case 'dp': // drop picked up
                 if (this.onDropPickup) this.onDropPickup(msg.x, msg.y, msg.res);
-                // Host relays to other clients
-                if (this.isHost) {
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(JSON.stringify(msg)); } catch {}
-                        }
-                    }
-                }
                 break;
 
             case 'f': // fuel added to bonfire
                 if (this.onFuelAdded) this.onFuelAdded(msg.bonfireIdx, msg.amount);
-                // Host relays to other clients
-                if (this.isHost) {
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(JSON.stringify(msg)); } catch {}
-                        }
-                    }
-                }
                 break;
 
             case 'c': // chat message
-                if (this.onChat) this.onChat(peerId, msg.text);
-                // Host relays to other clients
-                if (this.isHost) {
-                    for (const [id, p] of this.peers) {
-                        if (id !== peerId && p.conn && p.conn.open) {
-                            try { p.conn.send(JSON.stringify({ ...msg, from: peerId })); } catch {}
-                        }
-                    }
-                }
-                break;
-
-            case 'new_peer': // host tells us about another peer
-                if (this.onPeerJoined) this.onPeerJoined(msg.peerId, msg.name, msg.color);
-                // Track them for state relay
-                if (!this.peers.has(msg.peerId)) {
-                    this.peers.set(msg.peerId, {
-                        name: msg.name,
-                        color: msg.color,
-                        conn: null, // no direct connection, relayed through host
-                        state: null,
-                        lastUpdate: 0,
-                    });
-                }
-                break;
-
-            case 'peer_list': // host sends list of existing peers
-                for (const p of msg.peers) {
-                    if (!this.peers.has(p.peerId)) {
-                        this.peers.set(p.peerId, {
-                            name: p.name,
-                            color: p.color,
-                            conn: null,
-                            state: null,
-                            lastUpdate: 0,
-                        });
-                        if (this.onPeerJoined) this.onPeerJoined(p.peerId, p.name, p.color);
-                    }
-                }
-                break;
-
-            case 'peer_left': // host tells us a peer left
-                this._removePeer(msg.peerId);
+                if (this.onChat) this.onChat(fromPeerId, msg.text);
                 break;
         }
+    },
 
-        // Handle relayed state messages (host adds 'from' field)
-        if (msg.from && msg.from !== peerId) {
-            const fromPeer = this.peers.get(msg.from);
-            if (fromPeer) {
-                if (msg.t === 's') {
-                    fromPeer.state = msg;
-                    fromPeer.lastUpdate = Date.now();
-                    if (this.onPeerState) this.onPeerState(msg.from, msg);
-                } else if (msg.t === 'a') {
-                    if (this.onPeerAttack) this.onPeerAttack(msg.from, msg);
-                } else if (msg.t === 'c') {
-                    if (this.onChat) this.onChat(msg.from, msg.text);
-                }
-            }
-        }
+    // Host: create room and wait for players
+    createRoom(name, color) {
+        this.playerName = name;
+        this.playerColor = color;
+        this.roomCode = this.generateRoomCode();
+        return this._connectWS(this.roomCode);
+    },
+
+    // Host: create room with specific code
+    _createRoomWithCode(name, color, code) {
+        this.playerName = name;
+        this.playerColor = color;
+        this.roomCode = code;
+        return this._connectWS(code);
+    },
+
+    // Client: join existing room
+    joinRoom(name, color, roomCode) {
+        this.playerName = name;
+        this.playerColor = color;
+        this.roomCode = roomCode.toUpperCase();
+        return this._connectWS(this.roomCode);
+    },
+
+    // Backwards-compatible connect (used by game.js _setupNetwork)
+    connect(name, color, roomId) {
+        if (this.connected) return Promise.resolve(true);
+        // Fallback: solo game
+        this.isHost = true;
+        this.worldSeed = this.generateSeed();
+        return Promise.resolve(false);
     },
 
     _removePeer(peerId) {
         const peer = this.peers.get(peerId);
         if (!peer) return;
-        if (peer.conn) try { peer.conn.close(); } catch {}
         this.peers.delete(peerId);
         if (this.onPeerLeft) this.onPeerLeft(peerId);
         console.log(`Peer ${peer.name || peerId} disconnected`);
-
-        // Host: notify other peers
-        if (this.isHost) {
-            for (const [id, p] of this.peers) {
-                if (p.conn && p.conn.open) {
-                    try {
-                        p.conn.send(JSON.stringify({ t: 'peer_left', peerId }));
-                    } catch {}
-                }
-            }
-        }
-
-        // Host migration: if host left and we're client
-        if (!this.isHost && peer.isHost) {
-            this.isHost = true;
-            console.log('Host left — you are now the HOST');
-        }
     },
 
-    // Send to all peers (or to host who relays)
+    // Send game message to ALL other peers (via relay server)
+    _broadcast(data) {
+        if (!this.ws || this.ws.readyState !== 1) return;
+        this.ws.send(JSON.stringify({ type: 'relay', data }));
+    },
+
+    // Send game message to ONE specific peer (via relay server)
+    _sendTo(targetId, data) {
+        if (!this.ws || this.ws.readyState !== 1) return;
+        this.ws.send(JSON.stringify({ type: 'relay_to', targetId, data }));
+    },
+
+    // Public API (same interface as before)
     broadcastState(state) {
-        const msg = JSON.stringify({ t: 's', ...state });
-        for (const [, peer] of this.peers) {
-            if (peer.conn && peer.conn.open) {
-                try { peer.conn.send(msg); } catch {}
-            }
-        }
+        this._broadcast({ t: 's', ...state });
     },
 
     broadcastAttack(data) {
-        const msg = JSON.stringify({ t: 'a', ...data });
-        for (const [, peer] of this.peers) {
-            if (peer.conn && peer.conn.open) {
-                try { peer.conn.send(msg); } catch {}
-            }
-        }
+        this._broadcast({ t: 'a', ...data });
     },
 
     broadcastReliable(data) {
-        const msg = JSON.stringify(data);
-        for (const [, peer] of this.peers) {
-            if (peer.conn && peer.conn.open) {
-                try { peer.conn.send(msg); } catch {}
-            }
-        }
-    },
-
-    _sendReliable(peerId, data) {
-        const peer = this.peers.get(peerId);
-        if (peer && peer.conn && peer.conn.open) {
-            try { peer.conn.send(JSON.stringify(data)); } catch {}
-        }
+        this._broadcast(data);
     },
 
     broadcastEnemies(enemies) {
         if (!this.isHost) return;
-        this.broadcastReliable({ t: 'e', enemies });
+        this._broadcast({ t: 'e', enemies });
     },
 
     broadcastBonfires(bonfires) {
         if (!this.isHost) return;
-        this.broadcastReliable({ t: 'b', bonfires });
+        this._broadcast({ t: 'b', bonfires });
     },
 
     broadcastResourceEvent(event) {
         if (!this.isHost) return;
-        this.broadcastReliable({ t: 'r', ...event });
+        this._broadcast({ t: 'r', ...event });
     },
 
     sendEnemyDamage(enemyId, damage) {
         if (this.isHost) return;
-        this.broadcastReliable({ t: 'k', enemyId, damage });
+        this._broadcast({ t: 'k', enemyId, damage });
     },
 
     broadcastEnemyDeath(enemyId) {
         if (!this.isHost) return;
-        this.broadcastReliable({ t: 'd', enemyId });
+        this._broadcast({ t: 'd', enemyId });
     },
 
     setWorldStateGetter(fn) {
@@ -598,22 +386,15 @@ const network = {
     },
 
     disconnect() {
-        for (const [id] of this.peers) {
-            this._removePeer(id);
-        }
         this.peers.clear();
-        if (this.peer) {
-            this.peer.destroy();
-            this.peer = null;
+        if (this.ws) {
+            this.ws.close();
+            this.ws = null;
         }
         this.connected = false;
     },
 
     get peerCount() {
-        let count = 0;
-        for (const [, peer] of this.peers) {
-            if (peer.conn && peer.conn.open) count++;
-        }
-        return count;
+        return this.peers.size;
     },
 };
