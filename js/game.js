@@ -47,11 +47,6 @@ class GameScene extends Phaser.Scene {
             this._createSecondCamp(this._secondCampWorldX, this._secondCampWorldY);
         }
 
-        // --- Wandering Merchant Shop ---
-        if (this._shopWorldX) {
-            this._createShop(this._shopWorldX, this._shopWorldY);
-        }
-
         // --- Build spots (predefined positions around bonfire) ---
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
@@ -60,6 +55,11 @@ class GameScene extends Phaser.Scene {
         const playerTexKey = getPlayerTextureKey(network.playerColor);
         const playerTex = this.textures.exists(playerTexKey) ? playerTexKey : 'player';
         this.player = this.physics.add.sprite(cx, cy - 50, playerTex);
+
+        // --- Wandering Merchant Shop (after player, needs collider) ---
+        if (this._shopWorldX) {
+            this._createShop(this._shopWorldX, this._shopWorldY);
+        }
         this.player.setCollideWorldBounds(true);
         this.player.setDepth(5);
         this.player.body.setSize(16, 14);
