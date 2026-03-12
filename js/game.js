@@ -437,8 +437,9 @@ class GameScene extends Phaser.Scene {
                 const wy = ty * T + 16;
                 const tree = this.trees.create(wx, wy, 'tree');
                 tree.setDepth(3);
-                tree.body.setSize(16, 26);
-                tree.body.setOffset(8, 24);
+                tree.body.setSize(22, 28);
+                tree.body.setOffset(5, 22);
+                tree.body.setImmovable(true);
                 tree.setData('hits', 0);
                 tree.setData('type', 'tree');
                 this._occupiedTiles.add(`${tx},${ty}`);
@@ -455,8 +456,9 @@ class GameScene extends Phaser.Scene {
             const sy = centerWy + Math.sin(angle) * dist;
             const stone = this.stones.create(sx, sy, 'stone');
             stone.setDepth(2);
-            stone.body.setSize(20, 16);
-            stone.body.setOffset(6, 12);
+            stone.body.setSize(24, 20);
+            stone.body.setOffset(4, 10);
+            stone.body.setImmovable(true);
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
         }
@@ -498,8 +500,9 @@ class GameScene extends Phaser.Scene {
                 const py = mty * T + 16;
                 const ore = this.metals.create(px, py, 'metal');
                 ore.setDepth(2);
-                ore.body.setSize(20, 16);
-                ore.body.setOffset(6, 12);
+                ore.body.setSize(24, 20);
+                ore.body.setOffset(4, 10);
+                ore.body.setImmovable(true);
                 ore.setData('hits', 0);
                 ore.setData('type', 'metal');
             }
@@ -542,8 +545,9 @@ class GameScene extends Phaser.Scene {
             const ry = this._secondCampWorldY + Math.sin(a) * d;
             const stone = this.stones.create(rx, ry, 'stone');
             stone.setDepth(2);
-            stone.body.setSize(20, 16);
-            stone.body.setOffset(6, 12);
+            stone.body.setSize(24, 20);
+            stone.body.setOffset(4, 10);
+            stone.body.setImmovable(true);
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
         }
@@ -2161,6 +2165,47 @@ class GameScene extends Phaser.Scene {
         return null;
     }
 
+    // A* pathfinding for enemies — repath every ~1s, follow waypoints
+    _enemyPathToward(enemy, tx, ty, speed) {
+        // Repath periodically or if no path
+        let path = enemy.getData('_aiPath');
+        let pathIdx = enemy.getData('_aiPathIdx') || 0;
+        let repathTimer = (enemy.getData('_aiRepathTimer') || 0) - 0.2;
+
+        if (!path || pathIdx >= path.length || repathTimer <= 0) {
+            path = this._findPath(enemy.x, enemy.y, tx, ty);
+            if (path && path.length > 0) {
+                enemy.setData('_aiPath', path);
+                enemy.setData('_aiPathIdx', 0);
+                pathIdx = 0;
+            } else {
+                // Fallback: direct movement
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                enemy.setFlipX(Math.cos(angle) < 0);
+                return;
+            }
+            repathTimer = 0.8 + Math.random() * 0.4; // stagger repaths
+        }
+        enemy.setData('_aiRepathTimer', repathTimer);
+
+        // Follow waypoints
+        if (path && pathIdx < path.length) {
+            const wp = path[pathIdx];
+            const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
+            if (dist < 16) {
+                pathIdx++;
+                enemy.setData('_aiPathIdx', pathIdx);
+            }
+            if (pathIdx < path.length) {
+                const next = path[pathIdx];
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, next.x, next.y);
+                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                enemy.setFlipX(Math.cos(angle) < 0);
+            }
+        }
+    }
+
     updateEnemies(dt) {
         // Clients: only check for enemy attacks on local player (positions come from host)
         if (!network.isHost) {
@@ -2199,9 +2244,7 @@ class GameScene extends Phaser.Scene {
                     if (d < nearestDist) { nearestDist = d; target = b; }
                 }
                 if (target) {
-                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, target.x, target.y);
-                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-                    enemy.setFlipX(Math.cos(angle) < 0);
+                    this._enemyPathToward(enemy, target.x, target.y, speed);
                     if (nearestDist < 30) {
                         const fuel = target.getData('fuel');
                         target.setData('fuel', Math.max(0, fuel - 10));
@@ -2321,10 +2364,8 @@ class GameScene extends Phaser.Scene {
                 }
 
                 if (raidMode === 'chase') {
-                    // Chase player
-                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
-                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-                    enemy.setFlipX(Math.cos(angle) < 0);
+                    // Chase player using A* pathfinding
+                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
 
                     if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
@@ -2393,10 +2434,8 @@ class GameScene extends Phaser.Scene {
                 }
 
                 if (aggro) {
-                    // Chase player
-                    const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, this.player.x, this.player.y);
-                    enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
-                    enemy.setFlipX(Math.cos(angle) < 0);
+                    // Chase player using A* pathfinding
+                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
 
                     // Attack when close
                     if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
