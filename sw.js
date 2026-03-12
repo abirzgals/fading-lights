@@ -1,4 +1,4 @@
-const CACHE_NAME = 'fading-light-v1';
+const CACHE_NAME = 'fading-light-v2';
 const ASSETS = [
     './',
     './index.html',
@@ -31,19 +31,17 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-    // Network-first for API/WebSocket, cache-first for assets
+    // Skip WebSocket/API requests
     if (e.request.url.includes('onrender.com') || e.request.url.startsWith('ws')) return;
 
+    // Network-first: always try to get fresh version, fall back to cache if offline
     e.respondWith(
-        caches.match(e.request).then((cached) => {
-            const fetchPromise = fetch(e.request).then((response) => {
-                if (response && response.status === 200) {
-                    const clone = response.clone();
-                    caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-                }
-                return response;
-            }).catch(() => cached);
-            return cached || fetchPromise;
-        })
+        fetch(e.request).then((response) => {
+            if (response && response.status === 200) {
+                const clone = response.clone();
+                caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
+            }
+            return response;
+        }).catch(() => caches.match(e.request))
     );
 });
