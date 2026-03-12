@@ -32,6 +32,14 @@ const CONFIG = {
     MAX_ENEMIES: 15,
     FUEL_SPAWN_BURST: 2,       // enemies spawned when upgrading fire
 
+    // Rain system
+    RAIN_MIN_INTERVAL: 90,        // seconds — min time between rain events
+    RAIN_MAX_INTERVAL: 180,       // seconds — max time between rain events
+    RAIN_DURATION_MIN: 20,        // seconds
+    RAIN_DURATION_MAX: 45,        // seconds
+    RAIN_FUEL_DRAIN: 0.8,         // fuel/second drained from bonfires during rain
+    RAIN_START_LEVEL: 2,          // fire level needed before rain starts
+
     // Raider system (camp level 2+)
     RAID_SPAWN_INTERVAL: 12000,  // ms between raid spawns
     RAID_SIGHT_RANGE: 160,       // px — raider notices player

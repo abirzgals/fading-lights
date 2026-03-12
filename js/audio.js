@@ -32,8 +32,7 @@ const AUDIO_CONFIG = {
     fire_crackle: { file: 'audio/fire_crackle.mp3', volume: 0.4,  loop: true },
     footsteps:    { file: 'audio/footsteps.mp3',    volume: 0.3,  loop: true },
     ambient:      { file: 'audio/ambient.mp3',      volume: 0.2,  loop: true },
-    // rain: reserved for periodic rain feature — file exists at audio/rain.mp3
-    // rain:       { file: 'audio/rain.mp3',        volume: 0.35, loop: true },
+    rain:         { file: 'audio/rain.mp3',        volume: 0.35, loop: true },
 
     // One-shots
     // Files present: attack.mp3, enemy_death.mp3, enemy_roar.mp3

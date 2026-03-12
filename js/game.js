@@ -73,6 +73,14 @@ class GameScene extends Phaser.Scene {
             strokeThickness: 2,
         }).setOrigin(0.5).setDepth(100);
 
+        // --- Rain system ---
+        this._rainActive = false;
+        this._rainTimer = 0;
+        this._rainDuration = 0;
+        this._nextRainIn = CONFIG.RAIN_MIN_INTERVAL + Math.random() * (CONFIG.RAIN_MAX_INTERVAL - CONFIG.RAIN_MIN_INTERVAL);
+        this._rainEmitter = null;
+        this._rainOverlay = null;
+
         // --- Multiplayer: remote players ---
         this.remotePlayers = new Map(); // peerId -> { sprite, nameLabel, state, targetX, targetY }
         this._syncTimer = 0;
@@ -765,6 +773,7 @@ class GameScene extends Phaser.Scene {
         this.updateDropPickup();
         this.updateDarknessDamage(dt);
         this.updateSpawning(dt);
+        this.updateRain(dt);
         this.updateFogOfWar();
         this.updateBuildGhost();
         this._updateBuildSpots();
@@ -1563,6 +1572,130 @@ class GameScene extends Phaser.Scene {
         }
 
         return enemy;
+    }
+
+    // --------------------------------------------------------
+    // Rain System
+    // --------------------------------------------------------
+    updateRain(dt) {
+        if (gameState.fireLevel < CONFIG.RAIN_START_LEVEL) return;
+
+        if (this._rainActive) {
+            this._rainTimer += dt;
+
+            // Host: drain fuel and check level
+            if (network.isHost) {
+                for (const bonfire of this.bonfires) {
+                    if (!bonfire.getData('lit') && bonfire.getData('isSecondCamp')) continue;
+                    const fuel = bonfire.getData('fuel');
+                    if (fuel > 0) {
+                        bonfire.setData('fuel', Math.max(0, fuel - CONFIG.RAIN_FUEL_DRAIN * dt));
+                    }
+                }
+
+                // Check fire level downgrade based on current main bonfire fuel
+                const mainFuel = this.bonfires[0] ? this.bonfires[0].getData('fuel') : 0;
+                if (mainFuel <= 0 && gameState.fireLevel > 1) {
+                    gameState.fireLevel = Math.max(1, gameState.fireLevel - 1);
+                    this.showFloatingText(this.player.x, this.player.y - 50,
+                        `FIRE WEAKENING! Lv.${gameState.fireLevel}`, '#FF4444');
+                }
+            }
+
+            // All clients: update rain visuals
+            if (this._rainEmitter) {
+                const cam = this.cameras.main;
+                this._rainEmitter.setPosition(cam.scrollX + cam.width / 2, cam.scrollY - 20);
+            }
+            if (this._rainOverlay) {
+                const cam = this.cameras.main;
+                this._rainOverlay.setPosition(cam.scrollX, cam.scrollY);
+            }
+
+            // Host decides when rain ends
+            if (network.isHost && this._rainTimer >= this._rainDuration) {
+                this._stopRain();
+            }
+        } else if (network.isHost) {
+            // Only host decides when rain starts
+            this._nextRainIn -= dt;
+            if (this._nextRainIn <= 0) {
+                this._startRain();
+            }
+        }
+    }
+
+    _startRain() {
+        this._rainActive = true;
+        this._rainTimer = 0;
+        this._rainDuration = CONFIG.RAIN_DURATION_MIN +
+            Math.random() * (CONFIG.RAIN_DURATION_MAX - CONFIG.RAIN_DURATION_MIN);
+
+        // Rain particle emitter — covers screen area
+        const cam = this.cameras.main;
+        this._rainEmitter = this.add.particles(cam.scrollX + cam.width / 2, cam.scrollY - 20, 'particle', {
+            angle: { min: 85, max: 95 },
+            speed: { min: 300, max: 500 },
+            lifespan: { min: 600, max: 1000 },
+            scale: { start: 0.15, end: 0.05 },
+            alpha: { start: 0.5, end: 0.1 },
+            tint: [0x6688CC, 0x5577AA, 0x4466BB, 0x88AADD],
+            blendMode: 'ADD',
+            frequency: 3,
+            quantity: 4,
+            emitZone: {
+                type: 'random',
+                source: new Phaser.Geom.Rectangle(-cam.width / 2 - 50, 0, cam.width + 100, 10),
+            },
+        });
+        this._rainEmitter.setDepth(95).setScrollFactor(0);
+
+        // Dark overlay for atmosphere
+        this._rainOverlay = this.add.graphics();
+        this._rainOverlay.fillStyle(0x112233, 0.15);
+        this._rainOverlay.fillRect(0, 0, cam.width, cam.height);
+        this._rainOverlay.setDepth(94).setScrollFactor(0);
+        this._rainOverlay.setAlpha(0);
+        this.tweens.add({ targets: this._rainOverlay, alpha: 1, duration: 3000 });
+
+        // Start rain audio
+        audioEngine.startLoop('rain', 2000);
+
+        // Notification
+        this.showFloatingText(this.player.x, this.player.y - 60, 'RAIN INCOMING!', '#6688CC');
+
+        // Broadcast to peers
+        if (network.peerCount > 0) {
+            network.broadcastReliable({ t: 'rn', active: true, dur: Math.round(this._rainDuration) });
+        }
+    }
+
+    _stopRain() {
+        this._rainActive = false;
+        this._nextRainIn = CONFIG.RAIN_MIN_INTERVAL +
+            Math.random() * (CONFIG.RAIN_MAX_INTERVAL - CONFIG.RAIN_MIN_INTERVAL);
+
+        // Fade out and destroy rain
+        if (this._rainEmitter) {
+            this._rainEmitter.stop();
+            this.time.delayedCall(1200, () => {
+                if (this._rainEmitter) { this._rainEmitter.destroy(); this._rainEmitter = null; }
+            });
+        }
+        if (this._rainOverlay) {
+            this.tweens.add({
+                targets: this._rainOverlay, alpha: 0, duration: 3000,
+                onComplete: () => { if (this._rainOverlay) { this._rainOverlay.destroy(); this._rainOverlay = null; } },
+            });
+        }
+
+        audioEngine.stopLoop('rain', 2000);
+
+        this.showFloatingText(this.player.x, this.player.y - 60, 'Rain stopped', '#88AACC');
+
+        if (network.peerCount > 0) {
+            network.broadcastReliable({ t: 'rn', active: false });
+        }
     }
 
     // Create enemy from host sync data (client-side)
@@ -2665,6 +2798,16 @@ class GameScene extends Phaser.Scene {
             scene._placeBuilding(type, x, y);
         };
 
+        // Rain sync from peer
+        network.onRainSync = (active, dur) => {
+            if (active && !scene._rainActive) {
+                scene._rainDuration = dur || 30;
+                scene._startRain();
+            } else if (!active && scene._rainActive) {
+                scene._stopRain();
+            }
+        };
+
         // Second camp lit by peer
         network.onSecondCampLit = (x, y) => {
             if (scene._secondCampBonfire && !scene._secondCampBonfire.getData('lit')) {
@@ -2708,6 +2851,8 @@ class GameScene extends Phaser.Scene {
                 waveNumber: gameState.waveNumber,
                 fuelAdded: gameState.fuelAdded,
                 buildings: gameState.buildings.map(b => ({ type: b.type, x: b.x, y: b.y })),
+                raining: scene._rainActive,
+                rainDur: scene._rainActive ? Math.round(scene._rainDuration - scene._rainTimer) : 0,
             };
         });
 
@@ -2715,6 +2860,11 @@ class GameScene extends Phaser.Scene {
         network.onWorldSync = (msg) => {
             if (msg.fuelAdded !== undefined) gameState.fuelAdded = msg.fuelAdded;
             if (msg.waveNumber !== undefined) gameState.waveNumber = msg.waveNumber;
+            // Sync rain state from host
+            if (msg.raining && !scene._rainActive) {
+                scene._rainDuration = msg.rainDur || 30;
+                scene._startRain();
+            }
             // Sync buildings from host
             if (msg.buildings && msg.buildings.length) {
                 for (const b of msg.buildings) {

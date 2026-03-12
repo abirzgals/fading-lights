@@ -34,6 +34,7 @@ const network = {
     onChat: null,
     onBuildingPlaced: null,
     onSecondCampLit: null,
+    onRainSync: null,
 
     // Config
     SYNC_RATE: 100,
@@ -334,6 +335,10 @@ const network = {
 
             case 'sc': // second camp lit
                 if (this.onSecondCampLit) this.onSecondCampLit(msg.x, msg.y);
+                break;
+
+            case 'rn': // rain sync
+                if (this.onRainSync) this.onRainSync(msg.active, msg.dur);
                 break;
 
             case 'c': // chat message
