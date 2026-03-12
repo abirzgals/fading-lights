@@ -31,7 +31,7 @@ class GameScene extends Phaser.Scene {
         this.enemies = this.physics.add.group();
         this.projectiles = this.physics.add.group();
         this.allies = this.physics.add.group();
-        this.enemyHpGraphics = this.add.graphics().setDepth(50);
+        this.enemyHpGraphics = this.add.graphics().setDepth(5050);
 
         // --- World Generation ---
         this.generateWorld(centerTile);
@@ -76,7 +76,7 @@ class GameScene extends Phaser.Scene {
             color: '#FFFFFF',
             stroke: '#000000',
             strokeThickness: 2,
-        }).setOrigin(0.5).setDepth(100);
+        }).setOrigin(0.5).setDepth(5100);
 
         // --- Rain system ---
         this._rainActive = false;
@@ -97,25 +97,13 @@ class GameScene extends Phaser.Scene {
         this._setupNetwork();
 
         // --- Collisions ---
-        this.physics.add.collider(this.player, this.trees);
-        this.physics.add.collider(this.player, this.stones);
-        this.physics.add.collider(this.player, this.metals);
-        this.physics.add.collider(this.player, this.buildingsGroup);
-        // Bonfire collision
+        // All static obstacles (trees, stones, metals, rocks, mines, buildings, bonfires)
+        // use grid-based collision via _applyGridCollision() — no per-sprite physics colliders.
+        // This ensures discrete tile-based passability: each tile is either walkable or blocked.
+
+        // Mark bonfires and buildings on the grid
         for (const b of this.bonfires) {
-            this.physics.add.collider(this.player, b);
-        }
-        // Group-level enemy colliders (handles all enemies automatically, no per-spawn leak)
-        this.physics.add.collider(this.enemies, this.trees);
-        this.physics.add.collider(this.enemies, this.stones);
-        // Rock walls & metal mines (created in generateWorld, colliders set here after player exists)
-        if (this.rockWalls) {
-            this.physics.add.collider(this.player, this.rockWalls);
-            this.physics.add.collider(this.enemies, this.rockWalls);
-        }
-        if (this.metalMines) {
-            this.physics.add.collider(this.player, this.metalMines);
-            this.physics.add.collider(this.enemies, this.metalMines);
+            this._setGridBlocked(b.x, b.y);
         }
 
         // --- Camera ---
@@ -130,7 +118,7 @@ class GameScene extends Phaser.Scene {
         // Remove any previous texture with this key
         if (this.textures.exists('game_fog')) this.textures.remove('game_fog');
         this.fogTexture = this.textures.createCanvas('game_fog', this.scale.width, this.scale.height);
-        this.fogImage = this.add.image(0, 0, 'game_fog').setDepth(50).setScrollFactor(0).setOrigin(0, 0);
+        this.fogImage = this.add.image(0, 0, 'game_fog').setDepth(5050).setScrollFactor(0).setOrigin(0, 0);
 
         // Handle resize
         this.scale.on('resize', (gameSize) => {
@@ -157,7 +145,7 @@ class GameScene extends Phaser.Scene {
             frequency: 300,
             blendMode: 'ADD',
         });
-        this.ambientEmitter.setDepth(45);
+        this.ambientEmitter.setDepth(5045);
 
         // --- Input ---
         this.cursors = this.input.keyboard.addKeys({
@@ -315,7 +303,7 @@ class GameScene extends Phaser.Scene {
         };
 
         // --- Build mode ghost ---
-        this.buildGhost = this.add.image(0, 0, 'building_outpost').setAlpha(0.4).setDepth(49).setVisible(false);
+        this.buildGhost = this.add.image(0, 0, 'building_outpost').setAlpha(0.4).setDepth(5049).setVisible(false);
 
         // --- Floating text pool ---
         this.floatingTexts = [];
@@ -479,30 +467,31 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // --- Starter stones near bonfire ---
-        const centerWx = cx * T + 16;
-        const centerWy = cy * T + 16;
-        for (let s = 0; s < 5; s++) {
+        // --- Starter stones near bonfire (snapped to tile grid) ---
+        for (let s = 0; s < 8; s++) {
             const angle = rng() * Math.PI * 2;
             const dist = 70 + rng() * 50;
-            const sx = centerWx + Math.cos(angle) * dist;
-            const sy = centerWy + Math.sin(angle) * dist;
+            const stx = Math.round(cx + Math.cos(angle) * (dist / T));
+            const sty = Math.round(cy + Math.sin(angle) * (dist / T));
+            if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+            const sx = stx * T + 16;
+            const sy = sty * T + 16;
             const stone = this.stones.create(sx, sy, 'stone');
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
-
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
+            this._occupiedTiles.add(`${stx},${sty}`);
         }
 
         // --- Stone clusters in clearings and along paths ---
-        for (let c = 0; c < 22; c++) {
+        for (let c = 0; c < 40; c++) {
             const scx = Math.floor(rng() * (worldSize - 20)) + 10;
             const scy = Math.floor(rng() * (worldSize - 20)) + 10;
             const sdx = scx - cx, sdy = scy - cy;
             if (sdx * sdx + sdy * sdy < 6 * 6) continue;
-            const count = 2 + Math.floor(rng() * 3);
+            const count = 3 + Math.floor(rng() * 4);
             for (let s = 0; s < count; s++) {
                 const stx = scx + Math.floor(rng() * 3 - 1);
                 const sty = scy + Math.floor(rng() * 3 - 1);
@@ -515,6 +504,7 @@ class GameScene extends Phaser.Scene {
                 stone.body.setOffset(6, 12);
                 stone.setData('hits', 0);
                 stone.setData('type', 'stone');
+                this._occupiedTiles.add(`${stx},${sty}`);
             }
         }
 
@@ -535,9 +525,9 @@ class GameScene extends Phaser.Scene {
                 ore.setDepth(2);
                 ore.body.setSize(24, 20);
                 ore.body.setOffset(4, 10);
-
                 ore.setData('hits', 0);
                 ore.setData('type', 'metal');
+                this._occupiedTiles.add(`${mtx},${mty}`);
             }
         }
 
@@ -670,19 +660,22 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Add some resources around the second camp
+        // Add some resources around the second camp (snapped to grid)
         for (let s = 0; s < 4; s++) {
             const a = rng() * Math.PI * 2;
-            const d = 60 + rng() * 40;
-            const rx = this._secondCampWorldX + Math.cos(a) * d;
-            const ry = this._secondCampWorldY + Math.sin(a) * d;
+            const d = 2 + Math.floor(rng() * 2);
+            const stx = sc_tx + Math.round(Math.cos(a) * d);
+            const sty = sc_ty + Math.round(Math.sin(a) * d);
+            if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+            const rx = stx * T + 16;
+            const ry = sty * T + 16;
             const stone = this.stones.create(rx, ry, 'stone');
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
-
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
+            this._occupiedTiles.add(`${stx},${sty}`);
         }
 
         // --- Wandering Merchant Shop ---
@@ -818,6 +811,71 @@ class GameScene extends Phaser.Scene {
     }
 
     // --------------------------------------------------------
+    // Grid-based collision (discrete tile check, no pixel ambiguity)
+    // --------------------------------------------------------
+    _isGridBlocked(tx, ty) {
+        if (tx < 0 || ty < 0 || tx >= this._gridSize || ty >= this._gridSize) return true;
+        return !this._walkGrid[ty * this._gridSize + tx];
+    }
+
+    // Check grid collision for a moving body. Returns adjusted {vx, vy}.
+    // The body moves smoothly but cannot enter blocked tiles.
+    _applyGridCollision(body, vx, vy, speed) {
+        const T = CONFIG.TILE_SIZE;
+        const dt = 1 / 60; // approximate frame step
+        const margin = 2; // small margin to prevent sticking to walls
+
+        // Body edges (current position)
+        const bl = body.left, br = body.right, bt = body.top, bb = body.bottom;
+
+        // Check X axis: would the body enter a blocked tile horizontally?
+        if (vx !== 0) {
+            const futureEdge = vx > 0 ? br + vx * speed * dt + margin : bl + vx * speed * dt - margin;
+            const checkTX = Math.floor(futureEdge / T);
+            const tyMin = Math.floor(bt / T);
+            const tyMax = Math.floor((bb - 1) / T);
+            for (let ty = tyMin; ty <= tyMax; ty++) {
+                if (this._isGridBlocked(checkTX, ty)) { vx = 0; break; }
+            }
+        }
+
+        // Check Y axis: would the body enter a blocked tile vertically?
+        if (vy !== 0) {
+            const futureEdge = vy > 0 ? bb + vy * speed * dt + margin : bt + vy * speed * dt - margin;
+            const checkTY = Math.floor(futureEdge / T);
+            const txMin = Math.floor(bl / T);
+            const txMax = Math.floor((br - 1) / T);
+            for (let tx = txMin; tx <= txMax; tx++) {
+                if (this._isGridBlocked(tx, checkTY)) { vy = 0; break; }
+            }
+        }
+
+        return { vx, vy };
+    }
+
+    // Mark a tile as walkable (e.g. when a resource is destroyed)
+    _setGridWalkable(worldX, worldY) {
+        const T = CONFIG.TILE_SIZE;
+        const tx = Math.floor(worldX / T);
+        const ty = Math.floor(worldY / T);
+        if (tx >= 0 && ty >= 0 && tx < this._gridSize && ty < this._gridSize) {
+            this._walkGrid[ty * this._gridSize + tx] = 1;
+            this._occupiedTiles.delete(`${tx},${ty}`);
+        }
+    }
+
+    // Mark a tile as blocked (e.g. when a building is placed)
+    _setGridBlocked(worldX, worldY) {
+        const T = CONFIG.TILE_SIZE;
+        const tx = Math.floor(worldX / T);
+        const ty = Math.floor(worldY / T);
+        if (tx >= 0 && ty >= 0 && tx < this._gridSize && ty < this._gridSize) {
+            this._walkGrid[ty * this._gridSize + tx] = 0;
+            this._occupiedTiles.add(`${tx},${ty}`);
+        }
+    }
+
+    // --------------------------------------------------------
     // Bonfire
     // --------------------------------------------------------
     createBonfire(x, y, isMain = false) {
@@ -841,7 +899,7 @@ class GameScene extends Phaser.Scene {
             frequency: 40,
             quantity: 2,
         });
-        emitter.setDepth(6);
+        emitter.setDepth(4906);
         bonfire.setData('emitter', emitter);
 
         this.bonfires.push(bonfire);
@@ -867,7 +925,7 @@ class GameScene extends Phaser.Scene {
             frequency: 40,
             quantity: 2,
         });
-        emitter.setDepth(6);
+        emitter.setDepth(4906);
         bonfire.setData('emitter', emitter);
 
         // Burst of light particles
@@ -881,7 +939,7 @@ class GameScene extends Phaser.Scene {
             blendMode: 'ADD',
             emitting: false,
         });
-        burstEmitter.setDepth(7);
+        burstEmitter.setDepth(4907);
         burstEmitter.explode(20);
         this.time.delayedCall(1000, () => burstEmitter.destroy());
 
@@ -927,7 +985,7 @@ class GameScene extends Phaser.Scene {
         const label = this.add.text(x, y - 28, 'Abandoned Camp', {
             fontSize: '9px', fontFamily: 'monospace',
             color: '#886699', stroke: '#000000', strokeThickness: 2,
-        }).setOrigin(0.5).setDepth(50).setAlpha(0.6);
+        }).setOrigin(0.5).setDepth(5050).setAlpha(0.6);
         bonfire.setData('label', label);
 
         this.bonfires.push(bonfire);
@@ -949,7 +1007,7 @@ class GameScene extends Phaser.Scene {
         this._shopLabel = this.add.text(x, y - 30, 'Merchant', {
             fontSize: '9px', fontFamily: 'monospace',
             color: '#FFD700', stroke: '#000000', strokeThickness: 2,
-        }).setOrigin(0.5).setDepth(50).setAlpha(0.7);
+        }).setOrigin(0.5).setDepth(5050).setAlpha(0.7);
 
         // Subtle lantern glow particle
         this._shopGlow = this.add.particles(x - 17, y - 16, 'particle', {
@@ -1085,7 +1143,7 @@ class GameScene extends Phaser.Scene {
             const label = this.add.text(sx, sy - 18, spot.label, {
                 fontSize: '8px', fontFamily: 'monospace',
                 color: '#FFCC00', stroke: '#000000', strokeThickness: 2,
-            }).setOrigin(0.5).setDepth(50).setAlpha(0);
+            }).setOrigin(0.5).setDepth(5050).setAlpha(0);
 
             let costStr = '';
             if (building) {
@@ -1096,7 +1154,7 @@ class GameScene extends Phaser.Scene {
             const costText = this.add.text(sx, sy + 14, costStr.trim(), {
                 fontSize: '7px', fontFamily: 'monospace',
                 color: '#AAAAAA', stroke: '#000000', strokeThickness: 2,
-            }).setOrigin(0.5).setDepth(50).setAlpha(0);
+            }).setOrigin(0.5).setDepth(5050).setAlpha(0);
 
             const newSpot = {
                 x: sx, y: sy,
@@ -1136,12 +1194,12 @@ class GameScene extends Phaser.Scene {
             const label = this.add.text(sx, sy - 22, spot.label, {
                 fontSize: '9px', fontFamily: 'monospace',
                 color: '#FF8800', stroke: '#000', strokeThickness: 2,
-            }).setOrigin(0.5).setDepth(100).setAlpha(0).setVisible(false);
+            }).setOrigin(0.5).setDepth(5100).setAlpha(0).setVisible(false);
 
             const costText = this.add.text(sx, sy + 22, '', {
                 fontSize: '8px', fontFamily: 'monospace',
                 color: '#AAAAAA', stroke: '#000', strokeThickness: 1,
-            }).setOrigin(0.5).setDepth(100).setAlpha(0).setVisible(false);
+            }).setOrigin(0.5).setDepth(5100).setAlpha(0).setVisible(false);
 
             const building = BUILDINGS[spot.type];
             if (building) {
@@ -1256,6 +1314,71 @@ class GameScene extends Phaser.Scene {
         this.updateHUD();
         this._updateChatBubbles();
         this.updateNetwork(dt);
+        this.updateDepthSort();
+    }
+
+    // --------------------------------------------------------
+    // Y-based depth sorting — sprites lower on screen drawn in front
+    // --------------------------------------------------------
+    updateDepthSort() {
+        // Base depth offset so game objects don't clash with UI layers
+        // World is 4800px tall, use y directly as depth (0-4800 range)
+        // UI elements stay at depth 50+ (fog, labels, etc.) — offset game objects below that
+        const BASE = 0;
+
+        // Player
+        this.player.setDepth(BASE + this.player.y);
+        if (this.playerNameLabel) {
+            this.playerNameLabel.setDepth(BASE + this.player.y + 0.1);
+        }
+
+        // Enemies
+        for (const enemy of this.enemies.children.entries) {
+            if (enemy.active) enemy.setDepth(BASE + enemy.y);
+        }
+
+        // Allies
+        for (const ally of this.allies.children.entries) {
+            if (ally.active) ally.setDepth(BASE + ally.y);
+        }
+
+        // Remote players
+        for (const [, rp] of this.remotePlayers) {
+            if (rp.sprite && rp.sprite.active) {
+                rp.sprite.setDepth(BASE + rp.sprite.y);
+                if (rp.nameLabel) rp.nameLabel.setDepth(BASE + rp.sprite.y + 0.1);
+            }
+        }
+
+        // Trees — player walks behind crowns, in front of trunks lower on screen
+        for (const tree of this.trees.children.entries) {
+            if (tree.active) tree.setDepth(BASE + tree.y);
+        }
+
+        // Stones, metals
+        for (const stone of this.stones.children.entries) {
+            if (stone.active) stone.setDepth(BASE + stone.y);
+        }
+        for (const metal of this.metals.children.entries) {
+            if (metal.active) metal.setDepth(BASE + metal.y);
+        }
+
+        // Rock walls, metal mines
+        if (this.rockWalls) {
+            for (const rock of this.rockWalls.children.entries) {
+                if (rock.active) rock.setDepth(BASE + rock.y);
+            }
+        }
+        if (this.metalMines) {
+            for (const mine of this.metalMines.children.entries) {
+                if (mine.active) mine.setDepth(BASE + mine.y);
+            }
+        }
+
+        // Buildings
+        for (const b of this.buildingsGroup.children.entries) {
+            if (b.active) b.setDepth(BASE + b.y);
+        }
     }
 
     // --------------------------------------------------------
@@ -1287,6 +1410,11 @@ class GameScene extends Phaser.Scene {
             const len = Math.sqrt(vx * vx + vy * vy);
             if (len > 1) { vx /= len; vy /= len; }
         }
+
+        // Grid-based collision: check if target tile is walkable
+        const gridCheck = this._applyGridCollision(p.body, vx, vy, CONFIG.PLAYER_SPEED);
+        vx = gridCheck.vx;
+        vy = gridCheck.vy;
 
         p.setVelocity(vx * CONFIG.PLAYER_SPEED, vy * CONFIG.PLAYER_SPEED);
 
@@ -1411,7 +1539,7 @@ class GameScene extends Phaser.Scene {
         const ay = p.y + p.facing.y * weapon.range;
 
         // Slash visual
-        const slash = this.add.image(ax, ay, 'slash').setDepth(10).setAlpha(0.8);
+        const slash = this.add.image(ax, ay, 'slash').setDepth(4910).setAlpha(0.8);
         slash.setBlendMode('ADD');
         slash.setRotation(Math.atan2(p.facing.y, p.facing.x));
         this.tweens.add({
@@ -1474,7 +1602,8 @@ class GameScene extends Phaser.Scene {
                 network.broadcastAction('chop', mine.x, mine.y);
                 this.showFloatingText(mine.x, mine.y - 28, `${remaining} left`, '#CC8844');
                 if (remaining <= 0) {
-                    // Mine depleted — destroy it
+                    // Mine depleted — destroy it and open the tile
+                    this._setGridWalkable(mine.x, mine.y);
                     mine.destroy();
                     this.showFloatingText(mine.x, mine.y - 20, 'DEPLETED', '#888888');
                 }
@@ -1639,15 +1768,10 @@ class GameScene extends Phaser.Scene {
             this._trackObjective('trees_chopped', 1);
             const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
             this.time.delayedCall(30000, () => stump.destroy());
-            // Update walkability grid — chopped tree opens path
-            const ttx = Math.floor(ox / CONFIG.TILE_SIZE);
-            const tty = Math.floor(oy / CONFIG.TILE_SIZE);
-            if (this._walkGrid && this._occupiedTiles) {
-                this._occupiedTiles.delete(`${ttx},${tty}`);
-                this._walkGrid[tty * this._gridSize + ttx] = 1;
-            }
         }
         if (resType === 'stone') this._trackObjective('stones_mined', 1);
+        // Update walkability grid — destroyed resource opens path
+        this._setGridWalkable(ox, oy);
         obj.destroy();
 
         // Track destroyed resources so rejoining players get the right map state
@@ -1684,12 +1808,7 @@ class GameScene extends Phaser.Scene {
                 this.time.delayedCall(30000, () => stump.destroy());
             }
             // Update walkability grid
-            const ttx = Math.floor(ox / CONFIG.TILE_SIZE);
-            const tty = Math.floor(oy / CONFIG.TILE_SIZE);
-            if (this._walkGrid && this._occupiedTiles) {
-                this._occupiedTiles.delete(`${ttx},${tty}`);
-                this._walkGrid[tty * this._gridSize + ttx] = 1;
-            }
+            this._setGridWalkable(ox, oy);
             closest.destroy();
         }
         // Create drops at exact positions from host (avoids random desync)
@@ -2257,13 +2376,13 @@ class GameScene extends Phaser.Scene {
                 source: new Phaser.Geom.Rectangle(-cam.width / 2 - 50, 0, cam.width + 100, 10),
             },
         });
-        this._rainEmitter.setDepth(95).setScrollFactor(0);
+        this._rainEmitter.setDepth(5095).setScrollFactor(0);
 
         // Dark overlay for atmosphere
         this._rainOverlay = this.add.graphics();
         this._rainOverlay.fillStyle(0x112233, 0.15);
         this._rainOverlay.fillRect(0, 0, cam.width, cam.height);
-        this._rainOverlay.setDepth(94).setScrollFactor(0);
+        this._rainOverlay.setDepth(5094).setScrollFactor(0);
         this._rainOverlay.setAlpha(0);
         this.tweens.add({ targets: this._rainOverlay, alpha: 1, duration: 3000 });
 
@@ -2356,9 +2475,11 @@ class GameScene extends Phaser.Scene {
                 enemy.setData('_aiPathIdx', 0);
                 pathIdx = 0;
             } else {
-                // Fallback: direct movement
+                // Fallback: direct movement with grid collision
                 const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
-                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                let evx = Math.cos(angle), evy = Math.sin(angle);
+                const gc = this._applyGridCollision(enemy.body, evx, evy, speed);
+                enemy.setVelocity(gc.vx * speed, gc.vy * speed);
                 enemy.setFlipX(Math.cos(angle) < 0);
                 return;
             }
@@ -2870,6 +2991,7 @@ class GameScene extends Phaser.Scene {
         }
         gameState.buildings.push({ type, x, y });
         this._trackObjective('buildings_built', 1);
+        this._setGridBlocked(x, y);
 
         // Handle building effects
         if (type === 'OUTPOST') {
@@ -2926,7 +3048,7 @@ class GameScene extends Phaser.Scene {
                 line.moveTo(b.x, b.y - 8);
                 line.lineTo(nearest.x, nearest.y);
                 line.strokePath();
-                line.setDepth(10);
+                line.setDepth(4910);
                 this.tweens.add({ targets: line, alpha: 0, duration: 150, onComplete: () => line.destroy() });
             }
         }
@@ -2951,7 +3073,7 @@ class GameScene extends Phaser.Scene {
         }
 
         const proj = this.projectiles.create(enemy.x, enemy.y, texKey);
-        proj.setDepth(8);
+        proj.setDepth(4908);
         proj.body.setAllowGravity(false);
         proj.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
         proj.setRotation(angle);
@@ -2972,7 +3094,7 @@ class GameScene extends Phaser.Scene {
             blendMode: 'ADD',
             frequency: 30,
         });
-        emitter.setDepth(7);
+        emitter.setDepth(4907);
         proj.setData('emitter', emitter);
 
         // Magic orb: add pulsing glow + sound
@@ -3046,7 +3168,7 @@ class GameScene extends Phaser.Scene {
             blendMode: 'ADD',
             emitting: false,
         });
-        emitter.setDepth(9);
+        emitter.setDepth(4909);
         emitter.explode(isMagic ? 10 : 6);
         this.time.delayedCall(500, () => emitter.destroy());
     }
@@ -3380,7 +3502,7 @@ class GameScene extends Phaser.Scene {
                 color: '#AAFFAA',
                 stroke: '#000000',
                 strokeThickness: 2,
-            }).setOrigin(0.5).setDepth(100);
+            }).setOrigin(0.5).setDepth(5100);
 
             scene.remotePlayers.set(peerId, {
                 sprite,
@@ -3427,7 +3549,7 @@ class GameScene extends Phaser.Scene {
             if (!remote) return;
 
             // Show slash visual at attack position
-            const slash = scene.add.image(data.ax, data.ay, 'slash').setDepth(10).setAlpha(0.8);
+            const slash = scene.add.image(data.ax, data.ay, 'slash').setDepth(4910).setAlpha(0.8);
             slash.setBlendMode('ADD');
             slash.setRotation(Math.atan2(data.fy, data.fx));
             scene.tweens.add({
@@ -3798,7 +3920,7 @@ class GameScene extends Phaser.Scene {
             color: '#44FF44',
             stroke: '#000000',
             strokeThickness: 2,
-        }).setDepth(100).setScrollFactor(0);
+        }).setDepth(5100).setScrollFactor(0);
     }
 
     updateNetwork(dt) {
@@ -3936,11 +4058,11 @@ class GameScene extends Phaser.Scene {
             padding: { x: 8, y: 5 },
             align: 'center',
             wordWrap: { width: 180 },
-        }).setOrigin(0.5, 1).setDepth(110);
+        }).setOrigin(0.5, 1).setDepth(5110);
 
         // Background bubble shape
         const bg = this.add.graphics();
-        bg.setDepth(109);
+        bg.setDepth(5109);
 
         this._chatBubbles.push({
             sprite,
@@ -4114,7 +4236,7 @@ class GameScene extends Phaser.Scene {
             color: color,
             stroke: '#000000',
             strokeThickness: 3,
-        }).setDepth(100).setOrigin(0.5);
+        }).setDepth(5100).setOrigin(0.5);
 
         this.tweens.add({
             targets: t,
