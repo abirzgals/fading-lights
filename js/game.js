@@ -42,6 +42,11 @@ class GameScene extends Phaser.Scene {
         this.bonfires = [];
         this.createBonfire(cx, cy, true);
 
+        // --- Second camp (unlit bonfire, discoverable) ---
+        if (this._secondCampWorldX) {
+            this._createSecondCamp(this._secondCampWorldX, this._secondCampWorldY);
+        }
+
         // --- Build spots (predefined positions around bonfire) ---
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
@@ -476,6 +481,49 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // --- Second camp (unlit) at the edge of level 5 radius ---
+        // Place deterministically using seeded RNG so both host + client agree
+        const secondCampAngle = rng() * Math.PI * 2;
+        const secondCampDist = 34; // tiles from center (~1088px, near lvl5 light edge)
+        const sc_tx = Math.round(cx + Math.cos(secondCampAngle) * secondCampDist);
+        const sc_ty = Math.round(cy + Math.sin(secondCampAngle) * secondCampDist);
+        this._secondCampTile = { tx: sc_tx, ty: sc_ty };
+        this._secondCampWorldX = sc_tx * T + 16;
+        this._secondCampWorldY = sc_ty * T + 16;
+
+        // Clear trees around second camp (radius 5 tiles)
+        for (const tree of [...this.trees.children.entries]) {
+            const ttx = Math.floor(tree.x / T);
+            const tty = Math.floor(tree.y / T);
+            const dx = ttx - sc_tx, dy = tty - sc_ty;
+            if (dx * dx + dy * dy < 5 * 5) {
+                this._occupiedTiles.delete(`${ttx},${tty}`);
+                tree.destroy();
+            }
+        }
+        // Also clear stones in the area
+        for (const stone of [...this.stones.children.entries]) {
+            const dx = stone.x - this._secondCampWorldX;
+            const dy = stone.y - this._secondCampWorldY;
+            if (dx * dx + dy * dy < (5 * T) * (5 * T)) {
+                stone.destroy();
+            }
+        }
+
+        // Add some resources around the second camp
+        for (let s = 0; s < 4; s++) {
+            const a = rng() * Math.PI * 2;
+            const d = 60 + rng() * 40;
+            const rx = this._secondCampWorldX + Math.cos(a) * d;
+            const ry = this._secondCampWorldY + Math.sin(a) * d;
+            const stone = this.stones.create(rx, ry, 'stone');
+            stone.setDepth(2);
+            stone.body.setSize(20, 16);
+            stone.body.setOffset(6, 12);
+            stone.setData('hits', 0);
+            stone.setData('type', 'stone');
+        }
+
         // Store for enemy spawning (free spaces)
         this._pathTiles = pathTiles;
         this._clearings = clearings;
@@ -508,6 +556,89 @@ class GameScene extends Phaser.Scene {
 
         this.bonfires.push(bonfire);
         return bonfire;
+    }
+
+    // Light up the second camp with a dramatic effect
+    _lightSecondCamp(bonfire) {
+        bonfire.setData('lit', true);
+
+        // Fade in bonfire sprite
+        this.tweens.add({ targets: bonfire, alpha: 1, duration: 1500 });
+
+        // Create fire particle emitter
+        const emitter = this.add.particles(bonfire.x, bonfire.y - 8, 'particle', {
+            speed: { min: 20, max: 60 },
+            angle: { min: 250, max: 290 },
+            lifespan: { min: 400, max: 900 },
+            scale: { start: 0.6, end: 0.05 },
+            alpha: { start: 0.9, end: 0 },
+            tint: [0xFF4400, 0xFF6600, 0xFF8800, 0xFFAA00, 0xFFCC00],
+            blendMode: 'ADD',
+            frequency: 40,
+            quantity: 2,
+        });
+        emitter.setDepth(6);
+        bonfire.setData('emitter', emitter);
+
+        // Burst of light particles
+        const burstEmitter = this.add.particles(bonfire.x, bonfire.y, 'particle', {
+            speed: { min: 60, max: 180 },
+            lifespan: 800,
+            scale: { start: 0.8, end: 0 },
+            alpha: { start: 1, end: 0 },
+            tint: [0xFFCC00, 0xFF8800, 0xFFFFAA],
+            quantity: 20,
+            blendMode: 'ADD',
+            emitting: false,
+        });
+        burstEmitter.setDepth(7);
+        burstEmitter.explode(20);
+        this.time.delayedCall(1000, () => burstEmitter.destroy());
+
+        // Remove marker and label
+        const marker = bonfire.getData('marker');
+        const label = bonfire.getData('label');
+        if (marker) this.tweens.add({ targets: marker, alpha: 0, duration: 1000, onComplete: () => marker.destroy() });
+        if (label) this.tweens.add({ targets: label, alpha: 0, duration: 1000, onComplete: () => label.destroy() });
+
+        this.showFloatingText(bonfire.x, bonfire.y - 50, 'CAMP DISCOVERED!', '#FFCC00');
+
+        // Broadcast second camp lit to peers
+        if (network.peerCount > 0) {
+            network.broadcastReliable({ t: 'sc', x: bonfire.x, y: bonfire.y });
+        }
+    }
+
+    // Create second camp — unlit bonfire that glows on first fuel
+    _createSecondCamp(x, y) {
+        const bonfire = this.physics.add.staticImage(x, y, 'bonfire');
+        bonfire.setDepth(4);
+        bonfire.setData('fuel', 0);
+        bonfire.setData('maxFuel', CONFIG.BONFIRE_MAX_FUEL);
+        bonfire.setData('isMain', false);
+        bonfire.setData('isSecondCamp', true);
+        bonfire.setData('lit', false);
+        bonfire.setAlpha(0.3); // dim/dark until lit
+
+        // No fire emitter initially — will be created on first light
+        bonfire.setData('emitter', null);
+
+        // Visual marker: faint glow circle to hint at the camp
+        const marker = this.add.graphics();
+        marker.lineStyle(1.5, 0x443366, 0.4);
+        marker.strokeCircle(x, y, 30);
+        marker.setDepth(3);
+        bonfire.setData('marker', marker);
+
+        // "Unlit Camp" label
+        const label = this.add.text(x, y - 28, 'Abandoned Camp', {
+            fontSize: '9px', fontFamily: 'monospace',
+            color: '#886699', stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(50).setAlpha(0.6);
+        bonfire.setData('label', label);
+
+        this.bonfires.push(bonfire);
+        this._secondCampBonfire = bonfire;
     }
 
     // --------------------------------------------------------
@@ -869,10 +1000,19 @@ class GameScene extends Phaser.Scene {
                 const maxFuel = bonfire.getData('maxFuel');
                 if (fuel < maxFuel) {
                     gameState.resources.wood--;
-                    gameState.fuelAdded++;
                     bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD));
                     this.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
                     audioEngine.playFireFuel();
+
+                    // Light up second camp on first fuel
+                    if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
+                        this._lightSecondCamp(bonfire);
+                    }
+
+                    // Only count toward fire level if main bonfire
+                    if (bonfire.getData('isMain')) {
+                        gameState.fuelAdded++;
+                    }
 
                     // Check fire level up
                     const levels = CONFIG.FIRE_LEVELS;
@@ -1039,7 +1179,7 @@ class GameScene extends Phaser.Scene {
         const base = bonfire.getData('isMain') ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
         // Fire level multiplier: each level significantly increases radius
-        const levelMult = bonfire.getData('isMain') ? (1.0 + (gameState.fireLevel - 1) * 0.7) : 1.0;
+        const levelMult = bonfire.getData('isMain') ? (1.0 + (gameState.fireLevel - 1) * 0.5) : 1.0;
         const scaledRatio = Math.sqrt(fuelRatio);
         return Math.max(CONFIG.BONFIRE_MIN_RADIUS, base * scaledRatio * flicker * levelMult);
     }
@@ -2525,6 +2665,13 @@ class GameScene extends Phaser.Scene {
             scene._placeBuilding(type, x, y);
         };
 
+        // Second camp lit by peer
+        network.onSecondCampLit = (x, y) => {
+            if (scene._secondCampBonfire && !scene._secondCampBonfire.getData('lit')) {
+                scene._lightSecondCamp(scene._secondCampBonfire);
+            }
+        };
+
         // Bonfire fuel sync from peers
         network.onFuelAdded = (bonfireIdx, amount) => {
             if (bonfireIdx >= 0 && bonfireIdx < scene.bonfires.length) {
@@ -2532,7 +2679,10 @@ class GameScene extends Phaser.Scene {
                 const fuel = bonfire.getData('fuel');
                 const maxFuel = bonfire.getData('maxFuel');
                 bonfire.setData('fuel', Math.min(maxFuel, fuel + amount));
-                gameState.fuelAdded++;
+                if (bonfire.getData('isMain')) gameState.fuelAdded++;
+                if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
+                    scene._lightSecondCamp(bonfire);
+                }
                 scene.showFloatingText(bonfire.x, bonfire.y - 20, '+FUEL', '#FF8800');
             }
         };

@@ -33,6 +33,7 @@ const network = {
     onDropPickup: null,
     onChat: null,
     onBuildingPlaced: null,
+    onSecondCampLit: null,
 
     // Config
     SYNC_RATE: 100,
@@ -329,6 +330,10 @@ const network = {
 
             case 'bl': // building placed
                 if (this.onBuildingPlaced) this.onBuildingPlaced(msg.bType, msg.x, msg.y);
+                break;
+
+            case 'sc': // second camp lit
+                if (this.onSecondCampLit) this.onSecondCampLit(msg.x, msg.y);
                 break;
 
             case 'c': // chat message
