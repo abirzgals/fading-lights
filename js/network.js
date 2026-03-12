@@ -97,8 +97,8 @@ const network = {
     // Set by menu before calling connect methods
     onWakeProgress: null,
 
-    // Max time to wait for server wakeup (Render free tier: ~50s)
-    WAKE_TIMEOUT: 50,
+    // Max time to wait for server wakeup
+    WAKE_TIMEOUT: 30,
     // Single attempt timeout
     ATTEMPT_TIMEOUT: 6000,
 

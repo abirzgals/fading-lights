@@ -1476,14 +1476,11 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    // Handle resource destroyed by peer
+    // Handle resource destroyed by peer — remove resource but don't create drops
+    // (drops belong to the player who chopped; avoids random position desync)
     _onResourceDestroyed(resType, x, y) {
         const group = resType === 'tree' ? this.trees :
                       resType === 'stone' ? this.stones : this.metals;
-        const dropType = resType === 'tree' ? 'wood' :
-                         resType === 'stone' ? 'stone' : 'metal';
-        const dropAmount = resType === 'tree' ? CONFIG.WOOD_PER_TREE :
-                           resType === 'stone' ? CONFIG.STONE_PER_DEPOSIT : CONFIG.METAL_PER_DEPOSIT;
         // Find closest matching resource
         let closest = null, closestDist = 20;
         for (const obj of group.children.entries) {
@@ -1492,7 +1489,22 @@ class GameScene extends Phaser.Scene {
             if (d < closestDist) { closestDist = d; closest = obj; }
         }
         if (closest) {
-            this._destroyResource(closest, dropType, dropAmount, false);
+            const ox = closest.x, oy = closest.y;
+            // Track destroyed resource for rejoin sync
+            this._destroyedResources.push({ resType, x: Math.round(ox), y: Math.round(oy) });
+            // Visual stump for trees
+            if (resType === 'tree') {
+                const stump = this.add.image(ox, oy + 8, 'stump').setDepth(2);
+                this.time.delayedCall(30000, () => stump.destroy());
+            }
+            // Update walkability grid
+            const ttx = Math.floor(ox / CONFIG.TILE_SIZE);
+            const tty = Math.floor(oy / CONFIG.TILE_SIZE);
+            if (this._walkGrid && this._occupiedTiles) {
+                this._occupiedTiles.delete(`${ttx},${tty}`);
+                this._walkGrid[tty * this._gridSize + ttx] = 1;
+            }
+            closest.destroy();
         }
     }
 
