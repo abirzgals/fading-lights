@@ -29,6 +29,7 @@ class GameScene extends Phaser.Scene {
         this.drops = this.physics.add.group();
         this.buildingsGroup = this.physics.add.staticGroup();
         this.enemies = this.physics.add.group();
+        this.projectiles = this.physics.add.group();
         this.allies = this.physics.add.group();
         this.enemyHpGraphics = this.add.graphics().setDepth(50);
 
@@ -626,6 +627,7 @@ class GameScene extends Phaser.Scene {
         this.updateProximityHealing(dt);
         this.updateBonfires(dt);
         this.updateEnemies(dt);
+        this.updateProjectiles(dt);
         this.drawEnemyHealth();
         this.updateAllies(dt);
         this.updateTurrets(dt);
@@ -1255,15 +1257,19 @@ class GameScene extends Phaser.Scene {
             else if (roll < 0.88 - waveBonus) type = 'SHADOW_STALKER';
             else type = 'SHADOW_BEAST';
         } else if (lightLevel <= 3) {
-            if (roll < 0.25) type = 'SHADOW_WISP';
-            else if (roll < 0.6) type = 'SHADOW_STALKER';
+            if (roll < 0.2) type = 'SHADOW_WISP';
+            else if (roll < 0.45) type = 'SHADOW_STALKER';
+            else if (roll < 0.6) type = 'SHADOW_ARCHER';
+            else if (roll < 0.72) type = 'VOID_MAGE';
             else if (roll < 0.92 - waveBonus) type = 'SHADOW_BEAST';
             else type = 'SHADOW_LORD';
         } else {
-            if (roll < 0.15) type = 'FOG_CRAWLER';
-            else if (roll < 0.45) type = 'SHADOW_WISP';
-            else if (roll < 0.75) type = 'SHADOW_STALKER';
-            else if (roll < 0.92 - waveBonus) type = 'SHADOW_BEAST';
+            if (roll < 0.1) type = 'FOG_CRAWLER';
+            else if (roll < 0.25) type = 'SHADOW_WISP';
+            else if (roll < 0.45) type = 'SHADOW_STALKER';
+            else if (roll < 0.58) type = 'SHADOW_ARCHER';
+            else if (roll < 0.7) type = 'VOID_MAGE';
+            else if (roll < 0.9 - waveBonus) type = 'SHADOW_BEAST';
             else type = 'SHADOW_LORD';
         }
 
@@ -1289,6 +1295,8 @@ class GameScene extends Phaser.Scene {
             SHADOW_BEAST: 'enemy_beast',
             SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
+            SHADOW_ARCHER: 'enemy_archer',
+            VOID_MAGE: 'enemy_mage',
         }[type];
 
         const enemyId = this._enemyIdCounter++;
@@ -1303,6 +1311,7 @@ class GameScene extends Phaser.Scene {
         enemy.setData('size', stats.size);
         enemy.setData('xp', stats.xp);
         enemy.setData('targetsFire', stats.targetsFire || false);
+        enemy.setData('ranged', stats.ranged || false);
         enemy.setData('attackCooldown', 0);
         enemy.setData('aggro', false);
         enemy.setData('wanderAngle', Math.random() * Math.PI * 2);
@@ -1342,13 +1351,17 @@ class GameScene extends Phaser.Scene {
         if (gameState.fireLevel <= 2) {
             type = roll < 0.6 ? 'SHADOW_WISP' : 'SHADOW_STALKER';
         } else if (gameState.fireLevel <= 3) {
-            if (roll < 0.3) type = 'SHADOW_WISP';
-            else if (roll < 0.75) type = 'SHADOW_STALKER';
+            if (roll < 0.2) type = 'SHADOW_WISP';
+            else if (roll < 0.45) type = 'SHADOW_STALKER';
+            else if (roll < 0.65) type = 'SHADOW_ARCHER';
+            else if (roll < 0.8) type = 'VOID_MAGE';
             else type = 'SHADOW_BEAST';
         } else {
-            if (roll < 0.15) type = 'SHADOW_WISP';
-            else if (roll < 0.45) type = 'SHADOW_STALKER';
-            else if (roll < 0.8) type = 'SHADOW_BEAST';
+            if (roll < 0.1) type = 'SHADOW_WISP';
+            else if (roll < 0.3) type = 'SHADOW_STALKER';
+            else if (roll < 0.45) type = 'SHADOW_ARCHER';
+            else if (roll < 0.6) type = 'VOID_MAGE';
+            else if (roll < 0.85) type = 'SHADOW_BEAST';
             else type = 'SHADOW_LORD';
         }
 
@@ -1384,6 +1397,7 @@ class GameScene extends Phaser.Scene {
         enemy.setData('size', stats.size);
         enemy.setData('xp', stats.xp);
         enemy.setData('targetsFire', false);
+        enemy.setData('ranged', stats.ranged || false);
         enemy.setData('attackCooldown', 0);
         enemy.setData('aggro', false);
         // Raider-specific data
@@ -1491,6 +1505,90 @@ class GameScene extends Phaser.Scene {
                         target.setData('fuel', Math.max(0, fuel - 10));
                         this.showFloatingText(target.x, target.y - 20, '-FUEL', '#4444FF');
                         this.damageEnemy(enemy, 9999);
+                    }
+                }
+            } else if (enemy.getData('ranged')) {
+                // RANGED AI: archers and mages — keep distance, shoot projectiles
+                const stats = ENEMIES[enemy.getData('type')];
+                const atkRange = stats.attackRange || 200;
+                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                const isRaider = enemy.getData('isRaider');
+
+                // Ranged raiders: march to camp edge then patrol and shoot
+                if (isRaider) {
+                    const tx = enemy.getData('raidTargetX');
+                    const ty = enemy.getData('raidTargetY');
+                    const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+
+                    if (distToTarget > atkRange * 0.9) {
+                        // Still approaching — march toward camp
+                        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                        enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                        enemy.setFlipX(Math.cos(angle) < 0);
+                    } else {
+                        // In range — strafe around target
+                        let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(tx, ty, enemy.x, enemy.y);
+                        orbitAngle += dt * 0.4;
+                        enemy.setData('orbitAngle', orbitAngle);
+                        const ox = tx + Math.cos(orbitAngle) * atkRange * 0.85;
+                        const oy = ty + Math.sin(orbitAngle) * atkRange * 0.85;
+                        const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
+                        enemy.setVelocity(Math.cos(moveAngle) * speed * 0.5, Math.sin(moveAngle) * speed * 0.5);
+                        enemy.setFlipX(tx < enemy.x);
+                    }
+
+                    // Shoot at player if in range, otherwise shoot at bonfire
+                    if (cd <= 0) {
+                        if (distToPlayer < atkRange) {
+                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            enemy.setData('attackCooldown', stats.attackCooldown);
+                        } else if (distToTarget < atkRange * 1.2) {
+                            this._fireProjectile(enemy, tx, ty, stats);
+                            enemy.setData('attackCooldown', stats.attackCooldown);
+                        }
+                    }
+                } else {
+                    // Non-raider ranged: patrol light edge, shoot player when visible
+                    const mainBonfire = this.bonfires[0];
+                    const lightRadius = this.getLightRadius(mainBonfire);
+                    const distToFire = Phaser.Math.Distance.Between(enemy.x, enemy.y, mainBonfire.x, mainBonfire.y);
+                    const idealDist = lightRadius + 20; // just outside light
+
+                    if (distToPlayer < atkRange) {
+                        // Player in range — stop and shoot
+                        const fleeDist = atkRange * 0.5;
+                        if (distToPlayer < fleeDist) {
+                            // Too close — back away
+                            const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            enemy.setVelocity(Math.cos(awayAngle) * speed, Math.sin(awayAngle) * speed);
+                            enemy.setFlipX(this.player.x < enemy.x);
+                        } else {
+                            // Good range — strafe
+                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            orbitAngle += dt * 0.5;
+                            enemy.setData('orbitAngle', orbitAngle);
+                            const ox = this.player.x + Math.cos(orbitAngle) * atkRange * 0.75;
+                            const oy = this.player.y + Math.sin(orbitAngle) * atkRange * 0.75;
+                            const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
+                            enemy.setVelocity(Math.cos(moveAngle) * speed * 0.5, Math.sin(moveAngle) * speed * 0.5);
+                            enemy.setFlipX(this.player.x < enemy.x);
+                        }
+
+                        // Fire projectile
+                        if (cd <= 0) {
+                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            enemy.setData('attackCooldown', stats.attackCooldown);
+                        }
+                    } else {
+                        // Patrol the light edge
+                        let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(mainBonfire.x, mainBonfire.y, enemy.x, enemy.y);
+                        orbitAngle += dt * 0.3;
+                        enemy.setData('orbitAngle', orbitAngle);
+                        const patrolX = mainBonfire.x + Math.cos(orbitAngle) * idealDist;
+                        const patrolY = mainBonfire.y + Math.sin(orbitAngle) * idealDist;
+                        const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, patrolX, patrolY);
+                        enemy.setVelocity(Math.cos(moveAngle) * speed * 0.6, Math.sin(moveAngle) * speed * 0.6);
+                        enemy.setFlipX(Math.cos(moveAngle) < 0);
                     }
                 }
             } else if (enemy.getData('isRaider')) {
@@ -1870,6 +1968,124 @@ class GameScene extends Phaser.Scene {
                 this.tweens.add({ targets: line, alpha: 0, duration: 150, onComplete: () => line.destroy() });
             }
         }
+    }
+
+    // --------------------------------------------------------
+    // Enemy Projectiles
+    // --------------------------------------------------------
+    _fireProjectile(enemy, targetX, targetY, stats) {
+        const projType = stats.projectileType || 'arrow';
+        const texKey = projType === 'magic' ? 'proj_magic' : 'proj_arrow';
+        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, targetX, targetY);
+        const spd = stats.projectileSpeed || 200;
+
+        const proj = this.projectiles.create(enemy.x, enemy.y, texKey);
+        proj.setDepth(8);
+        proj.body.setAllowGravity(false);
+        proj.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
+        proj.setRotation(angle);
+        proj.setData('damage', stats.damage);
+        proj.setData('projType', projType);
+        proj.setData('lifetime', 0);
+
+        // Attach trailing particle emitter
+        const tintColor = projType === 'magic' ? [0xAA44FF, 0x8800FF, 0xDD88FF] : [0xFFCC88, 0xAA8855, 0xFF8844];
+        const emitter = this.add.particles(0, 0, 'particle', {
+            follow: proj,
+            speed: { min: 5, max: 20 },
+            lifespan: projType === 'magic' ? 400 : 200,
+            scale: { start: projType === 'magic' ? 0.5 : 0.3, end: 0 },
+            alpha: { start: 0.8, end: 0 },
+            tint: tintColor,
+            quantity: projType === 'magic' ? 2 : 1,
+            blendMode: 'ADD',
+            frequency: 30,
+        });
+        emitter.setDepth(7);
+        proj.setData('emitter', emitter);
+
+        // Magic orb: add pulsing glow
+        if (projType === 'magic') {
+            this.tweens.add({
+                targets: proj,
+                scaleX: 1.3, scaleY: 1.3,
+                duration: 200,
+                yoyo: true,
+                repeat: -1,
+                ease: 'Sine.easeInOut',
+            });
+        }
+    }
+
+    updateProjectiles(dt) {
+        const maxLifetime = 3000; // ms — auto-destroy after 3s
+        for (const proj of [...this.projectiles.children.entries]) {
+            if (!proj.active) continue;
+
+            let life = proj.getData('lifetime') + dt * 1000;
+            proj.setData('lifetime', life);
+
+            // Auto-destroy if too old
+            if (life > maxLifetime) {
+                this._destroyProjectile(proj);
+                continue;
+            }
+
+            // Hit player
+            const distToPlayer = Phaser.Math.Distance.Between(proj.x, proj.y, this.player.x, this.player.y);
+            if (distToPlayer < 18) {
+                const dmg = proj.getData('damage');
+                this.damagePlayer(dmg);
+                this.showFloatingText(this.player.x, this.player.y - 20, `-${dmg}`, '#FF4444');
+
+                // Impact effect
+                this._projectileImpact(proj);
+                this._destroyProjectile(proj);
+                continue;
+            }
+
+            // Hit buildings
+            for (const building of this.buildingsGroup.children.entries) {
+                if (!building.active) continue;
+                const d = Phaser.Math.Distance.Between(proj.x, proj.y, building.x, building.y);
+                if (d < 20) {
+                    const dmg = proj.getData('damage');
+                    let bhp = building.getData('hp') - dmg;
+                    building.setData('hp', bhp);
+                    if (bhp <= 0) this.destroyBuilding(building);
+                    this._projectileImpact(proj);
+                    this._destroyProjectile(proj);
+                    break;
+                }
+            }
+        }
+    }
+
+    _projectileImpact(proj) {
+        const isMagic = proj.getData('projType') === 'magic';
+        const tints = isMagic ? [0xAA44FF, 0xDD88FF, 0xFFCCFF] : [0xFFCC88, 0xFF8844, 0xFFFFFF];
+        const emitter = this.add.particles(proj.x, proj.y, 'particle', {
+            speed: { min: 40, max: isMagic ? 120 : 80 },
+            lifespan: isMagic ? 350 : 200,
+            scale: { start: isMagic ? 0.6 : 0.4, end: 0 },
+            alpha: { start: 1, end: 0 },
+            tint: tints,
+            quantity: isMagic ? 10 : 6,
+            blendMode: 'ADD',
+            emitting: false,
+        });
+        emitter.setDepth(9);
+        emitter.explode(isMagic ? 10 : 6);
+        this.time.delayedCall(500, () => emitter.destroy());
+    }
+
+    _destroyProjectile(proj) {
+        const emitter = proj.getData('emitter');
+        if (emitter) {
+            emitter.stop();
+            this.time.delayedCall(500, () => emitter.destroy());
+        }
+        proj.destroy();
     }
 
     // --------------------------------------------------------

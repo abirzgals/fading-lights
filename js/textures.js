@@ -270,6 +270,74 @@ function generateTextures(scene) {
     g.fillCircle(28, 12, 2);
     g.generateTexture('enemy_crawler', 40, 32);
 
+    // Shadow Archer — hooded figure with bow
+    g.clear();
+    g.fillStyle(0x1A0033, 0.8);
+    g.fillCircle(16, 10, 8);           // hood
+    g.fillRect(10, 18, 12, 18);        // body/cloak
+    g.fillRect(8, 36, 5, 8);           // left leg
+    g.fillRect(19, 36, 5, 8);          // right leg
+    g.fillStyle(0x553388, 0.6);
+    g.fillRect(10, 18, 12, 6);         // shoulders
+    // Bow (right side)
+    g.lineStyle(2, 0x886622, 0.9);
+    g.beginPath();
+    g.arc(26, 22, 12, -1.2, 1.2);
+    g.strokePath();
+    g.lineStyle(1, 0xCCBB88, 0.7);
+    g.lineBetween(26, 10, 26, 34);     // bowstring
+    // Glowing eyes
+    g.fillStyle(0xFF3300, 1);
+    g.fillCircle(13, 9, 1.5);
+    g.fillCircle(19, 9, 1.5);
+    g.generateTexture('enemy_archer', 36, 44);
+
+    // Void Mage — floating robed figure with staff
+    g.clear();
+    g.fillStyle(0x200044, 0.85);
+    g.fillCircle(20, 12, 10);          // hood (larger)
+    g.fillStyle(0x150030, 0.7);
+    g.fillTriangle(8, 20, 32, 20, 20, 48);  // flowing robe
+    g.fillStyle(0x2A0055, 0.5);
+    g.fillTriangle(12, 22, 28, 22, 20, 44); // inner robe
+    // Staff
+    g.lineStyle(2, 0x664400, 0.9);
+    g.lineBetween(34, 8, 34, 46);      // staff shaft
+    // Staff orb (glowing)
+    g.fillStyle(0xAA44FF, 0.9);
+    g.fillCircle(34, 6, 5);
+    g.fillStyle(0xDD88FF, 0.6);
+    g.fillCircle(34, 6, 3);
+    g.fillStyle(0xFFCCFF, 0.8);
+    g.fillCircle(34, 5, 1.5);
+    // Glowing eyes
+    g.fillStyle(0xBB00FF, 1);
+    g.fillCircle(16, 11, 2);
+    g.fillCircle(24, 11, 2);
+    g.generateTexture('enemy_mage', 42, 50);
+
+    // Arrow projectile
+    g.clear();
+    g.fillStyle(0xCCBB88, 1);
+    g.fillRect(2, 5, 16, 2);           // shaft
+    g.fillStyle(0x888888, 1);
+    g.fillTriangle(18, 3, 22, 6, 18, 9); // arrowhead
+    g.fillStyle(0x886644, 0.7);
+    g.fillTriangle(0, 3, 4, 6, 0, 9);   // fletching
+    g.generateTexture('proj_arrow', 22, 12);
+
+    // Magic orb projectile
+    g.clear();
+    g.fillStyle(0x8800FF, 0.6);
+    g.fillCircle(8, 8, 8);
+    g.fillStyle(0xBB44FF, 0.8);
+    g.fillCircle(8, 8, 5);
+    g.fillStyle(0xEE99FF, 0.9);
+    g.fillCircle(8, 7, 3);
+    g.fillStyle(0xFFDDFF, 1);
+    g.fillCircle(7, 6, 1.5);
+    g.generateTexture('proj_magic', 16, 16);
+
     // Attack slash
     g.clear();
     g.fillStyle(0xFFFFFF, 0.8);
