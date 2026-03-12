@@ -2344,11 +2344,20 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     // Enemy Projectiles
     // --------------------------------------------------------
-    _fireProjectile(enemy, targetX, targetY, stats) {
+    _fireProjectile(enemy, targetX, targetY, stats, fromNetwork = false) {
         const projType = stats.projectileType || 'arrow';
         const texKey = projType === 'magic' ? 'proj_magic' : 'proj_arrow';
         const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, targetX, targetY);
         const spd = stats.projectileSpeed || 200;
+
+        // Broadcast to clients so they see projectiles
+        if (!fromNetwork && network.isHost && network.peerCount > 0) {
+            network.broadcastReliable({
+                t: 'ep', x: Math.round(enemy.x), y: Math.round(enemy.y),
+                tx: Math.round(targetX), ty: Math.round(targetY),
+                spd, dmg: stats.damage, pt: projType,
+            });
+        }
 
         const proj = this.projectiles.create(enemy.x, enemy.y, texKey);
         proj.setDepth(8);
@@ -2590,14 +2599,15 @@ class GameScene extends Phaser.Scene {
         ally.setData('home', { x, y });
     }
 
-    destroyBuilding(building) {
+    destroyBuilding(building, broadcast = true) {
         const type = building.getData('type');
-        this.showFloatingText(building.x, building.y - 20, `${BUILDINGS[type].name} destroyed!`, '#FF4444');
+        const bx = building.x, by = building.y;
+        this.showFloatingText(bx, by - 20, `${BUILDINGS[type].name} destroyed!`, '#FF4444');
 
         // Remove bonfire if outpost
         if (type === 'OUTPOST') {
             this.bonfires = this.bonfires.filter(b => {
-                if (Phaser.Math.Distance.Between(b.x, b.y, building.x, building.y) < 10) {
+                if (Phaser.Math.Distance.Between(b.x, b.y, bx, by) < 10) {
                     const emitter = b.getData('emitter');
                     if (emitter) emitter.destroy();
                     b.destroy();
@@ -2607,8 +2617,13 @@ class GameScene extends Phaser.Scene {
             });
         }
 
-        gameState.buildings = gameState.buildings.filter(b => !(b.x === building.x && b.y === building.y));
+        gameState.buildings = gameState.buildings.filter(b => !(b.x === bx && b.y === by));
         building.destroy();
+
+        // Broadcast to peers
+        if (broadcast && network.peerCount > 0) {
+            network.broadcastReliable({ t: 'bd', x: Math.round(bx), y: Math.round(by) });
+        }
     }
 
     canAfford(cost) {
@@ -2903,6 +2918,26 @@ class GameScene extends Phaser.Scene {
             scene._placeBuilding(type, x, y);
         };
 
+        // Enemy projectile from host
+        network.onEnemyProjectile = (msg) => {
+            if (network.isHost) return;
+            // Create a fake enemy object at the spawn position for _fireProjectile
+            const fakeEnemy = { x: msg.x, y: msg.y };
+            const fakeStats = { projectileSpeed: msg.spd, damage: msg.dmg, projectileType: msg.pt };
+            scene._fireProjectile(fakeEnemy, msg.tx, msg.ty, fakeStats, true);
+        };
+
+        // Building destroyed by peer
+        network.onBuildingDestroyed = (x, y) => {
+            for (const b of [...scene.buildingsGroup.children.entries]) {
+                if (!b.active) continue;
+                if (Math.abs(b.x - x) < 5 && Math.abs(b.y - y) < 5) {
+                    scene.destroyBuilding(b, false); // false = don't re-broadcast
+                    break;
+                }
+            }
+        };
+
         // Rain sync from peer
         network.onRainSync = (active, dur) => {
             if (active && !scene._rainActive) {
@@ -2963,8 +2998,26 @@ class GameScene extends Phaser.Scene {
         network.onBonfireSync = (bonfires) => {
             if (network.isHost) return;
             for (let i = 0; i < bonfires.length && i < scene.bonfires.length; i++) {
-                scene.bonfires[i].setData('fuel', bonfires[i].fuel);
+                const b = scene.bonfires[i];
+                const data = bonfires[i];
+                b.setData('fuel', data.fuel);
+                if (data.campFuelAdded !== undefined) b.setData('campFuelAdded', data.campFuelAdded);
+                if (data.campFireLevel !== undefined) {
+                    const oldLvl = b.getData('campFireLevel') || 1;
+                    b.setData('campFireLevel', data.campFireLevel);
+                    if (data.campFireLevel > oldLvl && b.getData('isSecondCamp')) {
+                        scene._updateSecondCampBuildSpots(b, data.campFireLevel);
+                    }
+                }
+                if (data.lit && b.getData('isSecondCamp') && !b.getData('lit')) {
+                    scene._lightSecondCamp(b);
+                }
             }
+            // Update global fire level
+            gameState.fireLevel = Math.max(
+                scene.bonfires[0]?.getData('campFireLevel') || 1,
+                scene._secondCampBonfire?.getData('campFireLevel') || 1
+            );
         };
 
         // Host: register world state getter for new peers
@@ -3079,6 +3132,9 @@ class GameScene extends Phaser.Scene {
                 if (this._enemySyncCounter % 10 === 0) {
                     network.broadcastBonfires(this.bonfires.map(b => ({
                         fuel: Math.round(b.getData('fuel') * 10) / 10,
+                        campFuelAdded: b.getData('campFuelAdded') || 0,
+                        campFireLevel: b.getData('campFireLevel') || 1,
+                        lit: b.getData('lit') !== false,
                     })));
                 }
             }

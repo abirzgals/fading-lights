@@ -33,6 +33,8 @@ const network = {
     onDropPickup: null,
     onChat: null,
     onBuildingPlaced: null,
+    onBuildingDestroyed: null,
+    onEnemyProjectile: null,
     onSecondCampLit: null,
     onRainSync: null,
 
@@ -331,6 +333,14 @@ const network = {
 
             case 'bl': // building placed
                 if (this.onBuildingPlaced) this.onBuildingPlaced(msg.bType, msg.x, msg.y);
+                break;
+
+            case 'bd': // building destroyed
+                if (this.onBuildingDestroyed) this.onBuildingDestroyed(msg.x, msg.y);
+                break;
+
+            case 'ep': // enemy projectile
+                if (this.onEnemyProjectile) this.onEnemyProjectile(msg);
                 break;
 
             case 'sc': // second camp lit
