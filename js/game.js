@@ -552,7 +552,7 @@ class GameScene extends Phaser.Scene {
                 rock.setDepth(2);
                 rock.body.setSize(48, 28);
                 rock.body.setOffset(8, 14);
-
+                rock.refreshBody();
                 rock.setData('type', 'rock_wall');
                 this._occupiedTiles.add(`${rtx},${rty}`);
                 // Also block adjacent tile since texture is 64px wide
@@ -578,7 +578,7 @@ class GameScene extends Phaser.Scene {
             mine.setDepth(2);
             mine.body.setSize(36, 30);
             mine.body.setOffset(6, 12);
-
+            mine.refreshBody();
             mine.setData('type', 'metal_mine');
             mine.setData('remaining', 300);
             this._occupiedTiles.add(`${mmx},${mmy}`);
