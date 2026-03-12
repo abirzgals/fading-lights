@@ -1383,6 +1383,16 @@ class GameScene extends Phaser.Scene {
         for (const b of this.buildingsGroup.children.entries) {
             if (b.active) b.setDepth(BASE + b.y);
         }
+
+        // Projectiles (arrows, magic orbs) — sort by Y so they go behind/in front of trees
+        for (const proj of this.projectiles.children.entries) {
+            if (proj.active) proj.setDepth(BASE + proj.y);
+        }
+
+        // Resource drops
+        for (const drop of this.drops.children.entries) {
+            if (drop.active) drop.setDepth(BASE + drop.y);
+        }
     }
 
     // --------------------------------------------------------
