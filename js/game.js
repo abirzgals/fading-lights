@@ -1439,16 +1439,16 @@ class GameScene extends Phaser.Scene {
     _destroyResource(obj, dropType, dropAmount, broadcast) {
         const ox = obj.x, oy = obj.y;
         const resType = obj.getData('type');
-        // Drop resources
+        // Drop resources — track positions for network sync
+        const dropPositions = [];
         for (let i = 0; i < dropAmount; i++) {
-            const drop = this.drops.create(
-                ox + Phaser.Math.Between(-12, 12),
-                oy + Phaser.Math.Between(-12, 12),
-                dropType + '_drop'
-            );
+            const dx = ox + Phaser.Math.Between(-12, 12);
+            const dy = oy + Phaser.Math.Between(-12, 12);
+            const drop = this.drops.create(dx, dy, dropType + '_drop');
             drop.setDepth(3);
             drop.setData('resourceType', dropType);
             drop.body.setAllowGravity(false);
+            dropPositions.push({ x: Math.round(dx), y: Math.round(dy) });
         }
         if (resType === 'tree') {
             this._trackObjective('trees_chopped', 1);
@@ -1468,17 +1468,18 @@ class GameScene extends Phaser.Scene {
         // Track destroyed resources so rejoining players get the right map state
         this._destroyedResources.push({ resType, x: Math.round(ox), y: Math.round(oy) });
 
-        // Broadcast to peers so they remove the same resource
+        // Broadcast to peers so they remove the same resource and create drops
         if (broadcast && network.peerCount > 0) {
             network.broadcastReliable({
                 t: 'rd', resType, x: Math.round(ox), y: Math.round(oy),
+                drops: dropPositions, dropType,
             });
         }
     }
 
     // Handle resource destroyed by peer — remove resource but don't create drops
-    // (drops belong to the player who chopped; avoids random position desync)
-    _onResourceDestroyed(resType, x, y) {
+    // Handle resource destroyed by peer — remove resource and optionally create drops
+    _onResourceDestroyed(resType, x, y, drops, dropType) {
         const group = resType === 'tree' ? this.trees :
                       resType === 'stone' ? this.stones : this.metals;
         // Find closest matching resource
@@ -1505,6 +1506,18 @@ class GameScene extends Phaser.Scene {
                 this._walkGrid[tty * this._gridSize + ttx] = 1;
             }
             closest.destroy();
+        }
+        // Create drops at exact positions from host (avoids random desync)
+        if (drops && drops.length && dropType) {
+            const texKey = dropType + '_drop';
+            if (this.textures.exists(texKey)) {
+                for (const dp of drops) {
+                    const drop = this.drops.create(dp.x, dp.y, texKey);
+                    drop.setDepth(3);
+                    drop.setData('resourceType', dropType);
+                    drop.body.setAllowGravity(false);
+                }
+            }
         }
     }
 
@@ -3251,7 +3264,7 @@ class GameScene extends Phaser.Scene {
         // Resource destroyed by peer
         network.onResourceEvent = (msg) => {
             if (msg.t === 'rd' && msg.resType) {
-                scene._onResourceDestroyed(msg.resType, msg.x, msg.y);
+                scene._onResourceDestroyed(msg.resType, msg.x, msg.y, msg.drops, msg.dropType);
             }
         };
 
@@ -3513,6 +3526,14 @@ class GameScene extends Phaser.Scene {
             }
             network.onWorldSync(msg);
             network._pendingWorldSync = null;
+        }
+
+        // Replay buffered resource-destroyed events that arrived before callbacks were set
+        if (network._pendingResourceEvents && network._pendingResourceEvents.length) {
+            for (const evt of network._pendingResourceEvents) {
+                network.onResourceEvent(evt);
+            }
+            network._pendingResourceEvents = null;
         }
 
         // Show player count in HUD

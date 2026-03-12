@@ -305,7 +305,13 @@ const network = {
                 break;
 
             case 'rd': // resource destroyed
-                if (this.onResourceEvent) this.onResourceEvent(msg);
+                if (this.onResourceEvent) {
+                    this.onResourceEvent(msg);
+                } else {
+                    // Buffer until GameScene sets up callbacks
+                    if (!this._pendingResourceEvents) this._pendingResourceEvents = [];
+                    this._pendingResourceEvents.push(msg);
+                }
                 break;
 
             case 'es': // enemy spawn from host
