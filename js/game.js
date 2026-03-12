@@ -145,19 +145,19 @@ class GameScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-FOUR', () => this.selectBuild('ARMOR_WORKSHOP'));
         this.input.keyboard.on('keydown-FIVE', () => this.selectBuild('FRIEND_HUT'));
 
-        // --- Mouse input ---
+        // --- Mouse input (hold to repeat) ---
+        this._mouseLeftHeld = false;
+        this._mouseRightHeld = false;
+        this._interactCooldown = 0;
+
         this.input.on('pointerdown', (pointer) => {
             if (gameState.gameOver || gameState.craftingOpen) return;
-            if (pointer.leftButtonDown()) {
-                this.updateFacingToMouse(pointer);
-                if (this.player.attackCooldown <= 0) {
-                    this.playerAttack();
-                }
-            }
-            if (pointer.rightButtonDown()) {
-                this.updateFacingToMouse(pointer);
-                this.playerInteract();
-            }
+            if (pointer.leftButtonDown()) this._mouseLeftHeld = true;
+            if (pointer.rightButtonDown()) this._mouseRightHeld = true;
+        });
+        this.input.on('pointerup', (pointer) => {
+            if (!pointer.leftButtonDown()) this._mouseLeftHeld = false;
+            if (!pointer.rightButtonDown()) this._mouseRightHeld = false;
         });
         // Disable context menu on game canvas
         this.game.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -606,18 +606,24 @@ class GameScene extends Phaser.Scene {
             p.setAlpha(1);
         }
 
-        // Attack (keyboard or mobile)
+        // Attack (keyboard, mobile, or mouse hold)
         const kbAttack = Phaser.Input.Keyboard.JustDown(this.cursors.attack);
         const mobileAttack = mobileControls.consumeAttack();
-        if ((kbAttack || mobileAttack) && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+        const wantAttack = kbAttack || mobileAttack || this._mouseLeftHeld;
+        if (wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+            if (this._mouseLeftHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerAttack();
         }
 
-        // Interact (keyboard or mobile)
+        // Interact (keyboard, mobile, or mouse hold)
+        if (this._interactCooldown > 0) this._interactCooldown -= delta;
         const kbInteract = Phaser.Input.Keyboard.JustDown(this.cursors.interact);
         const mobileInteract = mobileControls.consumeInteract();
-        if ((kbInteract || mobileInteract) && !gameState.craftingOpen && !this._chatOpen) {
+        const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld;
+        if (wantInteract && this._interactCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen) {
+            if (this._mouseRightHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerInteract();
+            this._interactCooldown = 500;
         }
     }
 
@@ -1423,6 +1429,10 @@ class GameScene extends Phaser.Scene {
                 gameState.resources[type]++;
                 this.showFloatingText(drop.x, drop.y - 10, `+1 ${type}`, '#88FF88');
                 audioEngine.playPickup();
+                // Broadcast pickup to peers so they remove the drop
+                if (network.peerCount > 0) {
+                    network.broadcastReliable({ t: 'dp', x: Math.round(drop.x), y: Math.round(drop.y), res: type });
+                }
                 drop.destroy();
             }
         }
@@ -1790,6 +1800,18 @@ class GameScene extends Phaser.Scene {
             if (msg.t === 'rd' && msg.resType) {
                 scene._onResourceDestroyed(msg.resType, msg.x, msg.y);
             }
+        };
+
+        // Drop picked up by peer — remove nearest matching drop
+        network.onDropPickup = (x, y, resType) => {
+            let closest = null, closestDist = 30;
+            for (const drop of scene.drops.children.entries) {
+                if (!drop.active) continue;
+                if (drop.getData('resourceType') !== resType) continue;
+                const d = Phaser.Math.Distance.Between(x, y, drop.x, drop.y);
+                if (d < closestDist) { closestDist = d; closest = drop; }
+            }
+            if (closest) closest.destroy();
         };
 
         // Enemy death from host

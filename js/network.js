@@ -30,6 +30,7 @@ const network = {
     onEnemyDied: null,
     onEnemySpawn: null,
     onFuelAdded: null,
+    onDropPickup: null,
     onChat: null,
 
     // Config
@@ -417,6 +418,18 @@ const network = {
 
             case 'd': // enemy died (host broadcasts)
                 if (this.onEnemyDied) this.onEnemyDied(msg.enemyId);
+                break;
+
+            case 'dp': // drop picked up by peer
+                if (this.onDropPickup) this.onDropPickup(msg.x, msg.y, msg.res);
+                // Host relays to other clients
+                if (this.isHost) {
+                    for (const [id, p] of this.peers) {
+                        if (id !== peerId && p.conn && p.conn.open) {
+                            try { p.conn.send(JSON.stringify(msg)); } catch {}
+                        }
+                    }
+                }
                 break;
 
             case 'f': // fuel added to bonfire
