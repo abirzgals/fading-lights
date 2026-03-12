@@ -127,9 +127,14 @@ class MenuScene extends Phaser.Scene {
             .setDepth(20)
             .setAlpha(0);
 
+        // Version label (bottom-right)
+        this.add.text(w - 10, h - 10, `v${GAME_VERSION}`, {
+            fontFamily: 'monospace', fontSize: '12px', color: '#555555',
+        }).setOrigin(1, 1).setDepth(20);
+
         // Fade in title
-        const title = this.children.list[this.children.list.length - 2];
-        const subtitle = this.children.list[this.children.list.length - 1];
+        const title = this.children.list[this.children.list.length - 3];
+        const subtitle = this.children.list[this.children.list.length - 2];
         this.tweens.add({ targets: title, alpha: 1, duration: 2000, delay: 500 });
         this.tweens.add({ targets: subtitle, alpha: 0.7, duration: 2000, delay: 1000 });
 
