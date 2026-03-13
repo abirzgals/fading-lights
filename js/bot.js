@@ -101,30 +101,32 @@
     function getScene() { return window._gs; }
     function d(ax, ay, bx, by) { return Math.hypot(bx - ax, by - ay); }
 
-    // Re-sync walk grid every tick: mark active destructibles as blocked,
-    // unmark destroyed ones so A* can path through cleared areas.
-    let _patchedTiles = [];  // tiles we marked blocked last time
+    // Mark active destructibles as blocked in the walk grid.
+    // The game's _walkGrid handles trees/forests and calls _setGridWalkable when
+    // resources are destroyed. We layer stones/metals/buildings on top.
+    // We save the original value before overwriting so we can restore correctly.
+    let _botPatched = new Map();  // idx -> originalValue
     function patchWalkGrid(sc) {
         if (!sc._walkGrid) return;
         const T = CONFIG.TILE_SIZE;
         const gs = sc._gridSize;
         const grid = sc._walkGrid;
 
-        // Restore previously patched tiles (so destroyed objects become walkable)
-        for (const idx of _patchedTiles) {
-            grid[idx] = 1;
+        // Restore tiles to their original values (before we touched them)
+        for (const [idx, origVal] of _botPatched) {
+            grid[idx] = origVal;
         }
-        _patchedTiles = [];
+        _botPatched = new Map();
 
         const mark = (obj) => {
             if (!obj.active) return;
             const tx = Math.floor(obj.x / T), ty = Math.floor(obj.y / T);
             if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) {
                 const idx = ty * gs + tx;
-                if (grid[idx] !== 0) {
-                    grid[idx] = 0;
-                    _patchedTiles.push(idx);
+                if (!_botPatched.has(idx)) {
+                    _botPatched.set(idx, grid[idx]); // save original value
                 }
+                grid[idx] = 0;
             }
         };
 
@@ -137,7 +139,6 @@
         if (sc.rockWalls) markGroup(sc.rockWalls);
         if (sc.metalMines) markGroup(sc.metalMines);
         for (const b of sc.bonfires) mark(b);
-        // Mark buildings too
         if (sc.buildSpots) {
             for (const spot of sc.buildSpots) {
                 if (spot.built && spot.building) mark(spot.building);
