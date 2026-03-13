@@ -123,8 +123,9 @@
             const tx = Math.floor(obj.x / T), ty = Math.floor(obj.y / T);
             if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) {
                 const idx = ty * gs + tx;
+                if (grid[idx] === 0) return; // already blocked, don't overwrite
                 if (!_botPatched.has(idx)) {
-                    _botPatched.set(idx, grid[idx]); // save original value
+                    _botPatched.set(idx, grid[idx]); // save original value (1)
                 }
                 grid[idx] = 0;
             }
@@ -179,6 +180,8 @@
         return true;
     }
 
+    let followPathLastPos = { x: 0, y: 0 };
+    let followPathStuckTicks = 0;
     function followPath(p) {
         if (!currentPath || pathIdx >= currentPath.length) return true;
         const wp = currentPath[pathIdx];
@@ -186,6 +189,7 @@
         const len = Math.hypot(dx, dy);
         if (len < WAYPOINT_REACH) {
             pathIdx++;
+            followPathStuckTicks = 0;
             if (pathIdx >= currentPath.length) return true;
             const nwp = currentPath[pathIdx];
             const ndx = nwp.x - p.x, ndy = nwp.y - p.y;
@@ -193,6 +197,29 @@
             if (nlen > 1) setMove(ndx / nlen, ndy / nlen);
             return false;
         }
+
+        // Detect stuck — if not making progress, repath via A*
+        const movedDist = Math.hypot(p.x - followPathLastPos.x, p.y - followPathLastPos.y);
+        followPathLastPos.x = p.x; followPathLastPos.y = p.y;
+        if (movedDist < 2) {
+            followPathStuckTicks++;
+            if (followPathStuckTicks > 3) {
+                // Repath to final destination
+                followPathStuckTicks = 0;
+                const dest = currentPath[currentPath.length - 1];
+                const sc = getScene();
+                if (sc) {
+                    const newPath = sc._findPath(p.x, p.y, dest.x, dest.y);
+                    if (newPath && newPath.length > 0) {
+                        currentPath = newPath;
+                        pathIdx = 0;
+                    }
+                }
+            }
+        } else {
+            followPathStuckTicks = 0;
+        }
+
         setMove(dx / len, dy / len);
         return false;
     }
