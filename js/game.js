@@ -2145,8 +2145,9 @@ class GameScene extends Phaser.Scene {
         const facingLeft = p.facing.x < 0;
 
         // Sprite base orientation: tip at upper-right (~-45°), handle at lower-left
-        // To align tip with facing direction: rotation = facingAngle + PI/4
+        // FlipY mirrors tip from -PI/4 to +PI/4, so negate BASE_ROT when flipped
         const BASE_ROT = Math.PI / 4;
+        const rotSign = facingLeft ? -1 : 1;
 
         let wx, wy, rot;
 
@@ -2161,13 +2162,13 @@ class GameScene extends Phaser.Scene {
                 const side = facingLeft ? -1 : 1;
                 wx = p.x + Math.cos(facingAngle + arcAngle * side * 0.5) * dist;
                 wy = p.y + Math.sin(facingAngle + arcAngle * side * 0.5) * dist;
-                rot = facingAngle + BASE_ROT + arcAngle * side;
+                rot = facingAngle + BASE_ROT * rotSign + arcAngle * side;
             } else {
                 // Resting: held at the side
                 const sideAngle = facingAngle + (facingLeft ? 0.6 : -0.6);
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = facingAngle + BASE_ROT;
+                rot = facingAngle + BASE_ROT * rotSign;
             }
         } else if (attackType === 'thrust') {
             const restDist = 8;
@@ -2177,12 +2178,12 @@ class GameScene extends Phaser.Scene {
                 const dist = restDist + 18 * thrustPhase;
                 wx = p.x + Math.cos(facingAngle) * dist;
                 wy = p.y + Math.sin(facingAngle) * dist;
-                rot = facingAngle + BASE_ROT;
+                rot = facingAngle + BASE_ROT * rotSign;
             } else {
                 const sideAngle = facingAngle + (facingLeft ? 0.4 : -0.4);
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = facingAngle + BASE_ROT;
+                rot = facingAngle + BASE_ROT * rotSign;
             }
         } else {
             // 'shoot' — bow stays at the side, slight pullback on attack
@@ -2190,7 +2191,7 @@ class GameScene extends Phaser.Scene {
             const sideAngle = facingAngle + (facingLeft ? 0.5 : -0.5);
             wx = p.x + Math.cos(sideAngle) * restDist;
             wy = p.y + Math.sin(sideAngle) * restDist;
-            rot = facingAngle + BASE_ROT;
+            rot = facingAngle + BASE_ROT * rotSign;
             if (attacking && phase < 0.3) {
                 const pullback = (0.3 - phase) / 0.3 * 4;
                 wx -= Math.cos(facingAngle) * pullback;
