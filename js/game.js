@@ -2334,15 +2334,16 @@ class GameScene extends Phaser.Scene {
             else if (roll < 0.88 - waveBonus) type = 'SHADOW_STALKER';
             else type = 'SHADOW_BEAST';
         } else if (lightLevel <= 3) {
-            if (roll < 0.2) type = 'SHADOW_WISP';
+            if (roll < 0.08) type = 'FOG_CRAWLER';
+            else if (roll < 0.25) type = 'SHADOW_WISP';
             else if (roll < 0.45) type = 'SHADOW_STALKER';
             else if (roll < 0.6) type = 'SHADOW_ARCHER';
             else if (roll < 0.72) type = 'VOID_MAGE';
             else if (roll < 0.92 - waveBonus) type = 'SHADOW_BEAST';
             else type = 'SHADOW_LORD';
         } else {
-            if (roll < 0.1) type = 'FOG_CRAWLER';
-            else if (roll < 0.25) type = 'SHADOW_WISP';
+            if (roll < 0.15) type = 'FOG_CRAWLER';
+            else if (roll < 0.28) type = 'SHADOW_WISP';
             else if (roll < 0.45) type = 'SHADOW_STALKER';
             else if (roll < 0.58) type = 'SHADOW_ARCHER';
             else if (roll < 0.7) type = 'VOID_MAGE';
@@ -2744,19 +2745,52 @@ class GameScene extends Phaser.Scene {
             enemy.setData('attackCooldown', cd);
 
             if (targetsFire) {
-                // Fire-targeting enemies always beeline to nearest bonfire
+                // Fire-targeting enemies beeline to nearest bonfire and attack it
                 let target = null, nearestDist = Infinity;
                 for (const b of this.bonfires) {
                     const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
                     if (d < nearestDist) { nearestDist = d; target = b; }
                 }
                 if (target) {
-                    this._enemyPathToward(enemy, target.x, target.y, speed);
-                    if (nearestDist < 30) {
-                        const fuel = target.getData('fuel');
-                        target.setData('fuel', Math.max(0, fuel - 10));
-                        this.showFloatingText(target.x, target.y - 20, '-FUEL', '#4444FF');
-                        this.damageEnemy(enemy, 9999);
+                    if (nearestDist < 35) {
+                        // At bonfire — attack it on cooldown
+                        enemy.setVelocity(0, 0);
+                        if (cd <= 0) {
+                            const fuelDrain = 5;
+                            const progressDrain = 2;
+                            const fuel = target.getData('fuel');
+                            target.setData('fuel', Math.max(0, fuel - fuelDrain));
+
+                            // Drain campFuelAdded — can lose fire level
+                            const campFuelAdded = target.getData('campFuelAdded') || 0;
+                            const newCampFuel = Math.max(0, campFuelAdded - progressDrain);
+                            target.setData('campFuelAdded', newCampFuel);
+                            if (target.getData('isMain')) gameState.fuelAdded = newCampFuel;
+
+                            // Recalculate fire level
+                            const levels = CONFIG.FIRE_LEVELS;
+                            const oldLevel = target.getData('campFireLevel') || 1;
+                            let newLevel = 1;
+                            for (let lv = levels.length - 1; lv >= 0; lv--) {
+                                if (newCampFuel >= levels[lv]) { newLevel = lv + 1; break; }
+                            }
+                            target.setData('campFireLevel', newLevel);
+                            if (target.getData('isMain')) {
+                                gameState.fireLevel = Math.max(
+                                    this.bonfires[0]?.getData('campFireLevel') || 1,
+                                    this._secondCampBonfire?.getData('campFireLevel') || 1
+                                );
+                            }
+                            if (newLevel < oldLevel) {
+                                this.showFloatingText(target.x, target.y - 50,
+                                    `FIRE WEAKENING! Lv.${newLevel}`, '#FF4444');
+                            }
+
+                            this.showFloatingText(target.x, target.y - 20, `-${fuelDrain} FUEL`, '#4444FF');
+                            enemy.setData('attackCooldown', 1500); // attack every 1.5s
+                        }
+                    } else {
+                        this._enemyPathToward(enemy, target.x, target.y, speed);
                     }
                 }
             } else if (enemy.getData('ranged')) {
