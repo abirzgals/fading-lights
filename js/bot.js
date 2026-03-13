@@ -101,28 +101,48 @@
     function getScene() { return window._gs; }
     function d(ax, ay, bx, by) { return Math.hypot(bx - ax, by - ay); }
 
-    let gridPatched = false;
+    // Re-sync walk grid every tick: mark active destructibles as blocked,
+    // unmark destroyed ones so A* can path through cleared areas.
+    let _patchedTiles = [];  // tiles we marked blocked last time
     function patchWalkGrid(sc) {
-        if (gridPatched || !sc._walkGrid) return;
+        if (!sc._walkGrid) return;
         const T = CONFIG.TILE_SIZE;
         const gs = sc._gridSize;
         const grid = sc._walkGrid;
-        const markBlocked = (group) => {
-            for (const obj of group.children.entries) {
-                if (!obj.active) continue;
-                const tx = Math.floor(obj.x / T), ty = Math.floor(obj.y / T);
-                if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) grid[ty * gs + tx] = 0;
+
+        // Restore previously patched tiles (so destroyed objects become walkable)
+        for (const idx of _patchedTiles) {
+            grid[idx] = 1;
+        }
+        _patchedTiles = [];
+
+        const mark = (obj) => {
+            if (!obj.active) return;
+            const tx = Math.floor(obj.x / T), ty = Math.floor(obj.y / T);
+            if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) {
+                const idx = ty * gs + tx;
+                if (grid[idx] !== 0) {
+                    grid[idx] = 0;
+                    _patchedTiles.push(idx);
+                }
             }
         };
-        if (sc.stones) markBlocked(sc.stones);
-        if (sc.metals) markBlocked(sc.metals);
-        if (sc.rockWalls) markBlocked(sc.rockWalls);
-        if (sc.metalMines) markBlocked(sc.metalMines);
-        for (const b of sc.bonfires) {
-            const tx = Math.floor(b.x / T), ty = Math.floor(b.y / T);
-            if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) grid[ty * gs + tx] = 0;
+
+        const markGroup = (group) => {
+            for (const obj of group.children.entries) mark(obj);
+        };
+
+        if (sc.stones) markGroup(sc.stones);
+        if (sc.metals) markGroup(sc.metals);
+        if (sc.rockWalls) markGroup(sc.rockWalls);
+        if (sc.metalMines) markGroup(sc.metalMines);
+        for (const b of sc.bonfires) mark(b);
+        // Mark buildings too
+        if (sc.buildSpots) {
+            for (const spot of sc.buildSpots) {
+                if (spot.built && spot.building) mark(spot.building);
+            }
         }
-        gridPatched = true;
     }
 
     function canAfford(cost) {
@@ -179,10 +199,26 @@
     let moveToPath = null;
     let moveToPathIdx = 0;
     let moveToTarget = null;
+    let moveToStuckTicks = 0;
+    let moveToLastPos = { x: 0, y: 0 };
     function moveToward(p, tx, ty) {
         const dx = tx - p.x, dy = ty - p.y;
         const len = Math.hypot(dx, dy);
         if (len < 5) { orbitAround(p, tx, ty, 30); return true; }
+
+        // Detect stuck in moveToward specifically — force repath
+        const movedDist = Math.hypot(p.x - moveToLastPos.x, p.y - moveToLastPos.y);
+        moveToLastPos.x = p.x; moveToLastPos.y = p.y;
+        if (movedDist < 2) {
+            moveToStuckTicks++;
+            if (moveToStuckTicks > 3) {
+                moveToPath = null; // force repath
+                moveToStuckTicks = 0;
+            }
+        } else {
+            moveToStuckTicks = 0;
+        }
+
         if (!moveToPath || !moveToTarget ||
             Math.abs(tx - moveToTarget.x) > 40 || Math.abs(ty - moveToTarget.y) > 40) {
             const sc = getScene();
@@ -442,7 +478,7 @@
 
         Object.defineProperty(ctx, 'bestDrop', { get() {
             if (this._bestDrop === undefined) {
-                let best = null, bestDist = 100;
+                let best = null, bestDist = 200;
                 if (sc.drops) {
                     sc.drops.children.each(dd => {
                         if (!dd.active) return;
@@ -540,7 +576,7 @@
                     },
                     {
                         name: 'Dodge Projectile',
-                        check: (ctx) => ctx.evasion && ctx.evasion.urgency > 2.0,
+                        check: (ctx) => ctx.evasion && ctx.evasion.urgency > 1.0,
                         goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion }),
                     },
                     {
@@ -718,14 +754,16 @@
             debugHudEl = document.createElement('div');
             debugHudEl.id = 'bot-tree-debug';
             debugHudEl.style.cssText = `
-                position: fixed; top: 8px; left: 8px; z-index: 10000;
+                position: absolute; top: 8px; left: 8px; z-index: 10000;
                 background: rgba(0,0,0,0.85); color: #ccc;
                 font-family: monospace; font-size: 11px; line-height: 1.5;
                 padding: 8px 12px; border-radius: 6px;
                 pointer-events: none; max-width: 320px;
                 border: 1px solid rgba(100,255,100,0.2);
             `;
-            document.body.appendChild(debugHudEl);
+            // Append to game-container so it works in fullscreen mode
+            const container = document.getElementById('game-container') || document.body;
+            container.appendChild(debugHudEl);
         }
 
         debugHudEl.style.display = 'block';
