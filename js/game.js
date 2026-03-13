@@ -845,6 +845,8 @@ class GameScene extends Phaser.Scene {
         // Body edges (current position)
         const bl = body.left, br = body.right, bt = body.top, bb = body.bottom;
 
+        const origVx = vx, origVy = vy;
+
         // Check X axis: would the body enter a blocked tile horizontally?
         if (vx !== 0) {
             const futureEdge = vx > 0 ? br + vx * speed * dt + margin : bl + vx * speed * dt - margin;
@@ -864,6 +866,26 @@ class GameScene extends Phaser.Scene {
             const txMax = Math.floor((br - 1) / T);
             for (let tx = txMin; tx <= txMax; tx++) {
                 if (this._isGridBlocked(tx, checkTY)) { vy = 0; break; }
+            }
+        }
+
+        // Corner slide: if diagonal movement was fully blocked, nudge along
+        // the axis that gets the entity closer to clearing the obstacle.
+        // This prevents getting stuck on corners when approaching diagonally.
+        if (vx === 0 && vy === 0 && origVx !== 0 && origVy !== 0) {
+            // Find the nearest tile edge and nudge toward it to slide around the corner
+            const cx = (bl + br) / 2, cy = (bt + bb) / 2;
+            const tileCX = Math.floor(cx / T) * T + T / 2;
+            const tileCY = Math.floor(cy / T) * T + T / 2;
+            const offX = cx - tileCX, offY = cy - tileCY;
+
+            // Try sliding on the axis where we're more offset from tile center
+            // This naturally guides the entity around the corner
+            if (Math.abs(offX) > Math.abs(offY)) {
+                // More offset on X — slide on X to align, then Y will clear
+                vx = offX > 0 ? -0.5 : 0.5;
+            } else {
+                vy = offY > 0 ? -0.5 : 0.5;
             }
         }
 
