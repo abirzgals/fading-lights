@@ -50,6 +50,11 @@ class GameScene extends Phaser.Scene {
         // --- Monster Lair (win condition) ---
         if (this._lairWorldX) {
             this._createMonsterLair(this._lairWorldX, this._lairWorldY);
+            // Abandoned bonfire at the lair — must light to explore the area
+            this._createSecondCamp(this._lairWorldX, this._lairWorldY);
+            this._lairBonfire = this.bonfires[this.bonfires.length - 1];
+            this._lairBonfire.setData('isSecondCamp', false);
+            this._lairBonfire.setData('isLairCamp', true);
         }
 
         // --- Build spots (predefined positions around bonfire) ---
@@ -205,6 +210,10 @@ class GameScene extends Phaser.Scene {
                 // Max out all bonfires: full fuel, campFuelAdded just 1 below next level
                 const levels = CONFIG.FIRE_LEVELS;
                 for (const bonfire of this.bonfires) {
+                    // Light unlit camps
+                    if (!bonfire.getData('lit') && !bonfire.getData('isMain')) {
+                        this._lightSecondCamp(bonfire);
+                    }
                     bonfire.setData('fuel', bonfire.getData('maxFuel') * 0.99);
                     const curLevel = bonfire.getData('campFireLevel') || 1;
                     const nextThreshold = levels[curLevel] || levels[levels.length - 1];
@@ -730,9 +739,10 @@ class GameScene extends Phaser.Scene {
         }
 
         // --- Monster Lair (win condition) ---
-        // Place further than second camp, along the same direction
-        const lairDist = 52; // tiles from center (~1664px, well beyond second camp)
-        const lairAngle = secondCampAngle + (rng() - 0.5) * 0.3; // slightly offset from camp direction
+        // Place so the lair is visible at the edge of second camp's max light (level 5)
+        // Second camp max radius ≈ 540px → lair ~500px from camp = ~16 tiles further
+        const lairDist = 49; // tiles from center (camp at 34 → ~480px apart, within max light edge)
+        const lairAngle = secondCampAngle + (rng() - 0.5) * 0.15; // small offset to stay in range
         const lair_tx = Math.round(cx + Math.cos(lairAngle) * lairDist);
         const lair_ty = Math.round(cy + Math.sin(lairAngle) * lairDist);
         this._lairTile = { tx: lair_tx, ty: lair_ty };
@@ -2201,8 +2211,8 @@ class GameScene extends Phaser.Scene {
                     audioEngine.playFireFuel();
                     network.broadcastAction('fire_fuel', bonfire.x, bonfire.y);
 
-                    // Light up second camp on first fuel
-                    if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
+                    // Light up abandoned camp on first fuel
+                    if ((bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp')) && !bonfire.getData('lit')) {
                         this._lightSecondCamp(bonfire);
                     }
 
@@ -2244,7 +2254,8 @@ class GameScene extends Phaser.Scene {
                     // Keep gameState.fireLevel as the max of all camps
                     gameState.fireLevel = Math.max(
                         this.bonfires[0]?.getData('campFireLevel') || 1,
-                        this._secondCampBonfire?.getData('campFireLevel') || 1
+                        this._secondCampBonfire?.getData('campFireLevel') || 1,
+                        this._lairBonfire?.getData('campFireLevel') || 1
                     );
 
                     // Sync fuel addition to peers
@@ -2425,7 +2436,7 @@ class GameScene extends Phaser.Scene {
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
         // Fire level multiplier: each level significantly increases radius
         const campLevel = bonfire.getData('campFireLevel') || 1;
-        const isUpgradeable = bonfire.getData('isMain') || bonfire.getData('isSecondCamp');
+        const isUpgradeable = bonfire.getData('isMain') || bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp');
         const levelMult = isUpgradeable ? (1.0 + (campLevel - 1) * 0.5) : 1.0;
         const scaledRatio = Math.sqrt(fuelRatio);
         return Math.max(CONFIG.BONFIRE_MIN_RADIUS, base * scaledRatio * flicker * levelMult);
@@ -4398,10 +4409,11 @@ class GameScene extends Phaser.Scene {
                 // Update global fire level
                 gameState.fireLevel = Math.max(
                     scene.bonfires[0]?.getData('campFireLevel') || 1,
-                    scene._secondCampBonfire?.getData('campFireLevel') || 1
+                    scene._secondCampBonfire?.getData('campFireLevel') || 1,
+                    scene._lairBonfire?.getData('campFireLevel') || 1
                 );
 
-                if (bonfire.getData('isSecondCamp') && !bonfire.getData('lit')) {
+                if ((bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp')) && !bonfire.getData('lit')) {
                     scene._lightSecondCamp(bonfire);
                 }
                 scene._activeCamp = bonfire;
@@ -4424,7 +4436,7 @@ class GameScene extends Phaser.Scene {
                         scene._updateSecondCampBuildSpots(b, data.campFireLevel);
                     }
                 }
-                if (data.lit && b.getData('isSecondCamp') && !b.getData('lit')) {
+                if (data.lit && (b.getData('isSecondCamp') || b.getData('isLairCamp')) && !b.getData('lit')) {
                     scene._lightSecondCamp(b);
                 }
             }
