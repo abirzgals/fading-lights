@@ -477,6 +477,10 @@
             hpRatio: gameState.hp / CONFIG.PLAYER_MAX_HP,
             earlyGame: gameState.fireLevel < 4,
             fireLevel: gameState.fireLevel,
+            mainLevel: bonfire.getData('campFireLevel') || 1,
+            secondCamp: sc._secondCampBonfire || null,
+            lairBonfire: sc._lairBonfire || null,
+            monsterLair: sc._monsterLair || null,
             // Lazy-cached values
             _evasion: undefined,
             _nearEnemies: undefined,
@@ -694,12 +698,17 @@
                 children: [
                     {
                         name: 'Feed Fire',
-                        check: (ctx) => ctx.res.wood >= 1,
+                        check: (ctx) => {
+                            if (ctx.res.wood < 1) return false;
+                            // Don't feed if main bonfire is at max level and full fuel
+                            if (ctx.mainLevel >= 6 && ctx.fuelRatio > 0.6) return false;
+                            return true;
+                        },
                         goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
                     },
                     {
                         name: 'Build Structure',
-                        check: (ctx) => ctx.fireLevel >= 3 && ctx.buildTarget !== null,
+                        check: (ctx) => ctx.fireLevel >= 2 && ctx.buildTarget !== null,
                         goal: (ctx) => {
                             const s = ctx.buildTarget;
                             return { type: 'build', target: s, x: s.x, y: s.y };
@@ -711,6 +720,38 @@
                         goal: (ctx) => {
                             const dr = ctx.bestDrop;
                             return { type: 'pickup', target: dr, x: dr.x, y: dr.y };
+                        },
+                    },
+                    // Main bonfire maxed → seek second camp
+                    {
+                        name: 'Seek Second Camp',
+                        check: (ctx) => {
+                            if (ctx.mainLevel < 6) return false;
+                            const sc2 = ctx.secondCamp;
+                            if (!sc2 || !sc2.active) return false;
+                            const sc2Level = sc2.getData('campFireLevel') || 1;
+                            return sc2Level < 6;
+                        },
+                        goal: (ctx) => {
+                            const sc2 = ctx.secondCamp;
+                            return { type: 'seek_camp', target: sc2, x: sc2.x, y: sc2.y };
+                        },
+                    },
+                    // Second camp maxed → attack monster lair
+                    {
+                        name: 'Attack Lair',
+                        check: (ctx) => {
+                            if (ctx.mainLevel < 6) return false;
+                            const sc2 = ctx.secondCamp;
+                            if (!sc2) return false;
+                            const sc2Level = sc2.getData('campFireLevel') || 1;
+                            if (sc2Level < 6) return false;
+                            const lair = ctx.monsterLair;
+                            return lair && lair.getData('active');
+                        },
+                        goal: (ctx) => {
+                            const lair = ctx.monsterLair;
+                            return { type: 'attack_lair', target: lair, x: lair.x, y: lair.y };
                         },
                     },
                 ],
@@ -1007,6 +1048,38 @@
                     if (p.attackCooldown <= 0) simulateAttack(sc);
                 } else {
                     moveWithEvasion(sc, p, target.x, target.y);
+                }
+                break;
+            }
+
+            case 'seek_camp': {
+                const camp = currentGoal.target;
+                if (!camp || !camp.active) { currentGoal = null; break; }
+                const cd = d(p.x, p.y, camp.x, camp.y);
+                if (cd < CONFIG.INTERACT_RADIUS) {
+                    // At the camp — feed it if we have wood
+                    if (gameState.resources.wood >= 1) {
+                        simulateInteract(sc);
+                    }
+                    orbitAround(p, camp.x, camp.y, 30);
+                } else {
+                    if (!currentPath) pathTo(sc, camp.x, camp.y);
+                    followPath(p);
+                }
+                break;
+            }
+
+            case 'attack_lair': {
+                const lair = currentGoal.target;
+                if (!lair || !lair.getData('active')) { currentGoal = null; break; }
+                const ld = d(p.x, p.y, lair.x, lair.y);
+                if (ld < weapon.range + 32) {
+                    faceTarget(p, lair.x, lair.y);
+                    orbitAround(p, lair.x, lair.y, weapon.range * 0.7);
+                    if (p.attackCooldown <= 0) simulateAttack(sc);
+                } else {
+                    if (!currentPath) pathTo(sc, lair.x, lair.y);
+                    followPath(p);
                 }
                 break;
             }

@@ -2869,15 +2869,7 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            // All clients: update rain visuals
-            if (this._rainEmitter) {
-                const cam = this.cameras.main;
-                this._rainEmitter.setPosition(cam.scrollX + cam.width / 2, cam.scrollY - 20);
-            }
-            if (this._rainOverlay) {
-                const cam = this.cameras.main;
-                this._rainOverlay.setPosition(cam.scrollX, cam.scrollY);
-            }
+            // All clients: update rain visuals (scrollFactor 0 = screen-fixed, no position update needed)
 
             // Host decides when rain ends
             if (network.isHost && this._rainTimer >= this._rainDuration) {
@@ -2898,9 +2890,9 @@ class GameScene extends Phaser.Scene {
         this._rainDuration = CONFIG.RAIN_DURATION_MIN +
             Math.random() * (CONFIG.RAIN_DURATION_MAX - CONFIG.RAIN_DURATION_MIN);
 
-        // Rain particle emitter — covers screen area
+        // Rain particle emitter — covers screen area (scrollFactor 0 = screen coords)
         const cam = this.cameras.main;
-        this._rainEmitter = this.add.particles(cam.scrollX + cam.width / 2, cam.scrollY - 20, 'particle', {
+        this._rainEmitter = this.add.particles(cam.width / 2, -20, 'particle', {
             angle: { min: 85, max: 95 },
             speed: { min: 300, max: 500 },
             lifespan: { min: 600, max: 1000 },
