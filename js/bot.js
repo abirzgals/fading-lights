@@ -444,7 +444,7 @@
         const ctx = {
             sc, p, bonfire, bx, by, lightR,
             px, py,
-            safeR: Math.min(lightR * 0.6, 220),
+            safeR: lightR * 0.85,
             fuelRatio: bonfire.getData('fuel') / bonfire.getData('maxFuel'),
             res: gameState.resources,
             distToFire: d(px, py, bx, by),
@@ -563,21 +563,26 @@
 
     function getResourceNeed(ctx) {
         const res = ctx ? ctx.res : gameState.resources;
-        if (res.wood < 3) return 'wood';
         const sc = ctx ? ctx.sc : getScene();
+
+        // Check what's needed for the next buildable structure
         if (sc) {
-            for (const spot of sc.buildSpots) {
-                if (spot.built || !spot.unlocked) continue;
-                const building = BUILDINGS[spot.config.type];
-                if (!building) continue;
-                for (const [r, amt] of Object.entries(building.cost)) {
-                    if ((res[r] || 0) < amt) {
-                        if (r === 'stone') return 'stone';
-                        if (r === 'metal') return 'metal';
+            const buildOrder = ['TURRET', 'FORGE', 'ARMOR_WORKSHOP', 'OUTPOST', 'WEAPON_SHOP', 'FRIEND_HUT'];
+            for (const bType of buildOrder) {
+                for (const spot of sc.buildSpots) {
+                    if (spot.built || !spot.unlocked) continue;
+                    if (spot.config.type !== bType) continue;
+                    const building = BUILDINGS[bType];
+                    if (!building) continue;
+                    // Find first missing resource for this building
+                    for (const [r, amt] of Object.entries(building.cost)) {
+                        if ((res[r] || 0) < amt) return r;
                     }
                 }
             }
         }
+
+        // Default: gather wood (for fire fuel)
         return 'wood';
     }
 
