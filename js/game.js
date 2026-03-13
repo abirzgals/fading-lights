@@ -3082,6 +3082,7 @@ class GameScene extends Phaser.Scene {
                 enemy.setData('attackCooldown', cd);
                 if (dist < enemy.getData('size') + 16 && cd <= 0) {
                     enemy.setData('attackCooldown', 1000);
+                    this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                     this.damagePlayer(enemy.getData('damage'));
                     this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                 }
@@ -3114,38 +3115,8 @@ class GameScene extends Phaser.Scene {
                         // At bonfire — attack it on cooldown
                         enemy.setVelocity(0, 0);
                         if (cd <= 0) {
-                            const fuelDrain = 5;
-                            const progressDrain = 2;
-                            const fuel = target.getData('fuel');
-                            target.setData('fuel', Math.max(0, fuel - fuelDrain));
-
-                            // Drain campFuelAdded — can lose fire level
-                            const campFuelAdded = target.getData('campFuelAdded') || 0;
-                            const newCampFuel = Math.max(0, campFuelAdded - progressDrain);
-                            target.setData('campFuelAdded', newCampFuel);
-                            if (target.getData('isMain')) gameState.fuelAdded = newCampFuel;
-
-                            // Recalculate fire level
-                            const levels = CONFIG.FIRE_LEVELS;
-                            const oldLevel = target.getData('campFireLevel') || 1;
-                            let newLevel = 1;
-                            for (let lv = levels.length - 1; lv >= 0; lv--) {
-                                if (newCampFuel >= levels[lv]) { newLevel = lv + 1; break; }
-                            }
-                            target.setData('campFireLevel', newLevel);
-                            if (target.getData('isMain')) {
-                                gameState.fireLevel = Math.max(
-                                    this.bonfires[0]?.getData('campFireLevel') || 1,
-                                    this._secondCampBonfire?.getData('campFireLevel') || 1
-                                );
-                            }
-                            if (newLevel < oldLevel) {
-                                this.showFloatingText(target.x, target.y - 50,
-                                    `FIRE WEAKENING! Lv.${newLevel}`, '#FF4444');
-                            }
-
-                            this.showFloatingText(target.x, target.y - 20, `-${fuelDrain} FUEL`, '#4444FF');
-                            enemy.setData('attackCooldown', 1500); // attack every 1.5s
+                            this._enemyAttackBonfire(enemy, target);
+                            enemy.setData('attackCooldown', 1500);
                         }
                     } else {
                         this._enemyPathToward(enemy, target.x, target.y, speed);
@@ -3183,6 +3154,7 @@ class GameScene extends Phaser.Scene {
                         this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                         if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
                             enemy.setData('attackCooldown', 1000);
+                            this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                             this.damagePlayer(enemy.getData('damage'));
                             this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                         }
@@ -3218,14 +3190,15 @@ class GameScene extends Phaser.Scene {
                         enemy.setData('attackCooldown', stats.attackCooldown);
                     }
 
-                    // Attack bonfire when reached
-                    const bonfireDist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.bonfires[0].x, this.bonfires[0].y);
-                    if (bonfireDist < 35 && cd <= 0) {
-                        const bonfire = this.bonfires[0];
-                        const fuel = bonfire.getData('fuel');
-                        bonfire.setData('fuel', Math.max(0, fuel - 3));
-                        this.showFloatingText(bonfire.x, bonfire.y - 20, '-3 FUEL', '#4444FF');
-                        enemy.setData('attackCooldown', 2000);
+                    // Attack nearest bonfire when reached
+                    let nearestBf = null, nearestBfDist = 45;
+                    for (const b of this.bonfires) {
+                        const bd = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
+                        if (bd < nearestBfDist) { nearestBfDist = bd; nearestBf = b; }
+                    }
+                    if (nearestBf && cd <= 0) {
+                        this._enemyAttackBonfire(enemy, nearestBf);
+                        enemy.setData('attackCooldown', 1500);
                     }
                 }
             } else if (enemy.getData('ranged')) {
@@ -3380,6 +3353,7 @@ class GameScene extends Phaser.Scene {
 
                     if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
+                        this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                         this.damagePlayer(enemy.getData('damage'));
                         this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                     }
@@ -3421,15 +3395,13 @@ class GameScene extends Phaser.Scene {
                             if (d < nearestDist) { nearestDist = d; nearestBonfire = b; }
                         }
                         if (nearestBonfire && cd <= 0) {
+                            this._enemyAttackBonfire(enemy, nearestBonfire);
                             enemy.setData('attackCooldown', 1500);
-                            const fuel = nearestBonfire.getData('fuel');
-                            nearestBonfire.setData('fuel', Math.max(0, fuel - 3));
-                            this.showFloatingText(nearestBonfire.x, nearestBonfire.y - 20, '-FUEL', '#8844FF');
                         }
                     }
                 }
             } else {
-                // Normal AI: sight-based aggro toward player
+                // Normal AI: decision tree — player nearby > bonfire > wander
                 const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let aggro = enemy.getData('aggro');
 
@@ -3438,21 +3410,43 @@ class GameScene extends Phaser.Scene {
                     aggro = true;
                     enemy.setData('aggro', true);
                 }
-                // Lose aggro: further for hit-aggro enemies, shorter for sight-aggro
+                // Lose aggro if too far
                 if (aggro && distToPlayer > AGGRO_RANGE) {
                     aggro = false;
                     enemy.setData('aggro', false);
                 }
 
-                if (aggro) {
-                    // Chase player using A* pathfinding
+                // Find nearest bonfire within detection range
+                const BONFIRE_DETECT = 200;
+                let nearestBonfire = null, bonfireDist = BONFIRE_DETECT;
+                for (const b of this.bonfires) {
+                    if (!b.getData('lit')) continue;
+                    const bd = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
+                    if (bd < bonfireDist) { bonfireDist = bd; nearestBonfire = b; }
+                }
+
+                // Priority: player close (aggro) > bonfire > wander
+                if (aggro && distToPlayer < SIGHT_RANGE) {
+                    // Chase player
                     this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
 
                     // Attack when close
                     if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
+                        this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                         this.damagePlayer(enemy.getData('damage'));
                         this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                    }
+                } else if (nearestBonfire) {
+                    // Head toward bonfire and attack it
+                    if (bonfireDist < 35) {
+                        enemy.setVelocity(0, 0);
+                        if (cd <= 0) {
+                            this._enemyAttackBonfire(enemy, nearestBonfire);
+                            enemy.setData('attackCooldown', 1500);
+                        }
+                    } else {
+                        this._enemyPathToward(enemy, nearestBonfire.x, nearestBonfire.y, speed * 0.8);
                     }
                 } else {
                     // Wander: slow random movement
@@ -3468,16 +3462,23 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            // Attack buildings
-            const buildings = [...this.buildingsGroup.children.entries];
-            for (const building of buildings) {
-                if (!building.active) continue;
-                const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, building.x, building.y);
-                if (d < 30) {
-                    let bhp = building.getData('hp') - enemy.getData('damage') * dt;
-                    building.setData('hp', bhp);
-                    if (bhp <= 0) {
-                        this.destroyBuilding(building);
+            // Attack buildings (cooldown-based, not per-frame)
+            if (cd <= 0) {
+                const buildings = [...this.buildingsGroup.children.entries];
+                for (const building of buildings) {
+                    if (!building.active) continue;
+                    const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, building.x, building.y);
+                    if (d < 35) {
+                        const dmg = enemy.getData('damage');
+                        let bhp = building.getData('hp') - dmg;
+                        building.setData('hp', bhp);
+                        this._enemyAttackVisual(enemy, building.x, building.y);
+                        this.showFloatingText(building.x, building.y - 20, `-${dmg}`, '#FF8844');
+                        enemy.setData('attackCooldown', 1200);
+                        if (bhp <= 0) {
+                            this.destroyBuilding(building);
+                        }
+                        break; // one attack per cooldown
                     }
                 }
             }
@@ -3511,6 +3512,65 @@ class GameScene extends Phaser.Scene {
             g.arc(x, y, radius, startAngle, endAngle);
             g.strokePath();
         }
+    }
+
+    // Enemy melee attack visual — slash animation like the player's
+    _enemyAttackVisual(enemy, targetX, targetY) {
+        const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, targetX, targetY);
+        const size = enemy.getData('size') || 14;
+        const reach = size + 10;
+        const ax = enemy.x + Math.cos(angle) * reach;
+        const ay = enemy.y + Math.sin(angle) * reach;
+
+        const slash = this.add.image(ax, ay, 'slash').setDepth(4910).setAlpha(0.6);
+        slash.setBlendMode('ADD');
+        slash.setRotation(angle);
+        slash.setScale(0.6);
+        slash.setTint(0xFF4444);
+        this.tweens.add({
+            targets: slash,
+            alpha: 0,
+            scale: 1.0,
+            duration: 180,
+            onComplete: () => slash.destroy()
+        });
+    }
+
+    // Enemy attacks a bonfire — drain fuel + possibly downgrade level
+    _enemyAttackBonfire(enemy, bonfire) {
+        const dmg = enemy.getData('damage');
+        const fuelDrain = Math.max(2, Math.floor(dmg * 0.3));
+        const progressDrain = Math.max(1, Math.floor(dmg * 0.15));
+        const fuel = bonfire.getData('fuel');
+        bonfire.setData('fuel', Math.max(0, fuel - fuelDrain));
+
+        // Drain campFuelAdded — can lose fire level
+        const campFuelAdded = bonfire.getData('campFuelAdded') || 0;
+        const newCampFuel = Math.max(0, campFuelAdded - progressDrain);
+        bonfire.setData('campFuelAdded', newCampFuel);
+        if (bonfire.getData('isMain')) gameState.fuelAdded = newCampFuel;
+
+        // Recalculate fire level
+        const levels = CONFIG.FIRE_LEVELS;
+        const oldLevel = bonfire.getData('campFireLevel') || 1;
+        let newLevel = 1;
+        for (let lv = levels.length - 1; lv >= 0; lv--) {
+            if (newCampFuel >= levels[lv]) { newLevel = lv + 1; break; }
+        }
+        bonfire.setData('campFireLevel', newLevel);
+        if (bonfire.getData('isMain')) {
+            gameState.fireLevel = Math.max(
+                this.bonfires[0]?.getData('campFireLevel') || 1,
+                this._secondCampBonfire?.getData('campFireLevel') || 1
+            );
+        }
+        if (newLevel < oldLevel) {
+            this.showFloatingText(bonfire.x, bonfire.y - 50,
+                `FIRE WEAKENING! Lv.${newLevel}`, '#FF4444');
+        }
+
+        this._enemyAttackVisual(enemy, bonfire.x, bonfire.y);
+        this.showFloatingText(bonfire.x, bonfire.y - 20, `-${fuelDrain} FUEL`, '#4444FF');
     }
 
     damageEnemy(enemy, amount) {
