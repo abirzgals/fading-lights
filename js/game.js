@@ -791,9 +791,11 @@ class GameScene extends Phaser.Scene {
                     k = cameFrom.get(k);
                 }
                 path.reverse();
-                // Simplify: keep every 3rd waypoint for smoother movement
-                const simplified = [];
-                for (let i = 0; i < path.length; i += 3) {
+                // First waypoint: center of the START tile so entity clears corners
+                const startCenter = { x: sx * T + T / 2, y: sy * T + T / 2 };
+                const simplified = [startCenter];
+                // Keep every 2nd waypoint (less aggressive skip to avoid corner clipping)
+                for (let i = 0; i < path.length; i += 2) {
                     simplified.push(path[i]);
                 }
                 // Always include final destination
@@ -805,6 +807,11 @@ class GameScene extends Phaser.Scene {
                 const nx = curr.x + dx, ny = curr.y + dy;
                 if (nx < 0 || ny < 0 || nx >= gs || ny >= gs) continue;
                 if (!grid[ny * gs + nx]) continue;
+
+                // Prevent diagonal corner-cutting: both adjacent cardinal tiles must be walkable
+                if (dx !== 0 && dy !== 0) {
+                    if (!grid[curr.y * gs + nx] || !grid[ny * gs + curr.x]) continue;
+                }
 
                 const moveCost = (dx !== 0 && dy !== 0) ? 1.41 : 1;
                 const ng = curr.g + moveCost;
