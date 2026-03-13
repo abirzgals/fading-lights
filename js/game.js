@@ -791,10 +791,7 @@ class GameScene extends Phaser.Scene {
                     k = cameFrom.get(k);
                 }
                 path.reverse();
-                // First waypoint: center of the START tile so entity clears corners
-                const startCenter = { x: sx * T + T / 2, y: sy * T + T / 2 };
-                const simplified = [startCenter];
-                // Keep every 2nd waypoint (less aggressive skip to avoid corner clipping)
+                const simplified = [];
                 for (let i = 0; i < path.length; i += 2) {
                     simplified.push(path[i]);
                 }
