@@ -5,8 +5,8 @@
 const mobileControls = {
     isMobile: false,
     joystick: { active: false, startX: 0, startY: 0, dx: 0, dy: 0, touchId: null },
-    attackPressed: false,
-    interactPressed: false,
+    attackHeld: false,     // true while button is held down
+    interactHeld: false,   // true while button is held down
 
     init() {
         // Detect mobile via touch capability + screen size
@@ -91,22 +91,30 @@ const mobileControls = {
         if (atkBtn) {
             atkBtn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
-                this.attackPressed = true;
+                this.attackHeld = true;
             }, { passive: false });
             atkBtn.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                this.attackPressed = false;
+                this.attackHeld = false;
+            }, { passive: false });
+            atkBtn.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                this.attackHeld = false;
             }, { passive: false });
         }
 
         if (intBtn) {
             intBtn.addEventListener('touchstart', (e) => {
                 e.preventDefault();
-                this.interactPressed = true;
+                this.interactHeld = true;
             }, { passive: false });
             intBtn.addEventListener('touchend', (e) => {
                 e.preventDefault();
-                this.interactPressed = false;
+                this.interactHeld = false;
+            }, { passive: false });
+            intBtn.addEventListener('touchcancel', (e) => {
+                e.preventDefault();
+                this.interactHeld = false;
             }, { passive: false });
         }
     },
@@ -123,22 +131,14 @@ const mobileControls = {
         return { x, y };
     },
 
-    // Consume attack press (returns true once per press)
+    // Returns true while attack button is held down
     consumeAttack() {
-        if (this.attackPressed) {
-            this.attackPressed = false;
-            return true;
-        }
-        return false;
+        return this.attackHeld;
     },
 
-    // Consume interact press
+    // Returns true while interact button is held down
     consumeInteract() {
-        if (this.interactPressed) {
-            this.interactPressed = false;
-            return true;
-        }
-        return false;
+        return this.interactHeld;
     },
 };
 

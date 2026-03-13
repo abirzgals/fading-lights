@@ -235,10 +235,12 @@ class GameScene extends Phaser.Scene {
 
         this.input.on('pointerdown', (pointer) => {
             if (gameState.gameOver || gameState.craftingOpen) return;
+            if (mobileControls.isMobile) return; // mobile uses joystick + buttons, not canvas taps
             if (pointer.leftButtonDown()) this._mouseLeftHeld = true;
             if (pointer.rightButtonDown()) this._mouseRightHeld = true;
         });
         this.input.on('pointerup', (pointer) => {
+            if (mobileControls.isMobile) return;
             if (!pointer.leftButtonDown()) this._mouseLeftHeld = false;
             if (!pointer.rightButtonDown()) this._mouseRightHeld = false;
         });
@@ -253,7 +255,7 @@ class GameScene extends Phaser.Scene {
             this.mouseWorldY = pointer.worldY;
         });
         this.useMouseFacing = false;
-        this.input.on('pointerdown', () => { this.useMouseFacing = true; });
+        this.input.on('pointerdown', () => { if (!mobileControls.isMobile) this.useMouseFacing = true; });
         // Switch back to keyboard facing when keys pressed
         for (const key of ['up', 'down', 'left', 'right']) {
             this.cursors[key].on('down', () => { this.useMouseFacing = false; });
@@ -2060,7 +2062,18 @@ class GameScene extends Phaser.Scene {
         if (this._interactCooldown > 0) this._interactCooldown -= delta;
         const kbInteract = Phaser.Input.Keyboard.JustDown(this.cursors.interact);
         const mobileInteract = mobileControls.consumeInteract();
-        const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld;
+        // Mobile auto-feed: when near a bonfire with wood, auto-interact
+        let mobileAutoFeed = false;
+        if (mobileControls.isMobile && gameState.resources.wood > 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
+            for (const b of this.bonfires) {
+                if (!b.getData('lit')) continue;
+                if (Phaser.Math.Distance.Between(p.x, p.y, b.x, b.y) < CONFIG.INTERACT_RADIUS) {
+                    mobileAutoFeed = true;
+                    break;
+                }
+            }
+        }
+        const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld || mobileAutoFeed;
         if (wantInteract && this._interactCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             if (this._mouseRightHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerInteract();

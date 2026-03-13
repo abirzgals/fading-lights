@@ -21,6 +21,9 @@
     const ATTACK_REACH = 40;
     let orbitAngle = 0;
 
+    // Hysteresis flag — prevents oscillating between retreat and work
+    let _retreating = false;  // true while bot is retreating due to low HP
+
     // Decision tree evaluation trace (for debug HUD)
     let treeTrace = [];       // [{name, depth, status: 'active'|'checked'|'skipped'}]
     let activeNodeName = '';  // label of the currently active leaf
@@ -637,22 +640,10 @@
         const res = ctx ? ctx.res : gameState.resources;
         const sc = ctx ? ctx.sc : getScene();
         const phase = ctx ? getStrategicPhase(ctx) : 'DEVELOP_BASE';
+        const fireLevel = ctx ? ctx.fireLevel : (gameState.fireLevel || 1);
 
-        // Fire needs fuel (wood) — check if current active bonfire needs it
-        if (phase === 'DEVELOP_BASE' && ctx && ctx.mainLevel < 6) {
-            // Need wood to level up the main bonfire
-            const levels = CONFIG.FIRE_LEVELS;
-            const curFuel = ctx.bonfire.getData('campFuelAdded') || 0;
-            const nextLevel = levels[ctx.mainLevel] || levels[levels.length - 1];
-            const fuelNeeded = nextLevel - curFuel;
-            const woodForFuel = Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD);
-            if (res.wood < Math.min(woodForFuel, 5)) {
-                return { need: 'wood', reason: `Wood for fire Lv.${ctx.mainLevel + 1}`, forGoal: 'Level Up Fire' };
-            }
-        }
-
-        // Check what's needed for the next buildable structure
-        if (sc) {
+        // Buildings FIRST (level 2+) — check what's needed for next buildable structure
+        if (fireLevel >= 2 && sc) {
             const buildOrder = ['TURRET', 'FORGE', 'ARMOR_WORKSHOP', 'OUTPOST', 'WEAPON_SHOP', 'FRIEND_HUT'];
             for (const bType of buildOrder) {
                 for (const spot of sc.buildSpots) {
@@ -667,6 +658,18 @@
                         }
                     }
                 }
+            }
+        }
+
+        // Fire needs fuel (wood) — level up the bonfire
+        if (phase === 'DEVELOP_BASE' && ctx && ctx.mainLevel < 6) {
+            const levels = CONFIG.FIRE_LEVELS;
+            const curFuel = ctx.bonfire.getData('campFuelAdded') || 0;
+            const nextLevel = levels[ctx.mainLevel] || levels[levels.length - 1];
+            const fuelNeeded = nextLevel - curFuel;
+            const woodForFuel = Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD);
+            if (res.wood < Math.min(woodForFuel, 5)) {
+                return { need: 'wood', reason: `Wood for fire Lv.${ctx.mainLevel + 1}`, forGoal: 'Level Up Fire' };
             }
         }
 
@@ -698,7 +701,12 @@
                     },
                     {
                         name: 'Low HP Retreat',
-                        check: (ctx) => ctx.hpRatio < 0.4 && ctx.distToFire > 60,
+                        check: (ctx) => {
+                            // Hysteresis: start retreating at < 40%, keep retreating until > 60%
+                            if (ctx.hpRatio < 0.4) _retreating = true;
+                            if (ctx.hpRatio > 0.6) _retreating = false;
+                            return _retreating && ctx.distToFire > 60;
+                        },
                         goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
                     },
                     {
@@ -780,10 +788,36 @@
                 check: () => true,
                 children: [
                     // --- Phase 1: Develop Main Base ---
+                    // Build defenses FIRST when affordable (level 2+), then level fire
                     {
                         name: 'Develop Base',
                         check: (ctx) => getStrategicPhase(ctx) === 'DEVELOP_BASE',
                         children: [
+                            // Priority 1: Build structures if we can afford them (level 2+)
+                            {
+                                name: 'Build Structure',
+                                check: (ctx) => ctx.fireLevel >= 2 && ctx.buildTarget !== null,
+                                goal: (ctx) => {
+                                    const s = ctx.buildTarget;
+                                    return { type: 'build', target: s, x: s.x, y: s.y };
+                                },
+                            },
+                            // Priority 2: Gather resources for next building (if close to affording)
+                            {
+                                name: 'Gather for Building',
+                                check: (ctx) => {
+                                    if (ctx.fireLevel < 2) return false;
+                                    const rn = getResourceNeed(ctx);
+                                    if (!rn.forGoal || !rn.forGoal.startsWith('Build')) return false;
+                                    const rt = ctx.resourceTarget;
+                                    return rt.target !== null;
+                                },
+                                goal: (ctx) => {
+                                    const rt = ctx.resourceTarget;
+                                    return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                },
+                            },
+                            // Priority 3: Level up fire
                             {
                                 name: 'Level Up Fire',
                                 check: (ctx) => ctx.mainLevel < 6,
@@ -796,47 +830,19 @@
                                     {
                                         name: 'Chop Wood for Fire',
                                         check: (ctx) => {
-                                            const rt = ctx.resourceTarget;
-                                            return rt.target !== null;
-                                        },
-                                        goal: (ctx) => {
-                                            // Force wood gathering for fire
                                             const sc = ctx.sc;
                                             const t = findNearest(sc.trees, ctx.px, ctx.py, ctx.bx, ctx.by, ctx.safeR);
-                                            if (t) return { type: 'chop', target: t, x: t.x, y: t.y };
-                                            const rt = ctx.resourceTarget;
-                                            return { type: 'chop', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                            return t !== null;
+                                        },
+                                        goal: (ctx) => {
+                                            const sc = ctx.sc;
+                                            const t = findNearest(sc.trees, ctx.px, ctx.py, ctx.bx, ctx.by, ctx.safeR);
+                                            return { type: 'chop', target: t, x: t.x, y: t.y };
                                         },
                                     },
                                 ],
                             },
-                            {
-                                name: 'Build Defenses',
-                                check: (ctx) => ctx.fireLevel >= 2,
-                                children: [
-                                    {
-                                        name: 'Build Structure',
-                                        check: (ctx) => ctx.buildTarget !== null,
-                                        goal: (ctx) => {
-                                            const s = ctx.buildTarget;
-                                            return { type: 'build', target: s, x: s.x, y: s.y };
-                                        },
-                                    },
-                                    {
-                                        name: 'Gather for Building',
-                                        check: (ctx) => {
-                                            const rn = getResourceNeed(ctx);
-                                            if (!rn.forGoal || !rn.forGoal.startsWith('Build')) return false;
-                                            const rt = ctx.resourceTarget;
-                                            return rt.target !== null;
-                                        },
-                                        goal: (ctx) => {
-                                            const rt = ctx.resourceTarget;
-                                            return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
-                                        },
-                                    },
-                                ],
-                            },
+                            // Priority 4: Stockpile whatever is needed
                             {
                                 name: 'Stockpile Resources',
                                 check: (ctx) => ctx.hpRatio > 0.35 && ctx.resourceTarget.target !== null,
