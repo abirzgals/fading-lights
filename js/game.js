@@ -47,6 +47,11 @@ class GameScene extends Phaser.Scene {
             this._createSecondCamp(this._secondCampWorldX, this._secondCampWorldY);
         }
 
+        // --- Monster Lair (win condition) ---
+        if (this._lairWorldX) {
+            this._createMonsterLair(this._lairWorldX, this._lairWorldY);
+        }
+
         // --- Build spots (predefined positions around bonfire) ---
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
@@ -688,6 +693,93 @@ class GameScene extends Phaser.Scene {
             this._occupiedTiles.add(`${stx},${sty}`);
         }
 
+        // --- Monster Lair (win condition) ---
+        // Place further than second camp, along the same direction
+        const lairDist = 52; // tiles from center (~1664px, well beyond second camp)
+        const lairAngle = secondCampAngle + (rng() - 0.5) * 0.3; // slightly offset from camp direction
+        const lair_tx = Math.round(cx + Math.cos(lairAngle) * lairDist);
+        const lair_ty = Math.round(cy + Math.sin(lairAngle) * lairDist);
+        this._lairTile = { tx: lair_tx, ty: lair_ty };
+        this._lairWorldX = lair_tx * T + 16;
+        this._lairWorldY = lair_ty * T + 16;
+
+        // Clear trees and stones around lair (radius 6 tiles)
+        for (const tree of [...this.trees.children.entries]) {
+            const ttx = Math.floor(tree.x / T);
+            const tty = Math.floor(tree.y / T);
+            const dx = ttx - lair_tx, dy = tty - lair_ty;
+            if (dx * dx + dy * dy < 6 * 6) {
+                this._occupiedTiles.delete(`${ttx},${tty}`);
+                tree.destroy();
+            }
+        }
+        for (const stone of [...this.stones.children.entries]) {
+            const dx = stone.x - this._lairWorldX;
+            const dy = stone.y - this._lairWorldY;
+            if (dx * dx + dy * dy < (6 * T) * (6 * T)) stone.destroy();
+        }
+
+        // Generate winding road from bonfire → second camp → lair
+        const roadPoints = [
+            { x: cx, y: cy },
+            { x: sc_tx, y: sc_ty },
+            { x: lair_tx, y: lair_ty },
+        ];
+        for (let seg = 0; seg < roadPoints.length - 1; seg++) {
+            const from = roadPoints[seg], to = roadPoints[seg + 1];
+            let rx = from.x, ry = from.y;
+            const rdx = to.x - from.x, rdy = to.y - from.y;
+            let roadAngle = Math.atan2(rdy, rdx);
+            const totalDist = Math.hypot(rdx, rdy);
+            const steps = Math.ceil(totalDist / 1.0);
+            for (let s = 0; s < steps; s++) {
+                // Natural drift
+                const targetAngle = Math.atan2(to.y - ry, to.x - rx);
+                roadAngle = roadAngle + (targetAngle - roadAngle) * 0.15 + (rng() - 0.5) * 0.25;
+                rx += Math.cos(roadAngle) * 1.0;
+                ry += Math.sin(roadAngle) * 1.0;
+                const tpx = Math.round(rx), tpy = Math.round(ry);
+                if (tpx < 1 || tpx >= worldSize - 1 || tpy < 1 || tpy >= worldSize - 1) break;
+                // Road width: 2 tiles
+                for (let ddx = -1; ddx <= 1; ddx++) {
+                    for (let ddy = -1; ddy <= 1; ddy++) {
+                        if (Math.abs(ddx) + Math.abs(ddy) <= 1) {
+                            pathTiles.add(`${tpx + ddx},${tpy + ddy}`);
+                        }
+                    }
+                }
+                // Clear trees on the road
+                for (const tree of [...this.trees.children.entries]) {
+                    const ttx = Math.floor(tree.x / T);
+                    const tty = Math.floor(tree.y / T);
+                    if (Math.abs(ttx - tpx) <= 1 && Math.abs(tty - tpy) <= 1) {
+                        this._occupiedTiles.delete(`${ttx},${tty}`);
+                        tree.destroy();
+                    }
+                }
+            }
+        }
+
+        // Draw the new road tiles (same logic as above, re-render all path tiles)
+        for (const key of pathTiles) {
+            const [ptx, pty] = key.split(',').map(Number);
+            const wx = ptx * T, wy = pty * T;
+            let neighbors = 0;
+            for (let ddx = -1; ddx <= 1; ddx++) {
+                for (let ddy = -1; ddy <= 1; ddy++) {
+                    if (ddx === 0 && ddy === 0) continue;
+                    if (pathTiles.has(`${ptx + ddx},${pty + ddy}`)) neighbors++;
+                }
+            }
+            if (neighbors >= 5) {
+                const variant = (ptx * 7 + pty * 13) % 4;
+                this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+            } else if (neighbors >= 2) {
+                const variant = (ptx * 11 + pty * 3) % 4;
+                this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+            }
+        }
+
         // --- Wandering Merchant Shop ---
         // Place on opposite side of center from second camp, at ~lvl3 light range
         const shopAngle = secondCampAngle + Math.PI + (rng() - 0.5) * 0.6; // roughly opposite
@@ -1053,6 +1145,187 @@ class GameScene extends Phaser.Scene {
         this._secondCampBonfire = bonfire;
     }
 
+    // Create the monster lair (destroy to win)
+    _createMonsterLair(x, y) {
+        const lair = this.physics.add.staticImage(x, y, 'monster_lair');
+        lair.setDepth(4);
+        lair.setData('hp', 500);
+        lair.setData('maxHp', 500);
+        lair.setData('type', 'lair');
+        lair.setData('spawnTimer', 0);
+        lair.setData('active', true);
+        lair.body.setSize(48, 40);
+        lair.body.setOffset(8, 16);
+
+        // Label
+        const label = this.add.text(x, y - 44, 'Monster Lair', {
+            fontSize: '10px', fontFamily: 'monospace',
+            color: '#FF4444', stroke: '#000000', strokeThickness: 2,
+        }).setOrigin(0.5).setDepth(5050);
+        lair.setData('label', label);
+
+        // HP bar background
+        const hpBg = this.add.graphics();
+        hpBg.fillStyle(0x000000, 0.6);
+        hpBg.fillRect(x - 28, y - 38, 56, 6);
+        hpBg.setDepth(5049);
+        lair.setData('hpBg', hpBg);
+
+        // HP bar fill
+        const hpBar = this.add.graphics();
+        hpBar.fillStyle(0xFF2200, 1);
+        hpBar.fillRect(x - 27, y - 37, 54, 4);
+        hpBar.setDepth(5050);
+        lair.setData('hpBar', hpBar);
+
+        // Purple aura around lair
+        const aura = this.add.graphics();
+        aura.lineStyle(2, 0x6622AA, 0.3);
+        aura.strokeCircle(x, y, 50);
+        aura.setDepth(3);
+        lair.setData('aura', aura);
+
+        this._monsterLair = lair;
+    }
+
+    _updateLairHpBar() {
+        const lair = this._monsterLair;
+        if (!lair || !lair.getData('active')) return;
+        const hp = lair.getData('hp');
+        const maxHp = lair.getData('maxHp');
+        const x = lair.x, y = lair.y;
+        const ratio = Math.max(0, hp / maxHp);
+
+        const hpBar = lair.getData('hpBar');
+        if (hpBar) {
+            hpBar.clear();
+            const color = ratio > 0.5 ? 0xFF2200 : ratio > 0.25 ? 0xFF6600 : 0xFF0000;
+            hpBar.fillStyle(color, 1);
+            hpBar.fillRect(x - 27, y - 37, 54 * ratio, 4);
+        }
+    }
+
+    _damageLair(amount) {
+        const lair = this._monsterLair;
+        if (!lair || !lair.getData('active')) return;
+        const hp = Math.max(0, lair.getData('hp') - amount);
+        lair.setData('hp', hp);
+        this.showFloatingText(lair.x, lair.y - 20, `-${amount}`, '#FFAA00');
+        this._updateLairHpBar();
+
+        if (hp <= 0) {
+            this._destroyLair();
+        }
+    }
+
+    _destroyLair() {
+        const lair = this._monsterLair;
+        if (!lair) return;
+        lair.setData('active', false);
+        lair.setAlpha(0.2);
+
+        // Clean up visuals
+        const label = lair.getData('label');
+        if (label) label.destroy();
+        const hpBg = lair.getData('hpBg');
+        if (hpBg) hpBg.destroy();
+        const hpBar = lair.getData('hpBar');
+        if (hpBar) hpBar.destroy();
+        const aura = lair.getData('aura');
+        if (aura) aura.destroy();
+
+        this.showFloatingText(lair.x, lair.y - 30, 'LAIR DESTROYED!', '#44FF44');
+        this._doVictory();
+    }
+
+    _doVictory() {
+        gameState.gameOver = true;
+        this.player.setVelocity(0, 0);
+        const goScreen = document.getElementById('game-over-screen');
+        const goTitle = goScreen.querySelector('h1');
+        const goStats = document.getElementById('game-over-stats');
+        goTitle.textContent = 'VICTORY!';
+        goTitle.style.color = '#44FF44';
+        const objDone = this._objectives ? this._objectives.filter(o => o.completed).length : 0;
+        const objTotal = this._objectives ? this._objectives.length : 0;
+        goStats.textContent = `Survived ${Math.floor(gameState.time)}s | Killed ${gameState.kills} enemies | Wave ${gameState.waveNumber} | Objectives ${objDone}/${objTotal}`;
+        goScreen.style.display = 'flex';
+        audioEngine.stopLoop('music', 1000);
+        audioEngine.stopLoop('fire_crackle', 500);
+        audioEngine.stopLoop('ambient', 1000);
+        audioEngine.stopFootsteps();
+    }
+
+    _updateMonsterLair(dt) {
+        const lair = this._monsterLair;
+        if (!lair || !lair.getData('active')) return;
+
+        // Start spawning after 3 minutes
+        if (gameState.time < 180) return;
+
+        let timer = lair.getData('spawnTimer') + dt * 1000;
+        // Spawn interval: faster over time (every 12s → 6s)
+        const spawnInterval = Math.max(6000, 12000 - gameState.time * 10);
+        if (timer >= spawnInterval) {
+            timer = 0;
+            this._spawnLairEnemy();
+        }
+        lair.setData('spawnTimer', timer);
+    }
+
+    _spawnLairEnemy() {
+        const lair = this._monsterLair;
+        if (!lair || this.enemies.children.size >= CONFIG.MAX_ENEMIES + 5) return;
+
+        const lx = lair.x, ly = lair.y;
+        // Pick enemy type — heavier enemies over time
+        const roll = Math.random();
+        const elapsed = gameState.time;
+        let type;
+        if (elapsed < 300) {
+            type = roll < 0.4 ? 'FOG_CRAWLER' : roll < 0.7 ? 'SHADOW_STALKER' : 'SHADOW_WISP';
+        } else if (elapsed < 480) {
+            type = roll < 0.3 ? 'FOG_CRAWLER' : roll < 0.5 ? 'SHADOW_BEAST' : roll < 0.75 ? 'SHADOW_STALKER' : 'SHADOW_ARCHER';
+        } else {
+            type = roll < 0.25 ? 'FOG_CRAWLER' : roll < 0.45 ? 'SHADOW_BEAST' : roll < 0.6 ? 'SHADOW_LORD' : roll < 0.8 ? 'VOID_MAGE' : 'SHADOW_ARCHER';
+        }
+
+        const stats = ENEMIES[type];
+        // Spawn near lair with slight offset
+        const angle = Math.random() * Math.PI * 2;
+        const sx = lx + Math.cos(angle) * 40;
+        const sy = ly + Math.sin(angle) * 40;
+
+        const textureKey = {
+            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
+            FOG_CRAWLER: 'enemy_crawler', SHADOW_ARCHER: 'enemy_archer',
+            VOID_MAGE: 'enemy_mage',
+        }[type];
+
+        const enemy = this.enemies.create(sx, sy, textureKey);
+        enemy.setDepth(5);
+        const bodyW = Math.round(stats.size * 0.8);
+        const bodyH = Math.round(stats.size * 0.8);
+        enemy.body.setSize(bodyW, bodyH);
+        enemy.setData('type', type);
+        enemy.setData('hp', stats.hp);
+        enemy.setData('maxHp', stats.hp);
+        enemy.setData('damage', stats.damage);
+        enemy.setData('speed', stats.speed);
+        enemy.setData('xp', stats.xp);
+        enemy.setData('size', stats.size);
+        enemy.setData('gold', stats.gold || 0);
+        enemy.setData('attackCooldown', 0);
+        enemy.setData('targetsFire', stats.targetsFire || false);
+        enemy.setData('ranged', !!stats.ranged);
+        enemy.setData('fromLair', true);
+
+        // Lair enemies aggro player if close, otherwise march to bonfire
+        enemy.setData('lairTargetX', this.bonfires[0].x);
+        enemy.setData('lairTargetY', this.bonfires[0].y);
+    }
+
     // Create the wandering merchant shop
     _createShop(x, y) {
         const shop = this.physics.add.staticImage(x, y, 'shop');
@@ -1364,6 +1637,7 @@ class GameScene extends Phaser.Scene {
         this.updateProjectiles(dt);
         this.drawEnemyHealth();
         this.updateAllies(dt);
+        this._updateMonsterLair(dt);
         this.updateTurrets(dt);
         this.updateDropPickup();
         this.updateDarknessDamage(dt);
@@ -1832,6 +2106,17 @@ class GameScene extends Phaser.Scene {
                 this.damageEnemy(enemy, dmg);
                 audioEngine.playHit();
                 network.broadcastAction('hit', enemy.x, enemy.y);
+            }
+        }
+
+        // Check hit on monster lair
+        if (this._monsterLair && this._monsterLair.getData('active')) {
+            const lairDist = Phaser.Math.Distance.Between(ax, ay, this._monsterLair.x, this._monsterLair.y);
+            if (lairDist < weapon.range + 32) {
+                let dmg = weapon.damage;
+                if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                this._damageLair(dmg);
+                audioEngine.playHit();
             }
         }
 
@@ -2791,6 +3076,39 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         this._enemyPathToward(enemy, target.x, target.y, speed);
+                    }
+                }
+            } else if (enemy.getData('fromLair') && !enemy.getData('ranged')) {
+                // LAIR ENEMY AI: march to bonfire, aggro player if close
+                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                const aggroRange = 120;
+
+                if (distToPlayer < aggroRange || enemy.getData('aggro')) {
+                    // Chase player
+                    enemy.setData('aggro', true);
+                    if (distToPlayer > 250) {
+                        enemy.setData('aggro', false); // leash
+                    } else {
+                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
+                        if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
+                            enemy.setData('attackCooldown', 1000);
+                            this.damagePlayer(enemy.getData('damage'));
+                            this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                        }
+                    }
+                } else {
+                    // March to bonfire
+                    const tx = enemy.getData('lairTargetX') || this.bonfires[0].x;
+                    const ty = enemy.getData('lairTargetY') || this.bonfires[0].y;
+                    this._enemyPathToward(enemy, tx, ty, speed * 0.7);
+                    const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+                    // Attack bonfire when reached
+                    if (distToTarget < 35 && cd <= 0) {
+                        const bonfire = this.bonfires[0];
+                        const fuel = bonfire.getData('fuel');
+                        bonfire.setData('fuel', Math.max(0, fuel - 3));
+                        this.showFloatingText(bonfire.x, bonfire.y - 20, '-3 FUEL', '#4444FF');
+                        enemy.setData('attackCooldown', 2000);
                     }
                 }
             } else if (enemy.getData('ranged')) {

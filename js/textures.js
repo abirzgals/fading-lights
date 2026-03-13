@@ -415,6 +415,39 @@ function generateTextures(scene) {
     g.fillCircle(7, 6, 1.5);
     g.generateTexture('proj_magic', 16, 16);
 
+    // Monster Lair — dark cave/nest with glowing eyes inside (64x64)
+    g.clear();
+    // Cave mound (dark rock)
+    g.fillStyle(0x1A1A2A, 1);
+    g.fillEllipse(32, 40, 60, 44);
+    g.fillStyle(0x222238, 0.8);
+    g.fillEllipse(28, 34, 48, 36);
+    g.fillEllipse(38, 36, 40, 32);
+    // Cave entrance (dark hole)
+    g.fillStyle(0x050508, 1);
+    g.fillEllipse(32, 42, 28, 20);
+    g.fillStyle(0x080810, 0.9);
+    g.fillEllipse(32, 40, 22, 16);
+    // Spiky protrusions on top
+    g.fillStyle(0x181828, 1);
+    g.fillTriangle(12, 24, 18, 8, 24, 24);
+    g.fillTriangle(28, 20, 34, 4, 40, 20);
+    g.fillTriangle(42, 22, 48, 10, 54, 24);
+    // Eerie red glow from inside
+    g.fillStyle(0xFF2200, 0.4);
+    g.fillCircle(26, 42, 6);
+    g.fillCircle(38, 42, 6);
+    // Glowing eyes deep inside
+    g.fillStyle(0xFF0000, 1);
+    g.fillCircle(26, 41, 2.5);
+    g.fillCircle(38, 41, 2.5);
+    // Purple mist around base
+    g.fillStyle(0x6622AA, 0.15);
+    g.fillCircle(16, 52, 10);
+    g.fillCircle(48, 50, 8);
+    g.fillCircle(32, 56, 12);
+    g.generateTexture('monster_lair', 64, 64);
+
     // Wandering Merchant Shop — wooden stall with lantern and sign
     g.clear();
     // Base platform (wooden planks)
