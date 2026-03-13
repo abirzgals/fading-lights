@@ -1,4 +1,4 @@
-const SW_VERSION = '0.5.42';
+const SW_VERSION = '0.5.43';
 const CACHE_NAME = 'fading-light-' + SW_VERSION;
 const ASSETS = [
     './',

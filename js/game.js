@@ -238,6 +238,23 @@ class GameScene extends Phaser.Scene {
             }
         });
 
+        // --- Dev shortcuts: P = spawn merchant near cursor, G = +1000 gold ---
+        this.input.keyboard.on('keydown-P', () => {
+            if (!window._debugMode || this._chatOpen) return;
+            const mx = this.mouseWorldX || this.player.x;
+            const my = this.mouseWorldY || this.player.y;
+            if (this.shopSprite) { this.shopSprite.destroy(); }
+            if (this._shopLabel) { this._shopLabel.destroy(); }
+            if (this._shopGlow) { this._shopGlow.destroy(); }
+            this._createShop(mx, my);
+            this.showFloatingText(mx, my - 30, 'MERCHANT', '#FFD700');
+        });
+        this.input.keyboard.on('keydown-G', () => {
+            if (!window._debugMode || this._chatOpen) return;
+            gameState.resources.gold += 1000;
+            this.showFloatingText(this.player.x, this.player.y - 30, '+1000 GOLD', '#FFD700');
+        });
+
         // --- Mouse input (hold to repeat) ---
         this._mouseLeftHeld = false;
         this._mouseRightHeld = false;
@@ -2145,7 +2162,8 @@ class GameScene extends Phaser.Scene {
         const facingLeft = p.facing.x < 0;
 
         // Sprite base orientation: tip at upper-right (~-45°), handle at lower-left
-        // FlipY mirrors tip from -PI/4 to +PI/4, so negate BASE_ROT when flipped
+        // FlipY is applied AFTER rotation in Phaser, so with flipY:
+        //   rot = BASE_ROT - facingAngle (instead of facingAngle + BASE_ROT)
         const BASE_ROT = Math.PI / 4;
         const rotSign = facingLeft ? -1 : 1;
 
@@ -2162,13 +2180,13 @@ class GameScene extends Phaser.Scene {
                 const side = facingLeft ? -1 : 1;
                 wx = p.x + Math.cos(facingAngle + arcAngle * side * 0.5) * dist;
                 wy = p.y + Math.sin(facingAngle + arcAngle * side * 0.5) * dist;
-                rot = facingAngle + BASE_ROT * rotSign + arcAngle * side;
+                rot = BASE_ROT + facingAngle * rotSign + arcAngle * side;
             } else {
                 // Resting: held at the side
                 const sideAngle = facingAngle + (facingLeft ? 0.6 : -0.6);
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = facingAngle + BASE_ROT * rotSign;
+                rot = BASE_ROT + facingAngle * rotSign;
             }
         } else if (attackType === 'thrust') {
             const restDist = 8;
@@ -2178,12 +2196,12 @@ class GameScene extends Phaser.Scene {
                 const dist = restDist + 18 * thrustPhase;
                 wx = p.x + Math.cos(facingAngle) * dist;
                 wy = p.y + Math.sin(facingAngle) * dist;
-                rot = facingAngle + BASE_ROT * rotSign;
+                rot = BASE_ROT + facingAngle * rotSign;
             } else {
                 const sideAngle = facingAngle + (facingLeft ? 0.4 : -0.4);
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = facingAngle + BASE_ROT * rotSign;
+                rot = BASE_ROT + facingAngle * rotSign;
             }
         } else {
             // 'shoot' — bow stays at the side, slight pullback on attack
@@ -2191,7 +2209,7 @@ class GameScene extends Phaser.Scene {
             const sideAngle = facingAngle + (facingLeft ? 0.5 : -0.5);
             wx = p.x + Math.cos(sideAngle) * restDist;
             wy = p.y + Math.sin(sideAngle) * restDist;
-            rot = facingAngle + BASE_ROT * rotSign;
+            rot = BASE_ROT + facingAngle * rotSign;
             if (attacking && phase < 0.3) {
                 const pullback = (0.3 - phase) / 0.3 * 4;
                 wx -= Math.cos(facingAngle) * pullback;
