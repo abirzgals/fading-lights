@@ -95,19 +95,26 @@
             window._gs = this;
         };
 
-        // Register service worker for PWA — force update check on every load
+        // Register service worker for PWA — force update on every load
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
-                .then((reg) => {
-                    // Check for updates immediately
-                    reg.update();
-                    // When a new SW takes over, reload to get fresh assets
-                    let refreshing = false;
-                    navigator.serviceWorker.addEventListener('controllerchange', () => {
-                        if (!refreshing) { refreshing = true; location.reload(); }
-                    });
-                })
-                .catch(() => {});
+            // Nuke old caches and SW if version mismatch
+            (async () => {
+                const keys = await caches.keys();
+                const stale = keys.filter(k => k.startsWith('fading-light-') && k !== 'fading-light-' + GAME_VERSION);
+                await Promise.all(stale.map(k => caches.delete(k)));
+                if (stale.length > 0) {
+                    // Old cache found — unregister old SW so fresh one installs
+                    const regs = await navigator.serviceWorker.getRegistrations();
+                    for (const r of regs) await r.unregister();
+                }
+                // Register (or re-register) the SW
+                const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+                reg.update();
+                let refreshing = false;
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    if (!refreshing) { refreshing = true; location.reload(); }
+                });
+            })().catch(() => {});
         }
 
         // Fullscreen toggle
