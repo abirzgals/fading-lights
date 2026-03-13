@@ -2620,8 +2620,8 @@ class GameScene extends Phaser.Scene {
             return;
         }
 
-        const SIGHT_RANGE = 250; // pixels — enemies must see player to chase
-        const AGGRO_RANGE = 180; // once hit or very close, always aggro
+        const SIGHT_RANGE = 350; // pixels — enemies detect player to chase
+        const AGGRO_RANGE = 500; // once hit (aggro=true), chase from further away
         const WANDER_SPEED = 0.35; // fraction of normal speed when wandering
 
         const enemyList = [...this.enemies.children.entries];
@@ -2658,11 +2658,39 @@ class GameScene extends Phaser.Scene {
 
                 // Ranged raiders: march to camp edge then patrol and shoot
                 if (isRaider) {
+                    // If hit by player, chase them
+                    if (enemy.getData('aggro') && distToPlayer < AGGRO_RANGE) {
+                        enemy.setData('raidMode', 'chase');
+                    }
+                    if (enemy.getData('raidMode') === 'chase' && distToPlayer > CONFIG.RAID_LEASH_RANGE) {
+                        enemy.setData('raidMode', 'march');
+                        enemy.setData('aggro', false);
+                    }
+
                     const tx = enemy.getData('raidTargetX');
                     const ty = enemy.getData('raidTargetY');
                     const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
 
-                    if (distToTarget > atkRange * 0.9) {
+                    if (enemy.getData('raidMode') === 'chase') {
+                        // Chase player — keep at attack range
+                        if (distToPlayer > atkRange * 0.8) {
+                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                        } else {
+                            // Good range — strafe around player
+                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            orbitAngle += dt * 0.5;
+                            enemy.setData('orbitAngle', orbitAngle);
+                            const ox = this.player.x + Math.cos(orbitAngle) * atkRange * 0.75;
+                            const oy = this.player.y + Math.sin(orbitAngle) * atkRange * 0.75;
+                            const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
+                            this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.5);
+                            enemy.setFlipX(this.player.x < enemy.x);
+                        }
+                        if (cd <= 0 && distToPlayer < atkRange) {
+                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            enemy.setData('attackCooldown', stats.attackCooldown);
+                        }
+                    } else if (distToTarget > atkRange * 0.9) {
                         // Follow pathfinding waypoints toward camp
                         const path = enemy.getData('raidPath');
                         let pathIdx = enemy.getData('raidPathIdx') || 0;
@@ -2700,12 +2728,19 @@ class GameScene extends Phaser.Scene {
                     }
                 } else {
                     // Non-raider ranged: patrol light edge, shoot player when visible
+                    // If aggro'd (hit by player), actively pursue within attack range
                     const mainBonfire = this.bonfires[0];
                     const lightRadius = this.getLightRadius(mainBonfire);
                     const distToFire = Phaser.Math.Distance.Between(enemy.x, enemy.y, mainBonfire.x, mainBonfire.y);
                     const idealDist = lightRadius + 20; // just outside light
+                    const isAggro = enemy.getData('aggro');
 
-                    if (distToPlayer < atkRange) {
+                    // If aggro'd and player too far to shoot, close the distance
+                    if (isAggro && distToPlayer > atkRange && distToPlayer < AGGRO_RANGE) {
+                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                        // Lose aggro if too far
+                        if (distToPlayer > AGGRO_RANGE) enemy.setData('aggro', false);
+                    } else if (distToPlayer < atkRange || (isAggro && distToPlayer < atkRange * 1.5)) {
                         // Player in range — stop and shoot
                         const fleeDist = atkRange * 0.5;
                         if (distToPlayer < fleeDist) {
@@ -2819,13 +2854,13 @@ class GameScene extends Phaser.Scene {
                 const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let aggro = enemy.getData('aggro');
 
-                // Gain aggro: player in sight range or very close
-                if (!aggro && (distToPlayer < SIGHT_RANGE || distToPlayer < AGGRO_RANGE)) {
+                // Gain aggro: player in sight range
+                if (!aggro && distToPlayer < SIGHT_RANGE) {
                     aggro = true;
                     enemy.setData('aggro', true);
                 }
-                // Lose aggro if player gets very far
-                if (aggro && distToPlayer > SIGHT_RANGE * 2.5) {
+                // Lose aggro: further for hit-aggro enemies, shorter for sight-aggro
+                if (aggro && distToPlayer > AGGRO_RANGE) {
                     aggro = false;
                     enemy.setData('aggro', false);
                 }
