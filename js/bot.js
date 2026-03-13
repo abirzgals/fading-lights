@@ -574,7 +574,8 @@
 
         Object.defineProperty(ctx, 'resourceTarget', { get() {
             if (this._resourceTarget === undefined) {
-                const need = getResourceNeed(ctx);
+                const rn = getResourceNeed(ctx);
+                const need = rn.need;
                 let group = need === 'wood' ? sc.trees : need === 'stone' ? sc.stones : sc.metals;
                 let target = findNearest(group, px, py, bx, by, ctx.safeR);
                 if (need === 'metal' && sc.metalMines) {
@@ -583,7 +584,7 @@
                         target = mine;
                     }
                 }
-                this._resourceTarget = { need, target };
+                this._resourceTarget = { need, target, reason: rn.reason, forGoal: rn.forGoal };
             }
             return this._resourceTarget;
         }});
@@ -591,9 +592,47 @@
         return ctx;
     }
 
+    // ---- Strategic Goal Planner ----
+    // Determines the current strategic phase and what sub-goal to work toward
+    function getStrategicPhase(ctx) {
+        const sc2 = ctx.secondCamp;
+        const sc2Level = sc2 ? (sc2.getData('campFireLevel') || 1) : 0;
+        const lair = ctx.monsterLair;
+
+        // Phase 4: Lair destroyed — victory idle
+        if (!lair || !lair.getData('active')) {
+            if (ctx.mainLevel >= 6) return 'VICTORY';
+        }
+        // Phase 3: Both camps maxed → attack lair
+        if (ctx.mainLevel >= 6 && sc2 && sc2.active && sc2Level >= 6 && lair && lair.getData('active')) {
+            return 'ATTACK_LAIR';
+        }
+        // Phase 2: Main camp maxed → develop second camp
+        if (ctx.mainLevel >= 6 && sc2 && sc2.active) {
+            return 'MAX_SECOND_CAMP';
+        }
+        // Phase 1: Develop main base
+        return 'DEVELOP_BASE';
+    }
+
+    // Returns { need: 'wood'|'stone'|'metal', reason: 'description', forGoal: 'parent goal' }
     function getResourceNeed(ctx) {
         const res = ctx ? ctx.res : gameState.resources;
         const sc = ctx ? ctx.sc : getScene();
+        const phase = ctx ? getStrategicPhase(ctx) : 'DEVELOP_BASE';
+
+        // Fire needs fuel (wood) — check if current active bonfire needs it
+        if (phase === 'DEVELOP_BASE' && ctx && ctx.mainLevel < 6) {
+            // Need wood to level up the main bonfire
+            const levels = CONFIG.FIRE_LEVELS;
+            const curFuel = ctx.bonfire.getData('campFuelAdded') || 0;
+            const nextLevel = levels[ctx.mainLevel] || levels[levels.length - 1];
+            const fuelNeeded = nextLevel - curFuel;
+            const woodForFuel = Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD);
+            if (res.wood < Math.min(woodForFuel, 5)) {
+                return { need: 'wood', reason: `Wood for fire Lv.${ctx.mainLevel + 1}`, forGoal: 'Level Up Fire' };
+            }
+        }
 
         // Check what's needed for the next buildable structure
         if (sc) {
@@ -606,24 +645,33 @@
                     if (!building) continue;
                     // Find first missing resource for this building
                     for (const [r, amt] of Object.entries(building.cost)) {
-                        if ((res[r] || 0) < amt) return r;
+                        if ((res[r] || 0) < amt) {
+                            return { need: r, reason: `${r} for ${building.name}`, forGoal: `Build ${building.name}` };
+                        }
                     }
                 }
             }
         }
 
+        // Second camp phase: need wood for fuel
+        if (phase === 'MAX_SECOND_CAMP') {
+            return { need: 'wood', reason: 'Wood for 2nd camp fuel', forGoal: 'Max Second Camp' };
+        }
+
         // Default: gather wood (for fire fuel)
-        return 'wood';
+        return { need: 'wood', reason: 'Wood for fire fuel', forGoal: 'Feed Fire' };
     }
 
     // ---- The Decision Tree ----
+    // Goal-oriented: everything cascades from "Destroy Lair" root goal
+    // SURVIVAL and COMBAT are reactive interrupts; PROGRESS is the main driver
     const DECISION_TREE = {
-        name: 'ROOT',
+        name: '\u2694 DESTROY LAIR',
         check: () => true,
         children: [
-            // === SURVIVAL (highest priority) ===
+            // === SURVIVAL (reactive — highest priority interrupt) ===
             {
-                name: 'SURVIVAL',
+                name: '\u26a0 SURVIVE',
                 check: () => true,
                 children: [
                     {
@@ -653,21 +701,22 @@
                     },
                 ],
             },
-            // === URGENT MAINTENANCE ===
+            // === FIRE EMERGENCY (reactive) ===
             {
-                name: 'URGENT',
-                check: () => true,
+                name: '\ud83d\udd25 FIRE DYING',
+                check: (ctx) => ctx.fuelRatio < 0.35,
                 children: [
                     {
                         name: 'Feed Fire (critical)',
-                        check: (ctx) => ctx.fuelRatio < 0.4 && ctx.res.wood >= 1,
+                        check: (ctx) => ctx.res.wood >= 1,
                         goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
                     },
                     {
-                        name: 'Chop for Fire (critical)',
+                        name: 'Chop for Fire (urgent)',
                         check: (ctx) => {
-                            if (ctx.fuelRatio >= 0.4 || ctx.res.wood >= 1) return false;
-                            return ctx.hpRatio > 0.35 && ctx.resourceTarget.need === 'wood' && ctx.resourceTarget.target;
+                            if (ctx.hpRatio < 0.35) return false;
+                            const rt = ctx.resourceTarget;
+                            return rt.target !== null;
                         },
                         goal: (ctx) => {
                             const t = ctx.resourceTarget.target;
@@ -676,14 +725,14 @@
                     },
                 ],
             },
-            // === COMBAT ===
+            // === COMBAT (reactive — kill enemies in light radius) ===
             {
-                name: 'COMBAT',
-                check: () => true,
+                name: '\u2694 COMBAT',
+                check: (ctx) => ctx.bestEnemy !== null,
                 children: [
                     {
                         name: 'Kill Enemy',
-                        check: (ctx) => ctx.bestEnemy !== null,
+                        check: () => true,
                         goal: (ctx) => {
                             const e = ctx.bestEnemy;
                             return { type: 'kill', target: e, x: e.x, y: e.y };
@@ -691,97 +740,158 @@
                     },
                 ],
             },
-            // === BASE DEVELOPMENT ===
+            // === COLLECT NEARBY DROPS (opportunistic) ===
             {
-                name: 'BASE',
+                name: 'Collect Drops',
+                check: (ctx) => ctx.hpRatio > 0.35 && ctx.bestDrop !== null,
+                goal: (ctx) => {
+                    const dr = ctx.bestDrop;
+                    return { type: 'pickup', target: dr, x: dr.x, y: dr.y };
+                },
+            },
+            // === PROGRESS — goal-oriented main driver ===
+            {
+                name: '\u2b50 PROGRESS',
                 check: () => true,
                 children: [
+                    // --- Phase 1: Develop Main Base ---
                     {
-                        name: 'Feed Fire',
-                        check: (ctx) => {
-                            if (ctx.res.wood < 1) return false;
-                            // Don't feed if main bonfire is at max level and full fuel
-                            if (ctx.mainLevel >= 6 && ctx.fuelRatio > 0.6) return false;
-                            return true;
-                        },
-                        goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
+                        name: 'Develop Base',
+                        check: (ctx) => getStrategicPhase(ctx) === 'DEVELOP_BASE',
+                        children: [
+                            {
+                                name: 'Level Up Fire',
+                                check: (ctx) => ctx.mainLevel < 6,
+                                children: [
+                                    {
+                                        name: 'Feed Fire',
+                                        check: (ctx) => ctx.res.wood >= 1,
+                                        goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
+                                    },
+                                    {
+                                        name: 'Chop Wood for Fire',
+                                        check: (ctx) => {
+                                            const rt = ctx.resourceTarget;
+                                            return rt.target !== null;
+                                        },
+                                        goal: (ctx) => {
+                                            // Force wood gathering for fire
+                                            const sc = ctx.sc;
+                                            const t = findNearest(sc.trees, ctx.px, ctx.py, ctx.bx, ctx.by, ctx.safeR);
+                                            if (t) return { type: 'chop', target: t, x: t.x, y: t.y };
+                                            const rt = ctx.resourceTarget;
+                                            return { type: 'chop', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                name: 'Build Defenses',
+                                check: (ctx) => ctx.fireLevel >= 2,
+                                children: [
+                                    {
+                                        name: 'Build Structure',
+                                        check: (ctx) => ctx.buildTarget !== null,
+                                        goal: (ctx) => {
+                                            const s = ctx.buildTarget;
+                                            return { type: 'build', target: s, x: s.x, y: s.y };
+                                        },
+                                    },
+                                    {
+                                        name: 'Gather for Building',
+                                        check: (ctx) => {
+                                            const rn = getResourceNeed(ctx);
+                                            if (!rn.forGoal || !rn.forGoal.startsWith('Build')) return false;
+                                            const rt = ctx.resourceTarget;
+                                            return rt.target !== null;
+                                        },
+                                        goal: (ctx) => {
+                                            const rt = ctx.resourceTarget;
+                                            return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                        },
+                                    },
+                                ],
+                            },
+                            {
+                                name: 'Stockpile Resources',
+                                check: (ctx) => ctx.hpRatio > 0.35 && ctx.resourceTarget.target !== null,
+                                goal: (ctx) => {
+                                    const rt = ctx.resourceTarget;
+                                    return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                },
+                            },
+                        ],
                     },
+                    // --- Phase 2: Max Second Camp ---
                     {
-                        name: 'Build Structure',
-                        check: (ctx) => ctx.fireLevel >= 2 && ctx.buildTarget !== null,
-                        goal: (ctx) => {
-                            const s = ctx.buildTarget;
-                            return { type: 'build', target: s, x: s.x, y: s.y };
-                        },
+                        name: 'Max Second Camp',
+                        check: (ctx) => getStrategicPhase(ctx) === 'MAX_SECOND_CAMP',
+                        children: [
+                            {
+                                name: 'Travel to Camp',
+                                check: (ctx) => {
+                                    const sc2 = ctx.secondCamp;
+                                    return sc2 && sc2.active;
+                                },
+                                children: [
+                                    {
+                                        name: 'Feed Second Camp',
+                                        check: (ctx) => {
+                                            const sc2 = ctx.secondCamp;
+                                            const cd = d(ctx.px, ctx.py, sc2.x, sc2.y);
+                                            return cd < CONFIG.INTERACT_RADIUS + 20 && ctx.res.wood >= 1;
+                                        },
+                                        goal: (ctx) => {
+                                            const sc2 = ctx.secondCamp;
+                                            return { type: 'seek_camp', target: sc2, x: sc2.x, y: sc2.y };
+                                        },
+                                    },
+                                    {
+                                        name: 'Gather Wood for Camp',
+                                        check: (ctx) => ctx.res.wood < 3 && ctx.hpRatio > 0.35,
+                                        goal: (ctx) => {
+                                            const sc = ctx.sc;
+                                            const t = findNearest(sc.trees, ctx.px, ctx.py, ctx.bx, ctx.by, ctx.safeR);
+                                            if (t) return { type: 'chop', target: t, x: t.x, y: t.y };
+                                            const rt = ctx.resourceTarget;
+                                            if (rt.target) return { type: 'chop', target: rt.target, x: rt.target.x, y: rt.target.y };
+                                            return { type: 'idle', x: ctx.bx, y: ctx.by };
+                                        },
+                                    },
+                                    {
+                                        name: 'Walk to Second Camp',
+                                        check: (ctx) => ctx.res.wood >= 3,
+                                        goal: (ctx) => {
+                                            const sc2 = ctx.secondCamp;
+                                            return { type: 'seek_camp', target: sc2, x: sc2.x, y: sc2.y };
+                                        },
+                                    },
+                                ],
+                            },
+                        ],
                     },
-                    {
-                        name: 'Collect Drops',
-                        check: (ctx) => ctx.hpRatio > 0.35 && ctx.bestDrop !== null,
-                        goal: (ctx) => {
-                            const dr = ctx.bestDrop;
-                            return { type: 'pickup', target: dr, x: dr.x, y: dr.y };
-                        },
-                    },
-                    // Main bonfire maxed → seek second camp
-                    {
-                        name: 'Seek Second Camp',
-                        check: (ctx) => {
-                            if (ctx.mainLevel < 6) return false;
-                            const sc2 = ctx.secondCamp;
-                            if (!sc2 || !sc2.active) return false;
-                            const sc2Level = sc2.getData('campFireLevel') || 1;
-                            return sc2Level < 6;
-                        },
-                        goal: (ctx) => {
-                            const sc2 = ctx.secondCamp;
-                            return { type: 'seek_camp', target: sc2, x: sc2.x, y: sc2.y };
-                        },
-                    },
-                    // Second camp maxed → attack monster lair
+                    // --- Phase 3: Attack Lair ---
                     {
                         name: 'Attack Lair',
-                        check: (ctx) => {
-                            if (ctx.mainLevel < 6) return false;
-                            const sc2 = ctx.secondCamp;
-                            if (!sc2) return false;
-                            const sc2Level = sc2.getData('campFireLevel') || 1;
-                            if (sc2Level < 6) return false;
-                            const lair = ctx.monsterLair;
-                            return lair && lair.getData('active');
-                        },
+                        check: (ctx) => getStrategicPhase(ctx) === 'ATTACK_LAIR',
                         goal: (ctx) => {
                             const lair = ctx.monsterLair;
                             return { type: 'attack_lair', target: lair, x: lair.x, y: lair.y };
                         },
                     },
-                ],
-            },
-            // === GATHERING ===
-            {
-                name: 'GATHER',
-                check: () => true,
-                children: [
+                    // --- Victory ---
                     {
-                        name: 'Gather Resources',
-                        check: (ctx) => ctx.hpRatio > 0.35 && ctx.resourceTarget.target !== null,
-                        goal: (ctx) => {
-                            const rt = ctx.resourceTarget;
-                            return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
-                        },
-                    },
-                ],
-            },
-            // === IDLE (fallback) ===
-            {
-                name: 'IDLE',
-                check: () => true,
-                children: [
-                    {
-                        name: 'Patrol Bonfire',
-                        check: () => true,
+                        name: '\ud83c\udfc6 Victory!',
+                        check: (ctx) => getStrategicPhase(ctx) === 'VICTORY',
                         goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by }),
                     },
                 ],
+            },
+            // === IDLE (absolute fallback) ===
+            {
+                name: 'Patrol',
+                check: () => true,
+                goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by }),
             },
         ],
     };
@@ -828,8 +938,13 @@
         return null;
     }
 
+    let _lastStrategicPhase = '';
+    let _lastResourceNeed = null;
+
     function selectGoal(sc, p) {
         const ctx = buildContext(sc, p);
+        _lastStrategicPhase = getStrategicPhase(ctx);
+        _lastResourceNeed = getResourceNeed(ctx);
         const trace = [];
         const goal = evaluateTree(DECISION_TREE, ctx, 0, trace);
         treeTrace = trace;
@@ -868,7 +983,17 @@
         debugHudEl.style.display = 'block';
 
         // Build tree display
-        let html = '<div style="color:#44ff44;font-weight:bold;margin-bottom:4px">BOT DECISION TREE</div>';
+        const phaseLabels = {
+            'DEVELOP_BASE': '\ud83c\udfd7 Develop Base',
+            'MAX_SECOND_CAMP': '\u26fa Max Second Camp',
+            'ATTACK_LAIR': '\u2694 Attack Lair',
+            'VICTORY': '\ud83c\udfc6 Victory!',
+        };
+        let html = '<div style="color:#44ff44;font-weight:bold;margin-bottom:4px">BOT AI</div>';
+        html += `<div style="color:#ffcc00;margin-bottom:2px">Phase: ${phaseLabels[_lastStrategicPhase] || _lastStrategicPhase}</div>`;
+        if (_lastResourceNeed) {
+            html += `<div style="color:#88aaff;margin-bottom:4px">Need: ${_lastResourceNeed.reason}</div>`;
+        }
 
         const statusColors = {
             active: '#44ff44',
