@@ -3127,6 +3127,23 @@ class GameScene extends Phaser.Scene {
         this._trackObjective('buildings_built', 1);
         this._setGridBlocked(x, y);
 
+        // Push player out if standing on the newly blocked tile
+        const T = CONFIG.TILE_SIZE;
+        const ptx = Math.floor(this.player.x / T);
+        const pty = Math.floor(this.player.y / T);
+        const btx = Math.floor(x / T);
+        const bty = Math.floor(y / T);
+        if (ptx === btx && pty === bty) {
+            // Nudge player to nearest free adjacent tile
+            const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+            for (const [dx, dy] of dirs) {
+                if (!this._isGridBlocked(ptx + dx, pty + dy)) {
+                    this.player.setPosition((ptx + dx) * T + T / 2, (pty + dy) * T + T / 2);
+                    break;
+                }
+            }
+        }
+
         // Handle building effects
         if (type === 'OUTPOST') {
             this.createBonfire(x, y, false);
