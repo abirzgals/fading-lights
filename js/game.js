@@ -866,20 +866,45 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Corner slide: if diagonal movement was fully blocked, nudge along
-        // the axis that gets the entity closer to clearing the obstacle.
-        // This prevents getting stuck on corners when approaching diagonally.
+        // Corner slide: when an axis is blocked and the body only clips one
+        // corner of the blocking tile, nudge perpendicular to slide around it.
+        // This makes colliders feel "rounded" — entities glide past corners.
+
+        // X was blocked — check if only top or bottom edge clips the blocked tile
+        if (vx === 0 && origVx !== 0) {
+            const futureEdge = origVx > 0 ? br + origVx * speed * dt + margin : bl + origVx * speed * dt - margin;
+            const checkTX = Math.floor(futureEdge / T);
+            const tyTop = Math.floor(bt / T);
+            const tyBot = Math.floor((bb - 1) / T);
+            if (tyTop !== tyBot) {
+                const topBlocked = this._isGridBlocked(checkTX, tyTop);
+                const botBlocked = this._isGridBlocked(checkTX, tyBot);
+                if (topBlocked && !botBlocked) vy = Math.max(vy, 0.5);
+                else if (!topBlocked && botBlocked) vy = Math.min(vy, -0.5);
+            }
+        }
+
+        // Y was blocked — check if only left or right edge clips the blocked tile
+        if (vy === 0 && origVy !== 0) {
+            const futureEdge = origVy > 0 ? bb + origVy * speed * dt + margin : bt + origVy * speed * dt - margin;
+            const checkTY = Math.floor(futureEdge / T);
+            const txLeft = Math.floor(bl / T);
+            const txRight = Math.floor((br - 1) / T);
+            if (txLeft !== txRight) {
+                const leftBlocked = this._isGridBlocked(txLeft, checkTY);
+                const rightBlocked = this._isGridBlocked(txRight, checkTY);
+                if (leftBlocked && !rightBlocked) vx = Math.max(vx, 0.5);
+                else if (!leftBlocked && rightBlocked) vx = Math.min(vx, -0.5);
+            }
+        }
+
+        // Both axes blocked (diagonal) — nudge toward tile center to clear corner
         if (vx === 0 && vy === 0 && origVx !== 0 && origVy !== 0) {
-            // Find the nearest tile edge and nudge toward it to slide around the corner
             const cx = (bl + br) / 2, cy = (bt + bb) / 2;
             const tileCX = Math.floor(cx / T) * T + T / 2;
             const tileCY = Math.floor(cy / T) * T + T / 2;
             const offX = cx - tileCX, offY = cy - tileCY;
-
-            // Try sliding on the axis where we're more offset from tile center
-            // This naturally guides the entity around the corner
             if (Math.abs(offX) > Math.abs(offY)) {
-                // More offset on X — slide on X to align, then Y will clear
                 vx = offX > 0 ? -0.5 : 0.5;
             } else {
                 vy = offY > 0 ? -0.5 : 0.5;
