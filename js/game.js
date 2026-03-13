@@ -108,6 +108,9 @@ class GameScene extends Phaser.Scene {
 
         // --- Debug overlay (dev mode) ---
         this._debugGfx = this.add.graphics().setDepth(4999);
+        this._debugText = this.add.text(0, 0, '', {
+            font: '10px monospace', fill: '#ff66ff', stroke: '#000', strokeThickness: 2,
+        }).setDepth(5000).setOrigin(0.5, 1).setVisible(false);
 
         // --- Camera ---
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
@@ -1405,6 +1408,7 @@ class GameScene extends Phaser.Scene {
     _drawDebug() {
         const g = this._debugGfx;
         g.clear();
+        if (this._debugText) this._debugText.setVisible(false);
         if (!window._debugMode) return;
 
         // Draw walk grid (blocked tiles) in camera view
@@ -1518,6 +1522,14 @@ class GameScene extends Phaser.Scene {
                 g.strokePath();
                 g.fillStyle(0xFF00FF, 0.5);
                 g.fillCircle(paths.currentGoal.x, paths.currentGoal.y, 6);
+            }
+
+            // Active decision tree node label above player
+            const nodeName = bd.activeNode;
+            if (nodeName && this._debugText) {
+                this._debugText.setText(nodeName);
+                this._debugText.setPosition(p.x, p.y - 28);
+                this._debugText.setVisible(true);
             }
         }
     }

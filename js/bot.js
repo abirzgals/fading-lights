@@ -1,5 +1,5 @@
 // ============================================================
-// BOT AI — Smart autonomous player
+// BOT AI — Decision Tree autonomous player
 // Simulates keyboard input for smooth natural movement
 // Toggle: backtick key or startAI() / stopAI()
 // ============================================================
@@ -13,24 +13,23 @@
     let currentGoal = null;
     let stuckTimer = 0;
     let lastPos = { x: 0, y: 0 };
-    let moveDir = { x: 0, y: 0 };  // current movement direction (-1/0/1)
+    let moveDir = { x: 0, y: 0 };
 
-    const TICK_MS = 200;             // decision tick (not movement tick)
-    const STUCK_THRESHOLD = 400;  // detect stuck fast (2 ticks)
+    const TICK_MS = 200;
+    const STUCK_THRESHOLD = 400;
     const WAYPOINT_REACH = 18;
     const ATTACK_REACH = 40;
-    const WOOD_FEED_BATCH = 3;
-    const STONE_TARGET = 25;
-    const METAL_TARGET = 15;
-    let orbitAngle = 0;              // current orbit angle for circling
+    let orbitAngle = 0;
+
+    // Decision tree evaluation trace (for debug HUD)
+    let treeTrace = [];       // [{name, depth, status: 'active'|'checked'|'skipped'}]
+    let activeNodeName = '';  // label of the currently active leaf
 
     // ---- Keyboard simulation ----
-    // Override cursor keys to let the game's update() move the player naturally
     function setMove(dx, dy) {
         const sc = getScene();
         if (!sc || !sc.cursors) return;
         const c = sc.cursors;
-        // Simulate key states — Phaser reads isDown each frame
         c.left.isDown = dx < -0.3;
         c.right.isDown = dx > 0.3;
         c.up.isDown = dy < -0.3;
@@ -39,18 +38,14 @@
         moveDir.y = dy;
     }
 
-    function stopMove() {
-        setMove(0, 0);
-    }
+    function stopMove() { setMove(0, 0); }
 
     function simulateKeyPress(key) {
         if (!key) return;
-        // JustDown requires _justDown flag + isDown transition
         key.isDown = true;
         key.isUp = false;
         key._justDown = true;
         key._tick = performance.now();
-        // Release next frame so JustDown resets
         setTimeout(() => {
             if (!key) return;
             key.isDown = false;
@@ -82,16 +77,21 @@
         currentPath = null;
         currentGoal = null;
         stopMove();
+        removeDebugHUD();
         console.log('%c[BOT] AI stopped', 'color: #FF4444');
         return 'AI stopped';
     };
 
     window.toggleAI = function() { return aiInterval ? stopAI() : startAI(); };
 
-    // Expose paths for debug overlay
-    window._botDebug = { get paths() {
-        return { currentPath, pathIdx, moveToPath, moveToPathIdx, orbitPath, orbitPathIdx, currentGoal };
-    }};
+    // Expose debug data for game.js overlay
+    window._botDebug = {
+        get paths() {
+            return { currentPath, pathIdx, moveToPath, moveToPathIdx, orbitPath, orbitPathIdx, currentGoal };
+        },
+        get tree() { return treeTrace; },
+        get activeNode() { return activeNodeName; },
+    };
 
     document.addEventListener('keydown', (e) => {
         if (e.key === '`' || e.key === 'i' || e.key === 'I') { e.preventDefault(); toggleAI(); }
@@ -101,8 +101,6 @@
     function getScene() { return window._gs; }
     function d(ax, ay, bx, by) { return Math.hypot(bx - ax, by - ay); }
 
-    // Patch walk grid to mark stones/metals as blocked (they have physics colliders
-    // but the game's _walkGrid doesn't include them)
     let gridPatched = false;
     function patchWalkGrid(sc) {
         if (gridPatched || !sc._walkGrid) return;
@@ -113,16 +111,13 @@
             for (const obj of group.children.entries) {
                 if (!obj.active) continue;
                 const tx = Math.floor(obj.x / T), ty = Math.floor(obj.y / T);
-                if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) {
-                    grid[ty * gs + tx] = 0;
-                }
+                if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) grid[ty * gs + tx] = 0;
             }
         };
         if (sc.stones) markBlocked(sc.stones);
         if (sc.metals) markBlocked(sc.metals);
         if (sc.rockWalls) markBlocked(sc.rockWalls);
         if (sc.metalMines) markBlocked(sc.metalMines);
-        // Also mark buildings and bonfires
         for (const b of sc.bonfires) {
             const tx = Math.floor(b.x / T), ty = Math.floor(b.y / T);
             if (tx >= 0 && tx < gs && ty >= 0 && ty < gs) grid[ty * gs + tx] = 0;
@@ -163,18 +158,14 @@
         return true;
     }
 
-    // Follow path by setting movement direction (not velocity)
     function followPath(p) {
-        if (!currentPath || pathIdx >= currentPath.length) {
-            return true;
-        }
+        if (!currentPath || pathIdx >= currentPath.length) return true;
         const wp = currentPath[pathIdx];
         const dx = wp.x - p.x, dy = wp.y - p.y;
         const len = Math.hypot(dx, dy);
         if (len < WAYPOINT_REACH) {
             pathIdx++;
-            if (pathIdx >= currentPath.length) { return true; }
-            // Immediately steer toward next waypoint
+            if (pathIdx >= currentPath.length) return true;
             const nwp = currentPath[pathIdx];
             const ndx = nwp.x - p.x, ndy = nwp.y - p.y;
             const nlen = Math.hypot(ndx, ndy);
@@ -185,7 +176,6 @@
         return false;
     }
 
-    // Move toward a point using A* pathfinding to avoid obstacles
     let moveToPath = null;
     let moveToPathIdx = 0;
     let moveToTarget = null;
@@ -193,8 +183,6 @@
         const dx = tx - p.x, dy = ty - p.y;
         const len = Math.hypot(dx, dy);
         if (len < 5) { orbitAround(p, tx, ty, 30); return true; }
-
-        // Repath if target changed significantly or no path
         if (!moveToPath || !moveToTarget ||
             Math.abs(tx - moveToTarget.x) > 40 || Math.abs(ty - moveToTarget.y) > 40) {
             const sc = getScene();
@@ -205,14 +193,11 @@
                     moveToPathIdx = 0;
                     moveToTarget = { x: tx, y: ty };
                 } else {
-                    // Fallback: direct movement
                     setMove(dx / len, dy / len);
                     return false;
                 }
             }
         }
-
-        // Follow A* path
         if (moveToPath && moveToPathIdx < moveToPath.length) {
             const wp = moveToPath[moveToPathIdx];
             const wdx = wp.x - p.x, wdy = wp.y - p.y;
@@ -233,33 +218,27 @@
         return false;
     }
 
-    // Circle around a point using A* pathfinding — NEVER stop moving
     let orbitPath = null;
     let orbitPathIdx = 0;
     let orbitLastPos = { x: 0, y: 0 };
     let orbitStuckTicks = 0;
     function orbitAround(p, cx, cy, radius) {
-        // Detect orbit-level stuck: if barely moved, skip to next angle
         const movedOrbit = Math.hypot(p.x - orbitLastPos.x, p.y - orbitLastPos.y);
         orbitLastPos.x = p.x; orbitLastPos.y = p.y;
         if (movedOrbit < 2) {
             orbitStuckTicks++;
             if (orbitStuckTicks > 2) {
-                // Stuck — jump orbit angle and force repath
-                orbitAngle += 1.2;  // skip ~70 degrees
+                orbitAngle += 1.2;
                 orbitPath = null;
                 orbitStuckTicks = 0;
             }
         } else {
             orbitStuckTicks = 0;
         }
-
-        // Need new orbit waypoint?
         if (!orbitPath || orbitPathIdx >= orbitPath.length) {
             orbitAngle += 0.4;
             const sc = getScene();
             if (!sc) return;
-            // Try multiple angles to find a pathable orbit point
             for (let tries = 0; tries < 6; tries++) {
                 const tx = cx + Math.cos(orbitAngle) * radius;
                 const ty = cy + Math.sin(orbitAngle) * radius;
@@ -269,12 +248,10 @@
                     orbitPathIdx = 0;
                     break;
                 }
-                orbitAngle += 0.5;  // try next angle
+                orbitAngle += 0.5;
             }
-            if (!orbitPath) return; // all angles blocked, wait for next tick
+            if (!orbitPath) return;
         }
-
-        // Follow orbit path
         if (orbitPath && orbitPathIdx < orbitPath.length) {
             const wp = orbitPath[orbitPathIdx];
             const dx = wp.x - p.x, dy = wp.y - p.y;
@@ -306,11 +283,11 @@
         return stuckTimer > STUCK_THRESHOLD;
     }
 
-    function findNearest(group, px, py, bx, by, lightR) {
+    function findNearest(group, px, py, bx, by, maxR) {
         let best = null, bestDist = Infinity;
         for (const obj of group.children.entries) {
             if (!obj.active) continue;
-            if (d(obj.x, obj.y, bx, by) > lightR) continue;
+            if (d(obj.x, obj.y, bx, by) > maxR) continue;
             const dd = d(obj.x, obj.y, px, py);
             if (dd < bestDist) { bestDist = dd; best = obj; }
         }
@@ -318,13 +295,11 @@
     }
 
     // ---- Evasion system ----
-    // Calculate a dodge vector away from nearby threats (enemies + projectiles)
     function getEvasionVector(sc, px, py) {
         let evX = 0, evY = 0;
-        const ENEMY_AVOID_R = 55;  // only dodge very close enemies
+        const ENEMY_AVOID_R = 55;
         const PROJ_AVOID_R = 90;
 
-        // Avoid nearby enemies (gentle push, not full flee)
         for (const e of sc.enemies.children.entries) {
             if (!e.active) continue;
             const ex = e.x, ey = e.y;
@@ -336,47 +311,30 @@
             }
         }
 
-        // Predict projectile trajectories and dodge if they will hit us
         if (sc.projectiles) {
-            const PLAYER_R = 14;  // player hitbox radius
+            const PLAYER_R = 14;
             for (const proj of sc.projectiles.children.entries) {
                 if (!proj.active || !proj.body) continue;
                 const prx = proj.x, pry = proj.y;
                 const pvx = proj.body.velocity.x, pvy = proj.body.velocity.y;
                 const pSpeed = Math.hypot(pvx, pvy);
                 if (pSpeed < 10) continue;
-
-                // Vector from projectile to player
                 const tpx = px - prx, tpy = py - pry;
                 const dot = tpx * pvx + tpy * pvy;
-                if (dot < 0) continue; // moving away
-
-                // Time until closest approach
+                if (dot < 0) continue;
                 const tClosest = dot / (pSpeed * pSpeed);
-                // Predicted closest point
                 const cpx = prx + pvx * tClosest;
                 const cpy = pry + pvy * tClosest;
-                // Minimum distance the projectile will pass from us
                 const minDist = d(cpx, cpy, px, py);
-
-                // Will it hit us? (within player radius + margin)
-                const dodgeMargin = 30;
-                if (minDist > PLAYER_R + dodgeMargin) continue;
-
-                // How long until it reaches closest point?
-                const timeToImpact = tClosest;
+                if (minDist > PLAYER_R + 30) continue;
                 const distNow = d(prx, pry, px, py);
                 if (distNow > PROJ_AVOID_R) continue;
-
-                // Dodge perpendicular to projectile direction
                 const pnx = -pvy / pSpeed, pny = pvx / pSpeed;
-                // Choose dodge direction: toward bonfire
                 const bonfire = sc.bonfires[0];
                 const toBfX = bonfire.x - px, toBfY = bonfire.y - py;
                 const dotBf = pnx * toBfX + pny * toBfY;
                 const sign = dotBf >= 0 ? 1 : -1;
-                // Urgency: stronger dodge when impact is imminent
-                const urgency = timeToImpact < 0.5 ? 3.0 : timeToImpact < 1.0 ? 2.0 : 1.2;
+                const urgency = tClosest < 0.5 ? 3.0 : tClosest < 1.0 ? 2.0 : 1.2;
                 evX += pnx * sign * urgency;
                 evY += pny * sign * urgency;
             }
@@ -387,20 +345,15 @@
         return { x: evX / len, y: evY / len, urgency: len };
     }
 
-    // Move toward target using A* but blend in evasion when threats are nearby
     function moveWithEvasion(sc, p, tx, ty) {
         const dx = tx - p.x, dy = ty - p.y;
         const dlen = Math.hypot(dx, dy);
         if (dlen < 5) { orbitAround(p, tx, ty, 25); return true; }
-
         const evasion = getEvasionVector(sc, p.x, p.y);
         if (evasion && evasion.urgency > 1.2) {
-            // High threat — pure evasion, skip pathfinding
             setMove(evasion.x, evasion.y);
         } else {
-            // Use A* pathfinding as base movement
             moveToward(p, tx, ty);
-            // Blend slight evasion on top if threats are moderate
             if (evasion && evasion.urgency > 0.5) {
                 const blend = Math.min(evasion.urgency * 0.4, 0.6);
                 const mx = moveDir.x + evasion.x * blend;
@@ -412,10 +365,143 @@
         return false;
     }
 
-    function getResourceNeed() {
-        const res = gameState.resources;
-        if (res.wood < WOOD_FEED_BATCH) return 'wood';
-        const sc = getScene();
+    // ============================================================
+    // DECISION TREE — Data-driven priority selector
+    // Each node: { name, check(ctx), children[] | goal(ctx) }
+    // Evaluated top-to-bottom; first passing leaf wins.
+    // ============================================================
+
+    // Context object built once per tick — lazy-caches expensive lookups
+    function buildContext(sc, p) {
+        const bonfire = sc.bonfires[0];
+        const bx = bonfire.x, by = bonfire.y;
+        const lightR = sc.getLightRadius(bonfire) * 0.85;
+        const px = p.x, py = p.y;
+        const ctx = {
+            sc, p, bonfire, bx, by, lightR,
+            px, py,
+            safeR: Math.min(lightR * 0.6, 220),
+            fuelRatio: bonfire.getData('fuel') / bonfire.getData('maxFuel'),
+            res: gameState.resources,
+            distToFire: d(px, py, bx, by),
+            hpRatio: gameState.hp / CONFIG.PLAYER_MAX_HP,
+            earlyGame: gameState.fireLevel < 4,
+            fireLevel: gameState.fireLevel,
+            // Lazy-cached values
+            _evasion: undefined,
+            _nearEnemies: undefined,
+            _bestEnemy: undefined,
+            _bestDrop: undefined,
+            _buildTarget: undefined,
+            _resourceTarget: undefined,
+        };
+
+        // Lazy getters
+        Object.defineProperty(ctx, 'evasion', { get() {
+            if (this._evasion === undefined) this._evasion = getEvasionVector(sc, px, py);
+            return this._evasion;
+        }});
+
+        Object.defineProperty(ctx, 'nearEnemies', { get() {
+            if (this._nearEnemies === undefined) {
+                let closest = Infinity, count = 0, strongClose = false;
+                for (const e of sc.enemies.children.entries) {
+                    if (!e.active) continue;
+                    const ed = d(e.x, e.y, px, py);
+                    if (ed < closest) closest = ed;
+                    if (ed < 80) count++;
+                    if (ed < 55 && (e.getData('damage') || 5) >= 10) strongClose = true;
+                }
+                this._nearEnemies = { closest, count, strongClose };
+            }
+            return this._nearEnemies;
+        }});
+
+        Object.defineProperty(ctx, 'bestEnemy', { get() {
+            if (this._bestEnemy === undefined) {
+                let best = null, bestScore = -Infinity;
+                for (const e of sc.enemies.children.entries) {
+                    if (!e.active) continue;
+                    const eDist = d(e.x, e.y, px, py);
+                    const ehp = e.getData('hp') || 20;
+                    const isRanged = !!e.getData('ranged');
+                    const selfDefense = eDist < 40;
+                    const isWeak = ehp <= 20;
+                    if (ctx.earlyGame && !selfDefense && !(isWeak && eDist < 60)) continue;
+                    if (!ctx.earlyGame && !selfDefense && ctx.hpRatio < 0.5) continue;
+                    if (d(e.x, e.y, bx, by) > ctx.safeR) continue;
+                    if (eDist > 80 && !selfDefense) continue;
+                    if (isRanged && !selfDefense && ctx.earlyGame) continue;
+                    const score = (selfDefense ? 500 : 0) + (isWeak ? 200 : 0) + (150 - eDist) - ehp;
+                    if (score > bestScore) { bestScore = score; best = e; }
+                }
+                this._bestEnemy = best;
+            }
+            return this._bestEnemy;
+        }});
+
+        Object.defineProperty(ctx, 'bestDrop', { get() {
+            if (this._bestDrop === undefined) {
+                let best = null, bestDist = 100;
+                if (sc.drops) {
+                    sc.drops.children.each(dd => {
+                        if (!dd.active) return;
+                        const ddist = d(dd.x, dd.y, px, py);
+                        if (ddist < bestDist && d(dd.x, dd.y, bx, by) < ctx.safeR) {
+                            bestDist = ddist;
+                            best = dd;
+                        }
+                    });
+                }
+                this._bestDrop = best;
+            }
+            return this._bestDrop;
+        }});
+
+        Object.defineProperty(ctx, 'buildTarget', { get() {
+            if (this._buildTarget === undefined) {
+                let target = null;
+                const buildOrder = ['TURRET', 'FORGE', 'ARMOR_WORKSHOP', 'OUTPOST', 'WEAPON_SHOP', 'FRIEND_HUT'];
+                for (const bType of buildOrder) {
+                    for (const spot of sc.buildSpots) {
+                        if (spot.built || !spot.unlocked) continue;
+                        if (spot.config.type !== bType) continue;
+                        const building = BUILDINGS[bType];
+                        if (building && canAfford(building.cost)) {
+                            target = spot;
+                            break;
+                        }
+                    }
+                    if (target) break;
+                }
+                this._buildTarget = target;
+            }
+            return this._buildTarget;
+        }});
+
+        Object.defineProperty(ctx, 'resourceTarget', { get() {
+            if (this._resourceTarget === undefined) {
+                const need = getResourceNeed(ctx);
+                let group = need === 'wood' ? sc.trees : need === 'stone' ? sc.stones : sc.metals;
+                let target = findNearest(group, px, py, bx, by, ctx.safeR);
+                if (need === 'metal' && sc.metalMines) {
+                    const mine = findNearest(sc.metalMines, px, py, bx, by, ctx.safeR);
+                    if (mine && (!target || d(px, py, mine.x, mine.y) < d(px, py, target.x, target.y))) {
+                        target = mine;
+                    }
+                }
+                this._resourceTarget = { need, target };
+            }
+            return this._resourceTarget;
+        }});
+
+        return ctx;
+    }
+
+    function getResourceNeed(ctx) {
+        const res = ctx ? ctx.res : gameState.resources;
+        if (res.wood < 3) return 'wood';
+        const sc = ctx ? ctx.sc : getScene();
         if (sc) {
             for (const spot of sc.buildSpots) {
                 if (spot.built || !spot.unlocked) continue;
@@ -432,140 +518,259 @@
         return 'wood';
     }
 
-    // ---- Goal selection ----
+    // ---- The Decision Tree ----
+    const DECISION_TREE = {
+        name: 'ROOT',
+        check: () => true,
+        children: [
+            // === SURVIVAL (highest priority) ===
+            {
+                name: 'SURVIVAL',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Outside Light',
+                        check: (ctx) => ctx.distToFire > ctx.lightR - 30,
+                        goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Low HP Retreat',
+                        check: (ctx) => ctx.hpRatio < 0.4 && ctx.distToFire > 60,
+                        goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Dodge Projectile',
+                        check: (ctx) => ctx.evasion && ctx.evasion.urgency > 2.0,
+                        goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion }),
+                    },
+                    {
+                        name: 'Strong Enemy Close',
+                        check: (ctx) => ctx.nearEnemies.strongClose,
+                        goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Surrounded',
+                        check: (ctx) => ctx.nearEnemies.count >= 2,
+                        goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
+                    },
+                ],
+            },
+            // === URGENT MAINTENANCE ===
+            {
+                name: 'URGENT',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Feed Fire (critical)',
+                        check: (ctx) => ctx.fuelRatio < 0.4 && ctx.res.wood >= 1,
+                        goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Chop for Fire (critical)',
+                        check: (ctx) => {
+                            if (ctx.fuelRatio >= 0.4 || ctx.res.wood >= 1) return false;
+                            return ctx.hpRatio > 0.35 && ctx.resourceTarget.need === 'wood' && ctx.resourceTarget.target;
+                        },
+                        goal: (ctx) => {
+                            const t = ctx.resourceTarget.target;
+                            return { type: 'chop', target: t, x: t.x, y: t.y };
+                        },
+                    },
+                ],
+            },
+            // === COMBAT ===
+            {
+                name: 'COMBAT',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Kill Enemy',
+                        check: (ctx) => ctx.bestEnemy !== null,
+                        goal: (ctx) => {
+                            const e = ctx.bestEnemy;
+                            return { type: 'kill', target: e, x: e.x, y: e.y };
+                        },
+                    },
+                ],
+            },
+            // === BASE DEVELOPMENT ===
+            {
+                name: 'BASE',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Feed Fire',
+                        check: (ctx) => ctx.res.wood >= 1,
+                        goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Build Structure',
+                        check: (ctx) => ctx.fireLevel >= 3 && ctx.buildTarget !== null,
+                        goal: (ctx) => {
+                            const s = ctx.buildTarget;
+                            return { type: 'build', target: s, x: s.x, y: s.y };
+                        },
+                    },
+                    {
+                        name: 'Collect Drops',
+                        check: (ctx) => ctx.hpRatio > 0.35 && ctx.bestDrop !== null,
+                        goal: (ctx) => {
+                            const dr = ctx.bestDrop;
+                            return { type: 'pickup', target: dr, x: dr.x, y: dr.y };
+                        },
+                    },
+                ],
+            },
+            // === GATHERING ===
+            {
+                name: 'GATHER',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Gather Resources',
+                        check: (ctx) => ctx.hpRatio > 0.35 && ctx.resourceTarget.target !== null,
+                        goal: (ctx) => {
+                            const rt = ctx.resourceTarget;
+                            return { type: rt.need === 'wood' ? 'chop' : 'mine', target: rt.target, x: rt.target.x, y: rt.target.y };
+                        },
+                    },
+                ],
+            },
+            // === IDLE (fallback) ===
+            {
+                name: 'IDLE',
+                check: () => true,
+                children: [
+                    {
+                        name: 'Patrol Bonfire',
+                        check: () => true,
+                        goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by }),
+                    },
+                ],
+            },
+        ],
+    };
+
+    // ---- Tree evaluator ----
+    // Returns goal object with _treePath, builds treeTrace for debug HUD
+    function evaluateTree(node, ctx, depth, trace) {
+        const passed = node.check(ctx);
+        if (!passed) {
+            trace.push({ name: node.name, depth, status: 'failed' });
+            return null;
+        }
+
+        // Leaf node — return goal
+        if (node.goal) {
+            const g = node.goal(ctx);
+            g._treePath = node.name;
+            trace.push({ name: node.name, depth, status: 'active' });
+            return g;
+        }
+
+        // Branch node — try children in priority order
+        if (node.children) {
+            trace.push({ name: node.name, depth, status: 'checking' });
+            for (const child of node.children) {
+                const result = evaluateTree(child, ctx, depth + 1, trace);
+                if (result) {
+                    // Mark this branch as active in trace
+                    const branchIdx = trace.length - 1;
+                    for (let i = branchIdx; i >= 0; i--) {
+                        if (trace[i].depth === depth && trace[i].name === node.name) {
+                            trace[i].status = 'active';
+                            break;
+                        }
+                    }
+                    result._treePath = node.name + ' > ' + result._treePath;
+                    return result;
+                }
+            }
+            // All children failed — mark branch as failed
+            const branchIdx = trace.findIndex(t => t.depth === depth && t.name === node.name);
+            if (branchIdx >= 0) trace[branchIdx].status = 'failed';
+        }
+        return null;
+    }
+
     function selectGoal(sc, p) {
-        const px = p.x, py = p.y;
-        const bonfire = sc.bonfires[0];
-        const bx = bonfire.x, by = bonfire.y;
-        const lightR = sc.getLightRadius(bonfire) * 0.85;
-        const safeR = Math.min(lightR * 0.6, 220);  // stay reasonably close to bonfire
-        const fuelRatio = bonfire.getData('fuel') / bonfire.getData('maxFuel');
-        const res = gameState.resources;
-        const distToFire = d(px, py, bx, by);
-        const hpRatio = gameState.hp / CONFIG.PLAYER_MAX_HP;
+        const ctx = buildContext(sc, p);
+        const trace = [];
+        const goal = evaluateTree(DECISION_TREE, ctx, 0, trace);
+        treeTrace = trace;
+        activeNodeName = goal ? goal._treePath : 'NONE';
+        return goal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
+    }
 
-        // EMERGENCY: Outside light — flee immediately
-        if (distToFire > lightR - 30) {
-            return { type: 'flee', x: bx, y: by };
+    // ============================================================
+    // DEBUG HUD — HTML overlay showing decision tree state
+    // ============================================================
+
+    let debugHudEl = null;
+
+    function renderDebugHUD() {
+        if (!window._debugMode) {
+            if (debugHudEl) { debugHudEl.style.display = 'none'; }
+            return;
         }
 
-        // LOW HP: Retreat to bonfire, avoid combat
-        if (hpRatio < 0.4 && distToFire > 60) {
-            return { type: 'flee', x: bx, y: by };
+        if (!debugHudEl) {
+            debugHudEl = document.createElement('div');
+            debugHudEl.id = 'bot-tree-debug';
+            debugHudEl.style.cssText = `
+                position: fixed; top: 8px; left: 8px; z-index: 10000;
+                background: rgba(0,0,0,0.85); color: #ccc;
+                font-family: monospace; font-size: 11px; line-height: 1.5;
+                padding: 8px 12px; border-radius: 6px;
+                pointer-events: none; max-width: 320px;
+                border: 1px solid rgba(100,255,100,0.2);
+            `;
+            document.body.appendChild(debugHudEl);
         }
 
-        // DANGER: Any enemy too close — run to bonfire (preserve HP at all costs)
-        let closestEnemyDist = Infinity;
-        for (const e of sc.enemies.children.entries) {
-            if (!e.active) continue;
-            const ed = d(e.x, e.y, px, py);
-            if (ed < closestEnemyDist) closestEnemyDist = ed;
-            // Strong enemy close — flee immediately
-            const eDmg = e.getData('damage') || 5;
-            if (ed < 55 && eDmg >= 10) {
-                return { type: 'flee', x: bx, y: by };
+        debugHudEl.style.display = 'block';
+
+        // Build tree display
+        let html = '<div style="color:#44ff44;font-weight:bold;margin-bottom:4px">BOT DECISION TREE</div>';
+
+        const statusColors = {
+            active: '#44ff44',
+            checking: '#888',
+            failed: '#666',
+        };
+        const statusIcons = {
+            active: '\u25b6',  // ▶
+            checking: '\u25cb', // ○
+            failed: '\u00d7',   // ×
+        };
+
+        for (const entry of treeTrace) {
+            const indent = '\u00a0\u00a0'.repeat(entry.depth);
+            const color = statusColors[entry.status] || '#666';
+            const icon = statusIcons[entry.status] || '\u00b7';
+            const bold = entry.status === 'active' ? 'font-weight:bold;' : '';
+            html += `<div style="color:${color};${bold}">${indent}${icon} ${entry.name}</div>`;
+        }
+
+        // Show current goal type
+        if (currentGoal) {
+            html += `<div style="color:#ffaa00;margin-top:4px;border-top:1px solid #333;padding-top:4px">`;
+            html += `Goal: ${currentGoal.type}`;
+            if (currentGoal.target && currentGoal.target.getData) {
+                const name = currentGoal.target.getData('name') || currentGoal.target.getData('type') || '';
+                if (name) html += ` (${name})`;
             }
-        }
-        // Multiple enemies converging — flee
-        let nearEnemyCount = 0;
-        for (const e of sc.enemies.children.entries) {
-            if (e.active && d(e.x, e.y, px, py) < 80) nearEnemyCount++;
-        }
-        if (nearEnemyCount >= 2) {
-            return { type: 'flee', x: bx, y: by };
+            html += `</div>`;
         }
 
-        // URGENT: Feed fire when fuel is low
-        if (fuelRatio < 0.4 && res.wood >= 1) {
-            return { type: 'feed', x: bx, y: by };
-        }
+        debugHudEl.innerHTML = html;
+    }
 
-        // Kill enemies — prefer weak ones, self-defense against others
-        const earlyGame = gameState.fireLevel < 4;
-        let bestEnemy = null, bestScore = -Infinity;
-        for (const e of sc.enemies.children.entries) {
-            if (!e.active) continue;
-            const eDist = d(e.x, e.y, px, py);
-            const ehp = e.getData('hp') || 20;
-            const isRanged = !!e.getData('ranged');
-            const selfDefense = eDist < 40;
-            const isWeak = ehp <= 20;  // wisps — kill these fast
-            // Early game: only fight self-defense or weak enemies nearby
-            if (earlyGame && !selfDefense && !(isWeak && eDist < 60)) continue;
-            // Late game: fight if HP is good
-            if (!earlyGame && !selfDefense && hpRatio < 0.5) continue;
-            // Don't chase outside safe zone
-            if (d(e.x, e.y, bx, by) > safeR) continue;
-            // Don't chase far
-            if (eDist > 80 && !selfDefense) continue;
-            // Avoid ranged enemies unless self-defense
-            if (isRanged && !selfDefense && earlyGame) continue;
-            // Score: prefer close, low-HP enemies
-            const score = (selfDefense ? 500 : 0) + (isWeak ? 200 : 0) + (150 - eDist) - ehp;
-            if (score > bestScore) { bestScore = score; bestEnemy = e; }
+    function removeDebugHUD() {
+        if (debugHudEl) {
+            debugHudEl.remove();
+            debugHudEl = null;
         }
-        if (bestEnemy) {
-            return { type: 'kill', target: bestEnemy, x: bestEnemy.x, y: bestEnemy.y };
-        }
-
-        // Feed bonfire — always dump wood immediately (faster fire level ups)
-        const shouldFeed = res.wood >= 1;
-        if (shouldFeed) {
-            return { type: 'feed', x: bx, y: by };
-        }
-
-        // Build structures (only after fire is strong enough)
-        if (gameState.fireLevel >= 3) {
-            const buildOrder = ['TURRET', 'FORGE', 'ARMOR_WORKSHOP', 'OUTPOST', 'WEAPON_SHOP', 'FRIEND_HUT'];
-            for (const bType of buildOrder) {
-                for (const spot of sc.buildSpots) {
-                    if (spot.built || !spot.unlocked) continue;
-                    if (spot.config.type !== bType) continue;
-                    const building = BUILDINGS[bType];
-                    if (building && canAfford(building.cost)) {
-                        return { type: 'build', target: spot, x: spot.x, y: spot.y };
-                    }
-                }
-            }
-        }
-
-        // Collect nearby drops (only if reasonably safe)
-        if (hpRatio > 0.35) {
-            let bestDrop = null, bestDropDist = 100;
-            if (sc.drops) {
-                sc.drops.children.each(dd => {
-                    if (!dd.active) return;
-                    const ddist = d(dd.x, dd.y, px, py);
-                    if (ddist < bestDropDist && d(dd.x, dd.y, bx, by) < safeR) {
-                        bestDropDist = ddist;
-                        bestDrop = dd;
-                    }
-                });
-            }
-            if (bestDrop) {
-                return { type: 'pickup', target: bestDrop, x: bestDrop.x, y: bestDrop.y };
-            }
-        }
-
-        // Gather resources (keep going even at moderate HP)
-        if (hpRatio > 0.35) {
-            const need = getResourceNeed();
-            let group = need === 'wood' ? sc.trees : need === 'stone' ? sc.stones : sc.metals;
-            let target = findNearest(group, px, py, bx, by, safeR);
-            // Also check metal mines when needing metal
-            if (need === 'metal' && sc.metalMines) {
-                const mineTarget = findNearest(sc.metalMines, px, py, bx, by, safeR);
-                if (mineTarget && (!target || d(px, py, mineTarget.x, mineTarget.y) < d(px, py, target.x, target.y))) {
-                    target = mineTarget;
-                }
-            }
-            if (target) {
-                return { type: need === 'wood' ? 'chop' : 'mine', target, x: target.x, y: target.y };
-            }
-        }
-
-        // Idle near bonfire (safe spot)
-        return { type: 'idle', x: bx, y: by };
     }
 
     // ---- Main AI tick ----
@@ -592,15 +797,25 @@
             orbitPath = null;
             moveToPath = null;
             stuckTimer = 0;
-            if (stuck) orbitAngle += 1.5;  // jump to new orbit angle when stuck
+            if (stuck) orbitAngle += 1.5;
         }
 
         switch (currentGoal.type) {
             case 'flee': {
-                // Flee using A* pathfinding to avoid getting stuck on obstacles
                 if (!currentPath) pathTo(sc, currentGoal.x, currentGoal.y);
                 const arrived = followPath(p);
                 if (arrived) orbitAround(p, currentGoal.x, currentGoal.y, 30);
+                break;
+            }
+
+            case 'dodge': {
+                const ev = currentGoal.evasion;
+                if (ev) {
+                    setMove(ev.x, ev.y);
+                } else {
+                    // Evasion expired, will re-evaluate next tick
+                    stopMove();
+                }
                 break;
             }
 
@@ -613,11 +828,9 @@
                     faceTarget(p, enemy.x, enemy.y);
                     if (p.attackCooldown <= 0) {
                         simulateAttack(sc);
-                        // Hit-and-run: back off after attacking
                         const bx = sc.bonfires[0].x, by = sc.bonfires[0].y;
                         const ax = p.x - enemy.x, ay = p.y - enemy.y;
                         const alen = Math.hypot(ax, ay) || 1;
-                        // Bias retreat direction toward bonfire
                         const toBfX = bx - p.x, toBfY = by - p.y;
                         const toBfLen = Math.hypot(toBfX, toBfY) || 1;
                         setMove(
@@ -625,7 +838,6 @@
                             ay / alen * 0.6 + toBfY / toBfLen * 0.4
                         );
                     } else {
-                        // Kite: keep moving away while cooldown is active
                         const ax = p.x - enemy.x, ay = p.y - enemy.y;
                         const alen = Math.hypot(ax, ay) || 1;
                         setMove(ax / alen, ay / alen);
@@ -679,7 +891,6 @@
                 if (!target || !target.active) { currentGoal = null; break; }
                 const td = d(p.x, p.y, target.x, target.y);
                 if (td < weapon.range + 16) {
-                    // Circle the target while attacking — never stand still
                     const evasion = getEvasionVector(sc, p.x, p.y);
                     if (evasion && evasion.urgency > 1.2) {
                         setMove(evasion.x, evasion.y);
@@ -695,10 +906,12 @@
             }
 
             case 'idle': {
-                // Always patrol around bonfire — never stand still
                 orbitAround(p, currentGoal.x, currentGoal.y, 50);
                 break;
             }
         }
+
+        // Update debug HUD
+        renderDebugHUD();
     }
 })();
