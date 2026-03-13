@@ -484,19 +484,18 @@
         Object.defineProperty(ctx, 'bestEnemy', { get() {
             if (this._bestEnemy === undefined) {
                 let best = null, bestScore = -Infinity;
+                const huntR = ctx.lightR * 0.8; // hunt within light radius
                 for (const e of sc.enemies.children.entries) {
                     if (!e.active) continue;
                     const eDist = d(e.x, e.y, px, py);
                     const ehp = e.getData('hp') || 20;
-                    const isRanged = !!e.getData('ranged');
-                    const selfDefense = eDist < 40;
-                    const isWeak = ehp <= 20;
-                    if (ctx.earlyGame && !selfDefense && !(isWeak && eDist < 60)) continue;
-                    if (!ctx.earlyGame && !selfDefense && ctx.hpRatio < 0.5) continue;
-                    if (d(e.x, e.y, bx, by) > ctx.safeR) continue;
-                    if (eDist > 80 && !selfDefense) continue;
-                    if (isRanged && !selfDefense && ctx.earlyGame) continue;
-                    const score = (selfDefense ? 500 : 0) + (isWeak ? 200 : 0) + (150 - eDist) - ehp;
+                    const selfDefense = eDist < 50;
+                    // Skip if too far or enemy is outside light
+                    if (eDist > huntR) continue;
+                    if (d(e.x, e.y, bx, by) > ctx.lightR) continue;
+                    // Low HP — only fight in self-defense
+                    if (ctx.hpRatio < 0.4 && !selfDefense) continue;
+                    const score = (selfDefense ? 500 : 0) + (300 - eDist) - ehp * 0.5;
                     if (score > bestScore) { bestScore = score; best = e; }
                 }
                 this._bestEnemy = best;
