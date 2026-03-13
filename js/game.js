@@ -908,7 +908,7 @@ class GameScene extends Phaser.Scene {
         gScore.set(key(sx, sy), 0);
 
         const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
-        const maxIterations = 5000; // cap to avoid lag
+        const maxIterations = 15000; // cap to avoid lag
         let iterations = 0;
 
         while (open.length > 0 && iterations++ < maxIterations) {
@@ -3119,16 +3119,34 @@ class GameScene extends Phaser.Scene {
                         this._enemyPathToward(enemy, target.x, target.y, speed);
                     }
                 }
-            } else if (enemy.getData('fromLair') && !enemy.getData('ranged')) {
+            } else if (enemy.getData('fromLair')) {
                 // LAIR ENEMY AI: march to bonfire, aggro player if close
                 const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 const aggroRange = 120;
+                const isRanged = enemy.getData('ranged');
+                const stats = isRanged ? ENEMIES[enemy.getData('type')] : null;
+                const atkRange = stats ? (stats.attackRange || 200) : 0;
 
                 if (distToPlayer < aggroRange || enemy.getData('aggro')) {
-                    // Chase player
+                    // Chase/fight player
                     enemy.setData('aggro', true);
                     if (distToPlayer > 250) {
                         enemy.setData('aggro', false); // leash
+                    } else if (isRanged) {
+                        // Ranged lair enemy: keep distance and shoot
+                        if (distToPlayer > atkRange * 0.8) {
+                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                        } else if (distToPlayer < atkRange * 0.4) {
+                            const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
+                        } else {
+                            enemy.setVelocity(0, 0);
+                        }
+                        enemy.setFlipX(this.player.x < enemy.x);
+                        if (cd <= 0 && distToPlayer < atkRange) {
+                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            enemy.setData('attackCooldown', stats.attackCooldown);
+                        }
                     } else {
                         this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                         if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
@@ -3143,6 +3161,13 @@ class GameScene extends Phaser.Scene {
                     const ty = enemy.getData('lairTargetY') || this.bonfires[0].y;
                     this._enemyPathToward(enemy, tx, ty, speed * 0.7);
                     const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+
+                    // Ranged: shoot player while marching if in range
+                    if (isRanged && cd <= 0 && distToPlayer < atkRange) {
+                        this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                        enemy.setData('attackCooldown', stats.attackCooldown);
+                    }
+
                     // Attack bonfire when reached
                     if (distToTarget < 35 && cd <= 0) {
                         const bonfire = this.bonfires[0];
