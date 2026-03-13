@@ -377,6 +377,15 @@ class MenuScene extends Phaser.Scene {
                 <div id="room-status"></div>
                 <div id="room-code-display" style="display:none"></div>
             </div>
+            <label id="dev-mode-label" style="
+                display: flex; align-items: center; gap: 6px;
+                color: #555; font-family: monospace; font-size: 11px;
+                margin-top: 12px; cursor: pointer; user-select: none;
+            ">
+                <input type="checkbox" id="dev-mode-checkbox" style="cursor:pointer"
+                    ${window._debugMode ? 'checked' : ''} />
+                Dev Mode (show enemy paths)
+            </label>
         `;
 
         // Focus input after a short delay (so scene loads first)
@@ -395,6 +404,12 @@ class MenuScene extends Phaser.Scene {
                 e.stopPropagation();
                 if (this._joinRoom) this._joinRoom();
             });
+
+            // Dev mode checkbox
+            const devCheck = document.getElementById('dev-mode-checkbox');
+            if (devCheck) {
+                devCheck.addEventListener('change', () => { window._debugMode = devCheck.checked; });
+            }
 
             // Auto-uppercase room code input
             const codeInput = document.getElementById('room-code-input');

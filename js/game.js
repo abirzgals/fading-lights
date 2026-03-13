@@ -106,6 +106,9 @@ class GameScene extends Phaser.Scene {
             this._setGridBlocked(b.x, b.y);
         }
 
+        // --- Debug overlay (dev mode) ---
+        this._debugGfx = this.add.graphics().setDepth(4999);
+
         // --- Camera ---
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
         this.cameras.main.setBackgroundColor('#000000');
@@ -1319,6 +1322,7 @@ class GameScene extends Phaser.Scene {
         this._updateChatBubbles();
         this.updateNetwork(dt);
         this.updateDepthSort();
+        this._drawDebug();
     }
 
     // --------------------------------------------------------
@@ -1392,6 +1396,82 @@ class GameScene extends Phaser.Scene {
         // Resource drops
         for (const drop of this.drops.children.entries) {
             if (drop.active) drop.setDepth(BASE + drop.y);
+        }
+    }
+
+    // --------------------------------------------------------
+    // Debug overlay — draw enemy paths, grid info
+    // --------------------------------------------------------
+    _drawDebug() {
+        const g = this._debugGfx;
+        g.clear();
+        if (!window._debugMode) return;
+
+        // Draw walk grid (blocked tiles) in camera view
+        const cam = this.cameras.main;
+        const T = CONFIG.TILE_SIZE;
+        const startTX = Math.max(0, Math.floor((cam.scrollX - 32) / T));
+        const startTY = Math.max(0, Math.floor((cam.scrollY - 32) / T));
+        const endTX = Math.min(this._gridSize - 1, Math.ceil((cam.scrollX + cam.width + 32) / T));
+        const endTY = Math.min(this._gridSize - 1, Math.ceil((cam.scrollY + cam.height + 32) / T));
+
+        g.fillStyle(0xFF0000, 0.15);
+        for (let ty = startTY; ty <= endTY; ty++) {
+            for (let tx = startTX; tx <= endTX; tx++) {
+                if (this._walkGrid[ty * this._gridSize + tx] === 0) {
+                    g.fillRect(tx * T, ty * T, T, T);
+                }
+            }
+        }
+
+        // Draw enemy paths
+        for (const enemy of this.enemies.children.entries) {
+            if (!enemy.active) continue;
+
+            const path = enemy.getData('_aiPath');
+            const pathIdx = enemy.getData('_aiPathIdx') || 0;
+            const raidPath = enemy.getData('raidPath');
+            const raidPathIdx = enemy.getData('raidPathIdx') || 0;
+
+            // Draw A* path (green)
+            if (path && pathIdx < path.length) {
+                g.lineStyle(2, 0x00FF00, 0.7);
+                g.beginPath();
+                g.moveTo(enemy.x, enemy.y);
+                for (let i = pathIdx; i < path.length; i++) {
+                    g.lineTo(path[i].x, path[i].y);
+                }
+                g.strokePath();
+
+                // Waypoint dots
+                g.fillStyle(0x00FF00, 0.8);
+                for (let i = pathIdx; i < path.length; i++) {
+                    g.fillCircle(path[i].x, path[i].y, 3);
+                }
+            }
+
+            // Draw raid path (yellow)
+            if (raidPath && raidPathIdx < raidPath.length) {
+                g.lineStyle(2, 0xFFFF00, 0.5);
+                g.beginPath();
+                g.moveTo(enemy.x, enemy.y);
+                for (let i = raidPathIdx; i < raidPath.length; i++) {
+                    g.lineTo(raidPath[i].x, raidPath[i].y);
+                }
+                g.strokePath();
+            }
+
+            // Direction line (cyan) — shows current velocity direction
+            const vx = enemy.body ? enemy.body.velocity.x : 0;
+            const vy = enemy.body ? enemy.body.velocity.y : 0;
+            if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
+                const len = Math.hypot(vx, vy);
+                g.lineStyle(1, 0x00FFFF, 0.6);
+                g.beginPath();
+                g.moveTo(enemy.x, enemy.y);
+                g.lineTo(enemy.x + (vx / len) * 30, enemy.y + (vy / len) * 30);
+                g.strokePath();
+            }
         }
     }
 
