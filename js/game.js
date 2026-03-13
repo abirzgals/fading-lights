@@ -1473,6 +1473,53 @@ class GameScene extends Phaser.Scene {
                 g.strokePath();
             }
         }
+
+        // Draw player/bot paths (magenta)
+        const bd = window._botDebug;
+        if (bd) {
+            const p = this.player;
+            const paths = bd.paths;
+            const drawPath = (path, idx, color) => {
+                if (!path || idx >= path.length) return;
+                g.lineStyle(2, color, 0.8);
+                g.beginPath();
+                g.moveTo(p.x, p.y);
+                for (let i = idx; i < path.length; i++) {
+                    g.lineTo(path[i].x, path[i].y);
+                }
+                g.strokePath();
+                g.fillStyle(color, 0.9);
+                for (let i = idx; i < path.length; i++) {
+                    g.fillCircle(path[i].x, path[i].y, 4);
+                }
+            };
+            drawPath(paths.currentPath, paths.pathIdx, 0xFF00FF);
+            drawPath(paths.moveToPath, paths.moveToPathIdx, 0xFF66FF);
+            drawPath(paths.orbitPath, paths.orbitPathIdx, 0xCC00CC);
+
+            // Player velocity direction
+            const pvx = p.body ? p.body.velocity.x : 0;
+            const pvy = p.body ? p.body.velocity.y : 0;
+            if (Math.abs(pvx) > 1 || Math.abs(pvy) > 1) {
+                const plen = Math.hypot(pvx, pvy);
+                g.lineStyle(2, 0xFF00FF, 0.7);
+                g.beginPath();
+                g.moveTo(p.x, p.y);
+                g.lineTo(p.x + (pvx / plen) * 35, p.y + (pvy / plen) * 35);
+                g.strokePath();
+            }
+
+            // Goal target line (thin dotted)
+            if (paths.currentGoal && paths.currentGoal.x && paths.currentGoal.y) {
+                g.lineStyle(1, 0xFF00FF, 0.3);
+                g.beginPath();
+                g.moveTo(p.x, p.y);
+                g.lineTo(paths.currentGoal.x, paths.currentGoal.y);
+                g.strokePath();
+                g.fillStyle(0xFF00FF, 0.5);
+                g.fillCircle(paths.currentGoal.x, paths.currentGoal.y, 6);
+            }
+        }
     }
 
     // --------------------------------------------------------

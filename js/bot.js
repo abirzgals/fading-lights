@@ -88,6 +88,11 @@
 
     window.toggleAI = function() { return aiInterval ? stopAI() : startAI(); };
 
+    // Expose paths for debug overlay
+    window._botDebug = { get paths() {
+        return { currentPath, pathIdx, moveToPath, moveToPathIdx, orbitPath, orbitPathIdx, currentGoal };
+    }};
+
     document.addEventListener('keydown', (e) => {
         if (e.key === '`' || e.key === 'i' || e.key === 'I') { e.preventDefault(); toggleAI(); }
     });
@@ -180,12 +185,51 @@
         return false;
     }
 
-    // Move directly toward a point (for short distances / moving targets)
+    // Move toward a point using A* pathfinding to avoid obstacles
+    let moveToPath = null;
+    let moveToPathIdx = 0;
+    let moveToTarget = null;
     function moveToward(p, tx, ty) {
         const dx = tx - p.x, dy = ty - p.y;
         const len = Math.hypot(dx, dy);
         if (len < 5) { orbitAround(p, tx, ty, 30); return true; }
-        setMove(dx / len, dy / len);
+
+        // Repath if target changed significantly or no path
+        if (!moveToPath || !moveToTarget ||
+            Math.abs(tx - moveToTarget.x) > 40 || Math.abs(ty - moveToTarget.y) > 40) {
+            const sc = getScene();
+            if (sc) {
+                const path = sc._findPath(p.x, p.y, tx, ty);
+                if (path && path.length > 0) {
+                    moveToPath = path;
+                    moveToPathIdx = 0;
+                    moveToTarget = { x: tx, y: ty };
+                } else {
+                    // Fallback: direct movement
+                    setMove(dx / len, dy / len);
+                    return false;
+                }
+            }
+        }
+
+        // Follow A* path
+        if (moveToPath && moveToPathIdx < moveToPath.length) {
+            const wp = moveToPath[moveToPathIdx];
+            const wdx = wp.x - p.x, wdy = wp.y - p.y;
+            const wlen = Math.hypot(wdx, wdy);
+            if (wlen < WAYPOINT_REACH) {
+                moveToPathIdx++;
+                if (moveToPathIdx >= moveToPath.length) { moveToPath = null; return true; }
+                const nwp = moveToPath[moveToPathIdx];
+                const ndx = nwp.x - p.x, ndy = nwp.y - p.y;
+                const nlen = Math.hypot(ndx, ndy) || 1;
+                setMove(ndx / nlen, ndy / nlen);
+            } else {
+                setMove(wdx / wlen, wdy / wlen);
+            }
+        } else {
+            setMove(dx / len, dy / len);
+        }
         return false;
     }
 
@@ -343,22 +387,27 @@
         return { x: evX / len, y: evY / len, urgency: len };
     }
 
-    // Move toward target but blend in evasion when threats are nearby
+    // Move toward target using A* but blend in evasion when threats are nearby
     function moveWithEvasion(sc, p, tx, ty) {
         const dx = tx - p.x, dy = ty - p.y;
         const dlen = Math.hypot(dx, dy);
         if (dlen < 5) { orbitAround(p, tx, ty, 25); return true; }
 
         const evasion = getEvasionVector(sc, p.x, p.y);
-        if (evasion && evasion.urgency > 0.5) {
-            // Blend: more evasion when threats are closer, but keep moving to target
-            const blend = Math.min(evasion.urgency * 0.8, 1.0);
-            const mx = dx / dlen + evasion.x * blend;
-            const my = dy / dlen + evasion.y * blend;
-            const mlen = Math.hypot(mx, my) || 1;
-            setMove(mx / mlen, my / mlen);
+        if (evasion && evasion.urgency > 1.2) {
+            // High threat — pure evasion, skip pathfinding
+            setMove(evasion.x, evasion.y);
         } else {
-            setMove(dx / dlen, dy / dlen);
+            // Use A* pathfinding as base movement
+            moveToward(p, tx, ty);
+            // Blend slight evasion on top if threats are moderate
+            if (evasion && evasion.urgency > 0.5) {
+                const blend = Math.min(evasion.urgency * 0.4, 0.6);
+                const mx = moveDir.x + evasion.x * blend;
+                const my = moveDir.y + evasion.y * blend;
+                const mlen = Math.hypot(mx, my) || 1;
+                setMove(mx / mlen, my / mlen);
+            }
         }
         return false;
     }
@@ -541,6 +590,7 @@
             currentGoal = goal;
             currentPath = null;
             orbitPath = null;
+            moveToPath = null;
             stuckTimer = 0;
             if (stuck) orbitAngle += 1.5;  // jump to new orbit angle when stuck
         }
