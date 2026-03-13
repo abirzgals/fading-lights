@@ -79,6 +79,16 @@ class GameScene extends Phaser.Scene {
         this.player.darknessTick = 0;
         this.player.invincible = 0;
 
+        // --- Player weapon sprite (from spritesheet) ---
+        this._weaponSprite = null;
+        this._weaponKey = null;  // track current weapon to detect changes
+        if (this.textures.exists('weapons_sheet')) {
+            this._weaponSprite = this.add.sprite(0, 0, 'weapons_sheet', 6).setDepth(6);
+            this._weaponSprite.setScale(0.75);
+            this._weaponSprite.setOrigin(0.2, 0.8); // pivot near handle
+            this._updateWeaponSprite();
+        }
+
         // --- Player name label ---
         this.playerNameLabel = this.add.text(cx, cy - 70, network.playerName || 'Wanderer', {
             fontSize: '11px',
@@ -878,6 +888,9 @@ class GameScene extends Phaser.Scene {
             };
             if (template.chopBonus) weapon.chopBonus = template.chopBonus;
             if (template.shadowBonus) weapon.shadowBonus = template.shadowBonus;
+            if (template.hitRadius) weapon.hitRadius = template.hitRadius;
+            if (template.spriteFrame !== undefined) weapon.spriteFrame = template.spriteFrame;
+            if (template.attackType) weapon.attackType = template.attackType;
             this._shopInventory.push(weapon);
         }
 
@@ -1472,6 +1485,18 @@ class GameScene extends Phaser.Scene {
                 <div class="shop-item-stats">${statsHtml}</div>
             `;
 
+            // Draw weapon icon from spritesheet
+            if (w.spriteFrame !== undefined && this.textures.exists('weapons_sheet')) {
+                const src = this.textures.get('weapons_sheet').getSourceImage();
+                const col = w.spriteFrame % 10;
+                const row = Math.floor(w.spriteFrame / 10);
+                const cvs = document.createElement('canvas');
+                cvs.width = 32; cvs.height = 32;
+                cvs.style.cssText = 'width:32px;height:32px;image-rendering:pixelated;vertical-align:middle;margin-right:6px;flex-shrink:0;';
+                cvs.getContext('2d').drawImage(src, col * 32, row * 32, 32, 32, 0, 0, 32, 32);
+                item.querySelector('.shop-item-header').prepend(cvs);
+            }
+
             if (canBuy) {
                 item.onclick = () => this._buyWeapon(i);
             }
@@ -1499,6 +1524,9 @@ class GameScene extends Phaser.Scene {
         };
         if (w.chopBonus) WEAPONS[weaponKey].chopBonus = w.chopBonus;
         if (w.shadowBonus) WEAPONS[weaponKey].shadowBonus = w.shadowBonus;
+        if (w.hitRadius) WEAPONS[weaponKey].hitRadius = w.hitRadius;
+        if (w.spriteFrame !== undefined) WEAPONS[weaponKey].spriteFrame = w.spriteFrame;
+        if (w.attackType) WEAPONS[weaponKey].attackType = w.attackType;
 
         // Equip immediately
         gameState.weapon = weaponKey;
@@ -2079,6 +2107,104 @@ class GameScene extends Phaser.Scene {
             this.playerInteract();
             this._interactCooldown = 500;
         }
+
+        // Update weapon sprite position to follow player
+        this._updateWeaponPosition(p);
+    }
+
+    _updateWeaponSprite() {
+        if (!this._weaponSprite) return;
+        const weapon = WEAPONS[gameState.weapon];
+        if (!weapon || weapon.spriteFrame === undefined) {
+            this._weaponSprite.setVisible(false);
+            return;
+        }
+        this._weaponSprite.setVisible(true);
+        this._weaponSprite.setFrame(weapon.spriteFrame);
+        this._weaponKey = gameState.weapon;
+    }
+
+    _updateWeaponPosition(p) {
+        if (!this._weaponSprite) return;
+
+        // Detect weapon change
+        if (this._weaponKey !== gameState.weapon) {
+            this._updateWeaponSprite();
+        }
+        if (!this._weaponSprite.visible) return;
+
+        const weapon = WEAPONS[gameState.weapon];
+        const facingAngle = Math.atan2(p.facing.y, p.facing.x);
+        const maxCooldown = weapon ? weapon.speed : 500;
+        const cooldownRatio = Math.max(0, p.attackCooldown / maxCooldown);
+        const attacking = cooldownRatio > 0;
+        // Progress: 0 at attack start → 1 at end
+        const phase = attacking ? (1 - cooldownRatio) : 0;
+
+        const attackType = weapon.attackType || 'swing';
+        const facingLeft = p.facing.x < 0;
+
+        // Sprite base orientation: tip at upper-right (~-45°), handle at lower-left
+        // To align tip with facing direction: rotation = facingAngle + PI/4
+        const BASE_ROT = Math.PI / 4;
+
+        let wx, wy, rot;
+
+        if (attackType === 'swing') {
+            const restDist = 8;
+            const swingDist = 14;
+            if (attacking) {
+                // Swing arc: quick forward sweep then slow return
+                const swingPhase = phase < 0.4 ? phase / 0.4 : 1 - (phase - 0.4) / 0.6;
+                const arcAngle = (swingPhase - 0.3) * 2.5;
+                const dist = restDist + swingDist * Math.sin(swingPhase * Math.PI);
+                const side = facingLeft ? -1 : 1;
+                wx = p.x + Math.cos(facingAngle + arcAngle * side * 0.5) * dist;
+                wy = p.y + Math.sin(facingAngle + arcAngle * side * 0.5) * dist;
+                rot = facingAngle + BASE_ROT + arcAngle * side;
+            } else {
+                // Resting: held at the side
+                const sideAngle = facingAngle + (facingLeft ? 0.6 : -0.6);
+                wx = p.x + Math.cos(sideAngle) * restDist;
+                wy = p.y + Math.sin(sideAngle) * restDist;
+                rot = facingAngle + BASE_ROT;
+            }
+        } else if (attackType === 'thrust') {
+            const restDist = 8;
+            if (attacking) {
+                // Stab forward then pull back
+                const thrustPhase = phase < 0.3 ? phase / 0.3 : 1 - (phase - 0.3) / 0.7;
+                const dist = restDist + 18 * thrustPhase;
+                wx = p.x + Math.cos(facingAngle) * dist;
+                wy = p.y + Math.sin(facingAngle) * dist;
+                rot = facingAngle + BASE_ROT;
+            } else {
+                const sideAngle = facingAngle + (facingLeft ? 0.4 : -0.4);
+                wx = p.x + Math.cos(sideAngle) * restDist;
+                wy = p.y + Math.sin(sideAngle) * restDist;
+                rot = facingAngle + BASE_ROT;
+            }
+        } else {
+            // 'shoot' — bow stays at the side, slight pullback on attack
+            const restDist = 7;
+            const sideAngle = facingAngle + (facingLeft ? 0.5 : -0.5);
+            wx = p.x + Math.cos(sideAngle) * restDist;
+            wy = p.y + Math.sin(sideAngle) * restDist;
+            rot = facingAngle + BASE_ROT;
+            if (attacking && phase < 0.3) {
+                const pullback = (0.3 - phase) / 0.3 * 4;
+                wx -= Math.cos(facingAngle) * pullback;
+                wy -= Math.sin(facingAngle) * pullback;
+            }
+        }
+
+        this._weaponSprite.x = wx;
+        this._weaponSprite.y = wy;
+        this._weaponSprite.setRotation(rot);
+        this._weaponSprite.setFlipY(facingLeft);
+
+        // Depth: in front or behind player
+        this._weaponSprite.setDepth(p.facing.y >= 0 ? p.depth + 0.1 : p.depth - 0.1);
     }
 
     updateFacingToMouse(pointer) {
@@ -2105,21 +2231,42 @@ class GameScene extends Phaser.Scene {
         p.attackCooldown = weapon.speed;
         audioEngine.playAttack();
 
+        // Hit radius — narrow weapons (e.g. bow) use hitRadius, others use range
+        const hitR = weapon.hitRadius || weapon.range;
+
         // Attack position
         const ax = p.x + p.facing.x * weapon.range;
         const ay = p.y + p.facing.y * weapon.range;
 
-        // Slash visual
-        const slash = this.add.image(ax, ay, 'slash').setDepth(4910).setAlpha(0.8);
-        slash.setBlendMode('ADD');
-        slash.setRotation(Math.atan2(p.facing.y, p.facing.x));
-        this.tweens.add({
-            targets: slash,
-            alpha: 0,
-            scale: 1.5,
-            duration: 200,
-            onComplete: () => slash.destroy()
-        });
+        // Attack visual — depends on weapon type
+        const attackType = weapon.attackType || 'swing';
+        const facingAngle = Math.atan2(p.facing.y, p.facing.x);
+
+        if (attackType === 'shoot') {
+            // Arrow projectile flying from player to attack point
+            const arrow = this.add.image(p.x, p.y, 'arrow_proj').setDepth(4910).setAlpha(0.9);
+            arrow.setRotation(facingAngle);
+            this.tweens.add({
+                targets: arrow,
+                x: ax, y: ay,
+                alpha: 0.3,
+                duration: 250,
+                onComplete: () => arrow.destroy()
+            });
+        } else {
+            // Melee slash visual — scale with hit radius
+            const slashScale = hitR / 50;
+            const slash = this.add.image(ax, ay, 'slash').setDepth(4910).setAlpha(0.8).setScale(slashScale);
+            slash.setBlendMode('ADD');
+            slash.setRotation(facingAngle);
+            this.tweens.add({
+                targets: slash,
+                alpha: 0,
+                scale: slashScale * 1.5,
+                duration: 200,
+                onComplete: () => slash.destroy()
+            });
+        }
 
         // Check hits on resources (copy array to avoid mutation during iteration)
         const hitResources = (group, maxHits, dropType, dropAmount) => {
@@ -2127,7 +2274,7 @@ class GameScene extends Phaser.Scene {
             for (const obj of targets) {
                 if (!obj.active) continue;
                 const dist = Phaser.Math.Distance.Between(ax, ay, obj.x, obj.y);
-                if (dist < weapon.range + 16) {
+                if (dist < hitR + 16) {
                     let hits = obj.getData('hits') + 1 + (weapon.chopBonus || 0);
                     obj.setData('hits', hits);
                     this.showFloatingText(obj.x, obj.y - 20, `${hits}/${maxHits}`, '#FFaa00');
@@ -2148,7 +2295,7 @@ class GameScene extends Phaser.Scene {
         for (const rock of this.rockWalls.children.entries) {
             if (!rock.active) continue;
             const dist = Phaser.Math.Distance.Between(ax, ay, rock.x, rock.y);
-            if (dist < weapon.range + 28) {
+            if (dist < hitR + 28) {
                 this.showFloatingText(rock.x, rock.y - 20, 'Unbreakable', '#999999');
             }
         }
@@ -2157,7 +2304,7 @@ class GameScene extends Phaser.Scene {
         for (const mine of this.metalMines.children.entries) {
             if (!mine.active) continue;
             const dist = Phaser.Math.Distance.Between(ax, ay, mine.x, mine.y);
-            if (dist < weapon.range + 24) {
+            if (dist < hitR + 24) {
                 const remaining = mine.getData('remaining') - 1;
                 mine.setData('remaining', remaining);
                 // Eject a metal drop in a random direction
@@ -2193,7 +2340,7 @@ class GameScene extends Phaser.Scene {
         for (const enemy of enemyTargets) {
             if (!enemy.active) continue;
             const dist = Phaser.Math.Distance.Between(ax, ay, enemy.x, enemy.y);
-            if (dist < weapon.range + enemy.getData('size')) {
+            if (dist < hitR + enemy.getData('size')) {
                 let dmg = weapon.damage;
                 if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
                 this.damageEnemy(enemy, dmg);
@@ -2205,7 +2352,7 @@ class GameScene extends Phaser.Scene {
         // Check hit on monster lair
         if (this._monsterLair && this._monsterLair.getData('active')) {
             const lairDist = Phaser.Math.Distance.Between(ax, ay, this._monsterLair.x, this._monsterLair.y);
-            if (lairDist < weapon.range + 32) {
+            if (lairDist < hitR + 32) {
                 let dmg = weapon.damage;
                 if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
                 this._damageLair(dmg);

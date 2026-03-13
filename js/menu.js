@@ -5,6 +5,12 @@
 class MenuScene extends Phaser.Scene {
     constructor() { super('MenuScene'); }
 
+    preload() {
+        this.load.spritesheet('weapons_sheet', 'assets/weapons.png', {
+            frameWidth: 32, frameHeight: 32,
+        });
+    }
+
     create() {
         generateTextures(this);
 

@@ -508,6 +508,16 @@ function generateTextures(scene) {
     }
     g.generateTexture('slash', 32, 32);
 
+    // Arrow projectile (for bow weapons) — thin line with arrowhead
+    g.clear();
+    g.fillStyle(0xCCBB88, 1);
+    g.fillRect(4, 7, 20, 2);          // shaft
+    g.fillStyle(0xAAAAAA, 1);
+    g.fillTriangle(24, 8, 18, 4, 18, 12); // arrowhead
+    g.fillStyle(0x886644, 1);
+    g.fillRect(2, 6, 4, 4);           // fletching
+    g.generateTexture('arrow_proj', 28, 16);
+
     // Menu tree silhouettes (larger, atmospheric)
     g.clear();
     g.fillStyle(0x0A0A0A, 1);
