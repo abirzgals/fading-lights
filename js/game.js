@@ -3080,7 +3080,7 @@ class GameScene extends Phaser.Scene {
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let cd = enemy.getData('attackCooldown') - dt * 1000;
                 enemy.setData('attackCooldown', cd);
-                if (dist < enemy.getData('size') + 16 && cd <= 0) {
+                if (dist < enemy.getData('size') + 28 && cd <= 0) {
                     enemy.setData('attackCooldown', 1000);
                     this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                     this.damagePlayer(enemy.getData('damage'));
@@ -3151,12 +3151,19 @@ class GameScene extends Phaser.Scene {
                             enemy.setData('attackCooldown', stats.attackCooldown);
                         }
                     } else {
-                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
-                        if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
-                            enemy.setData('attackCooldown', 1000);
-                            this._enemyAttackVisual(enemy, this.player.x, this.player.y);
-                            this.damagePlayer(enemy.getData('damage'));
-                            this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                        // Melee lair enemy: stop at attack range
+                        const lairMeleeRange = enemy.getData('size') + 28;
+                        if (distToPlayer < lairMeleeRange + 10) {
+                            enemy.setVelocity(0, 0);
+                            enemy.setFlipX(this.player.x < enemy.x);
+                            if (cd <= 0) {
+                                enemy.setData('attackCooldown', 1000);
+                                this._enemyAttackVisual(enemy, this.player.x, this.player.y);
+                                this.damagePlayer(enemy.getData('damage'));
+                                this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                            }
+                        } else {
+                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                         }
                     }
                 } else {
@@ -3348,14 +3355,19 @@ class GameScene extends Phaser.Scene {
                 }
 
                 if (raidMode === 'chase') {
-                    // Chase player using A* pathfinding
-                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
-
-                    if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
-                        enemy.setData('attackCooldown', 1000);
-                        this._enemyAttackVisual(enemy, this.player.x, this.player.y);
-                        this.damagePlayer(enemy.getData('damage'));
-                        this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                    // Chase player — stop at melee range
+                    const raidMeleeRange = enemy.getData('size') + 28;
+                    if (distToPlayer < raidMeleeRange + 10) {
+                        enemy.setVelocity(0, 0);
+                        enemy.setFlipX(this.player.x < enemy.x);
+                        if (cd <= 0) {
+                            enemy.setData('attackCooldown', 1000);
+                            this._enemyAttackVisual(enemy, this.player.x, this.player.y);
+                            this.damagePlayer(enemy.getData('damage'));
+                            this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                        }
+                    } else {
+                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                     }
                 } else {
                     // March to camp following pathfinding waypoints
@@ -3416,31 +3428,37 @@ class GameScene extends Phaser.Scene {
                     enemy.setData('aggro', false);
                 }
 
-                // Find nearest bonfire within detection range
-                const BONFIRE_DETECT = 200;
-                let nearestBonfire = null, bonfireDist = BONFIRE_DETECT;
+                // Find nearest lit bonfire — enemies are drawn to light
+                let nearestBonfire = null, bonfireDist = Infinity;
                 for (const b of this.bonfires) {
                     if (!b.getData('lit')) continue;
                     const bd = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
-                    if (bd < bonfireDist) { bonfireDist = bd; nearestBonfire = b; }
+                    // Detect bonfires within their light radius (enemies are drawn to light)
+                    const detectRange = this.getLightRadius(b) + 60;
+                    if (bd < detectRange && bd < bonfireDist) { bonfireDist = bd; nearestBonfire = b; }
                 }
 
-                // Priority: player close (aggro) > bonfire > wander
-                if (aggro && distToPlayer < SIGHT_RANGE) {
-                    // Chase player
-                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
+                const meleeRange = enemy.getData('size') + 28;
 
-                    // Attack when close
-                    if (distToPlayer < enemy.getData('size') + 16 && cd <= 0) {
+                // Priority: player very close > bonfire nearby > chase player (aggro) > wander
+                if (aggro && distToPlayer < meleeRange + 10) {
+                    // Player in melee range — stop and attack
+                    enemy.setVelocity(0, 0);
+                    enemy.setFlipX(this.player.x < enemy.x);
+                    if (cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
                         this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                         this.damagePlayer(enemy.getData('damage'));
                         this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                     }
+                } else if (aggro && distToPlayer < SIGHT_RANGE) {
+                    // Chase player — stop just before overlap
+                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                 } else if (nearestBonfire) {
                     // Head toward bonfire and attack it
-                    if (bonfireDist < 35) {
+                    if (bonfireDist < 40) {
                         enemy.setVelocity(0, 0);
+                        enemy.setFlipX(nearestBonfire.x < enemy.x);
                         if (cd <= 0) {
                             this._enemyAttackBonfire(enemy, nearestBonfire);
                             enemy.setData('attackCooldown', 1500);
