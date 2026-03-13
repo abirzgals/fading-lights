@@ -766,6 +766,8 @@ class GameScene extends Phaser.Scene {
         }
 
         // Generate winding road from bonfire → second camp → lair
+        // Also save road waypoints for lair enemy march path
+        const roadWaypoints = []; // world-coord waypoints from lair → bonfire
         const roadPoints = [
             { x: cx, y: cy },
             { x: sc_tx, y: sc_ty },
@@ -778,6 +780,7 @@ class GameScene extends Phaser.Scene {
             let roadAngle = Math.atan2(rdy, rdx);
             const totalDist = Math.hypot(rdx, rdy);
             const steps = Math.ceil(totalDist / 1.0);
+            let lastWpStep = -99;
             for (let s = 0; s < steps; s++) {
                 // Natural drift
                 const targetAngle = Math.atan2(to.y - ry, to.x - rx);
@@ -786,6 +789,11 @@ class GameScene extends Phaser.Scene {
                 ry += Math.sin(roadAngle) * 1.0;
                 const tpx = Math.round(rx), tpy = Math.round(ry);
                 if (tpx < 1 || tpx >= worldSize - 1 || tpy < 1 || tpy >= worldSize - 1) break;
+                // Save waypoint every ~4 tiles for march path
+                if (s - lastWpStep >= 4) {
+                    roadWaypoints.push({ x: tpx * T + T / 2, y: tpy * T + T / 2 });
+                    lastWpStep = s;
+                }
                 // Road width: 2 tiles
                 for (let ddx = -1; ddx <= 1; ddx++) {
                     for (let ddy = -1; ddy <= 1; ddy++) {
@@ -805,6 +813,9 @@ class GameScene extends Phaser.Scene {
                 }
             }
         }
+        // Road goes bonfire→camp→lair; reverse so lair enemies march lair→camp→bonfire
+        roadWaypoints.reverse();
+        this._lairMarchPath = roadWaypoints;
 
         // Draw the new road tiles (same logic as above, re-render all path tiles)
         for (const key of pathTiles) {
@@ -1367,9 +1378,13 @@ class GameScene extends Phaser.Scene {
         enemy.setData('ranged', !!stats.ranged);
         enemy.setData('fromLair', true);
 
-        // Lair enemies aggro player if close, otherwise march to bonfire
+        // Lair enemies follow pre-computed road path to bonfire
         enemy.setData('lairTargetX', this.bonfires[0].x);
         enemy.setData('lairTargetY', this.bonfires[0].y);
+        if (this._lairMarchPath && this._lairMarchPath.length > 0) {
+            enemy.setData('marchPath', this._lairMarchPath);
+            enemy.setData('marchPathIdx', 0);
+        }
     }
 
     // Create the wandering merchant shop
@@ -1822,6 +1837,23 @@ class GameScene extends Phaser.Scene {
                 g.fillStyle(0x00FF00, 0.8);
                 for (let i = pathIdx; i < path.length; i++) {
                     g.fillCircle(path[i].x, path[i].y, 3);
+                }
+            }
+
+            // Draw march path (orange) — lair enemies following road
+            const marchPath = enemy.getData('marchPath');
+            const marchIdx = enemy.getData('marchPathIdx') || 0;
+            if (marchPath && marchIdx < marchPath.length) {
+                g.lineStyle(2, 0xFF8800, 0.6);
+                g.beginPath();
+                g.moveTo(enemy.x, enemy.y);
+                for (let i = marchIdx; i < marchPath.length; i++) {
+                    g.lineTo(marchPath[i].x, marchPath[i].y);
+                }
+                g.strokePath();
+                g.fillStyle(0xFF8800, 0.8);
+                for (let i = marchIdx; i < marchPath.length; i++) {
+                    g.fillCircle(marchPath[i].x, marchPath[i].y, 3);
                 }
             }
 
@@ -3156,11 +3188,29 @@ class GameScene extends Phaser.Scene {
                         }
                     }
                 } else {
-                    // March to bonfire
-                    const tx = enemy.getData('lairTargetX') || this.bonfires[0].x;
-                    const ty = enemy.getData('lairTargetY') || this.bonfires[0].y;
-                    this._enemyPathToward(enemy, tx, ty, speed * 0.7);
-                    const distToTarget = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+                    // March along pre-computed road path to bonfire
+                    const marchPath = enemy.getData('marchPath');
+                    let marchIdx = enemy.getData('marchPathIdx') || 0;
+
+                    if (marchPath && marchIdx < marchPath.length) {
+                        const wp = marchPath[marchIdx];
+                        const distToWP = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
+                        if (distToWP < 24) {
+                            marchIdx++;
+                            enemy.setData('marchPathIdx', marchIdx);
+                        }
+                        if (marchIdx < marchPath.length) {
+                            const next = marchPath[marchIdx];
+                            const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, next.x, next.y);
+                            this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
+                            enemy.setFlipX(Math.cos(angle) < 0);
+                        }
+                    } else {
+                        // No march path or reached end — walk directly to bonfire
+                        const tx = enemy.getData('lairTargetX') || this.bonfires[0].x;
+                        const ty = enemy.getData('lairTargetY') || this.bonfires[0].y;
+                        this._enemyPathToward(enemy, tx, ty, speed * 0.7);
+                    }
 
                     // Ranged: shoot player while marching if in range
                     if (isRanged && cd <= 0 && distToPlayer < atkRange) {
@@ -3169,7 +3219,8 @@ class GameScene extends Phaser.Scene {
                     }
 
                     // Attack bonfire when reached
-                    if (distToTarget < 35 && cd <= 0) {
+                    const bonfireDist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.bonfires[0].x, this.bonfires[0].y);
+                    if (bonfireDist < 35 && cd <= 0) {
                         const bonfire = this.bonfires[0];
                         const fuel = bonfire.getData('fuel');
                         bonfire.setData('fuel', Math.max(0, fuel - 3));
