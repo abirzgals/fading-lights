@@ -2475,6 +2475,13 @@ class GameScene extends Phaser.Scene {
         return null;
     }
 
+    // Apply grid collision to a sprite's velocity — prevents walking through blocked tiles
+    _setVelocityWithGrid(sprite, vx, vy, speed) {
+        if (!sprite.body) { sprite.setVelocity(vx * speed, vy * speed); return; }
+        const gc = this._applyGridCollision(sprite.body, vx, vy, speed);
+        sprite.setVelocity(gc.vx * speed, gc.vy * speed);
+    }
+
     // A* pathfinding for enemies — repath every ~1s, follow waypoints
     _enemyPathToward(enemy, tx, ty, speed) {
         // Repath periodically or if no path
@@ -2491,9 +2498,7 @@ class GameScene extends Phaser.Scene {
             } else {
                 // Fallback: direct movement with grid collision
                 const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
-                let evx = Math.cos(angle), evy = Math.sin(angle);
-                const gc = this._applyGridCollision(enemy.body, evx, evy, speed);
-                enemy.setVelocity(gc.vx * speed, gc.vy * speed);
+                this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed);
                 enemy.setFlipX(Math.cos(angle) < 0);
                 return;
             }
@@ -2512,7 +2517,7 @@ class GameScene extends Phaser.Scene {
             if (pathIdx < path.length) {
                 const next = path[pathIdx];
                 const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, next.x, next.y);
-                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed);
                 enemy.setFlipX(Math.cos(angle) < 0);
             }
         }
@@ -2589,7 +2594,7 @@ class GameScene extends Phaser.Scene {
                         }
                         const wp = (path && pathIdx < path.length) ? path[pathIdx] : { x: tx, y: ty };
                         const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, wp.x, wp.y);
-                        enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                        this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
                         enemy.setFlipX(Math.cos(angle) < 0);
                     } else {
                         // In range — strafe around target
@@ -2599,7 +2604,7 @@ class GameScene extends Phaser.Scene {
                         const ox = tx + Math.cos(orbitAngle) * atkRange * 0.85;
                         const oy = ty + Math.sin(orbitAngle) * atkRange * 0.85;
                         const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
-                        enemy.setVelocity(Math.cos(moveAngle) * speed * 0.5, Math.sin(moveAngle) * speed * 0.5);
+                        this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.5);
                         enemy.setFlipX(tx < enemy.x);
                     }
 
@@ -2626,7 +2631,7 @@ class GameScene extends Phaser.Scene {
                         if (distToPlayer < fleeDist) {
                             // Too close — back away
                             const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
-                            enemy.setVelocity(Math.cos(awayAngle) * speed, Math.sin(awayAngle) * speed);
+                            this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
                             enemy.setFlipX(this.player.x < enemy.x);
                         } else {
                             // Good range — strafe
@@ -2636,7 +2641,7 @@ class GameScene extends Phaser.Scene {
                             const ox = this.player.x + Math.cos(orbitAngle) * atkRange * 0.75;
                             const oy = this.player.y + Math.sin(orbitAngle) * atkRange * 0.75;
                             const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
-                            enemy.setVelocity(Math.cos(moveAngle) * speed * 0.5, Math.sin(moveAngle) * speed * 0.5);
+                            this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.5);
                             enemy.setFlipX(this.player.x < enemy.x);
                         }
 
@@ -2653,7 +2658,7 @@ class GameScene extends Phaser.Scene {
                         const patrolX = mainBonfire.x + Math.cos(orbitAngle) * idealDist;
                         const patrolY = mainBonfire.y + Math.sin(orbitAngle) * idealDist;
                         const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, patrolX, patrolY);
-                        enemy.setVelocity(Math.cos(moveAngle) * speed * 0.6, Math.sin(moveAngle) * speed * 0.6);
+                        this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.6);
                         enemy.setFlipX(Math.cos(moveAngle) < 0);
                     }
                 }
@@ -2699,7 +2704,7 @@ class GameScene extends Phaser.Scene {
                         if (pathIdx < path.length) {
                             const nextWP = path[pathIdx];
                             const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, nextWP.x, nextWP.y);
-                            enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                            this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
                             enemy.setFlipX(Math.cos(angle) < 0);
                         }
                     } else {
@@ -2707,7 +2712,7 @@ class GameScene extends Phaser.Scene {
                         const tx = enemy.getData('raidTargetX');
                         const ty = enemy.getData('raidTargetY');
                         const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
-                        enemy.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
+                        this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
                         enemy.setFlipX(Math.cos(angle) < 0);
                     }
 
@@ -2764,7 +2769,7 @@ class GameScene extends Phaser.Scene {
                     }
                     enemy.setData('wanderTimer', wt);
                     const wa = enemy.getData('wanderAngle');
-                    enemy.setVelocity(Math.cos(wa) * speed * WANDER_SPEED, Math.sin(wa) * speed * WANDER_SPEED);
+                    this._setVelocityWithGrid(enemy, Math.cos(wa), Math.sin(wa), speed * WANDER_SPEED);
                     enemy.setFlipX(Math.cos(wa) < 0);
                 }
             }
@@ -2841,7 +2846,7 @@ class GameScene extends Phaser.Scene {
 
         // Knockback
         const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
-        enemy.setVelocity(Math.cos(angle) * 200, Math.sin(angle) * 200);
+        this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), 200);
 
         if (hp <= 0) {
             this._killEnemy(enemy);
@@ -2959,7 +2964,7 @@ class GameScene extends Phaser.Scene {
 
             if (nearestEnemy) {
                 const angle = Phaser.Math.Angle.Between(ally.x, ally.y, nearestEnemy.x, nearestEnemy.y);
-                ally.setVelocity(Math.cos(angle) * 100, Math.sin(angle) * 100);
+                this._setVelocityWithGrid(ally, Math.cos(angle), Math.sin(angle), 100);
                 ally.setFlipX(Math.cos(angle) < 0);
 
                 // Attack
@@ -2975,12 +2980,12 @@ class GameScene extends Phaser.Scene {
                 const distHome = Phaser.Math.Distance.Between(ally.x, ally.y, home.x, home.y);
                 if (distHome > 120) {
                     const angle = Phaser.Math.Angle.Between(ally.x, ally.y, home.x, home.y);
-                    ally.setVelocity(Math.cos(angle) * 50, Math.sin(angle) * 50);
+                    this._setVelocityWithGrid(ally, Math.cos(angle), Math.sin(angle), 50);
                 } else {
                     // Wander
                     if (Math.random() < 0.02) {
                         const wa = Math.random() * Math.PI * 2;
-                        ally.setVelocity(Math.cos(wa) * 30, Math.sin(wa) * 30);
+                        this._setVelocityWithGrid(ally, Math.cos(wa), Math.sin(wa), 30);
                     }
                 }
             }
