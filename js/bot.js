@@ -358,6 +358,32 @@
         return best;
     }
 
+    // Find nearest destructible resource between player and target (to clear a path)
+    function findBlockingResource(sc, px, py, tx, ty) {
+        const dx = tx - px, dy = ty - py;
+        const len = Math.hypot(dx, dy);
+        if (len < 10) return null;
+        const nx = dx / len, ny = dy / len;
+
+        let best = null, bestDist = Infinity;
+        const checkGroups = [sc.trees, sc.stones, sc.metals];
+        if (sc.metalMines) checkGroups.push(sc.metalMines);
+
+        for (const group of checkGroups) {
+            for (const obj of group.children.entries) {
+                if (!obj.active) continue;
+                const od = d(obj.x, obj.y, px, py);
+                if (od > 80 || od < 10) continue; // within reach, not behind us
+                // Check if object is roughly in the direction of the target
+                const toObjX = obj.x - px, toObjY = obj.y - py;
+                const dot = (toObjX * nx + toObjY * ny) / od;
+                if (dot < 0.4) continue; // not in our way
+                if (od < bestDist) { bestDist = od; best = obj; }
+            }
+        }
+        return best;
+    }
+
     // ---- Evasion system ----
     function getEvasionVector(sc, px, py) {
         let evX = 0, evY = 0;
@@ -867,7 +893,16 @@
             orbitPath = null;
             moveToPath = null;
             stuckTimer = 0;
-            if (stuck) orbitAngle += 1.5;
+            if (stuck) {
+                orbitAngle += 1.5;
+                // If stuck while moving to a target, try clearing the path
+                if (goal.x !== undefined && goal.y !== undefined) {
+                    const blocker = findBlockingResource(sc, p.x, p.y, goal.x, goal.y);
+                    if (blocker) {
+                        currentGoal = { type: 'clear_path', target: blocker, x: blocker.x, y: blocker.y, _treePath: 'Clear Path' };
+                    }
+                }
+            }
         }
 
         switch (currentGoal.type) {
@@ -955,6 +990,7 @@
                 break;
             }
 
+            case 'clear_path':
             case 'chop':
             case 'mine': {
                 const target = currentGoal.target;
