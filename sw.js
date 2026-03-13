@@ -1,6 +1,5 @@
-importScripts('./js/config.js');
-
-const CACHE_NAME = 'fading-light-' + GAME_VERSION;
+const SW_VERSION = '0.5.11';
+const CACHE_NAME = 'fading-light-' + SW_VERSION;
 const ASSETS = [
     './',
     './index.html',
@@ -13,6 +12,8 @@ const ASSETS = [
     './js/menu.js',
     './js/game.js',
     './js/main.js',
+    './js/bot.js',
+    './js/autotest.js',
     './manifest.json',
 ];
 

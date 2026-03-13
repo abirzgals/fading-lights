@@ -95,9 +95,19 @@
             window._gs = this;
         };
 
-        // Register service worker for PWA
+        // Register service worker for PWA — force update check on every load
         if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('sw.js').catch(() => {});
+            navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' })
+                .then((reg) => {
+                    // Check for updates immediately
+                    reg.update();
+                    // When a new SW takes over, reload to get fresh assets
+                    let refreshing = false;
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        if (!refreshing) { refreshing = true; location.reload(); }
+                    });
+                })
+                .catch(() => {});
         }
 
         // Fullscreen toggle
