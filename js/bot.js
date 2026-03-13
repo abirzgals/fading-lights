@@ -488,6 +488,7 @@
             _bestDrop: undefined,
             _buildTarget: undefined,
             _resourceTarget: undefined,
+            _nearestAlly: undefined,
         };
 
         // Lazy getters
@@ -589,6 +590,22 @@
             return this._resourceTarget;
         }});
 
+        // Nearest remote player (for proximity healing)
+        Object.defineProperty(ctx, 'nearestAlly', { get() {
+            if (this._nearestAlly === undefined) {
+                let best = null, bestDist = Infinity;
+                if (sc.remotePlayers) {
+                    for (const [, remote] of sc.remotePlayers) {
+                        if (!remote.sprite || !remote.sprite.active) continue;
+                        const rd = d(remote.sprite.x, remote.sprite.y, px, py);
+                        if (rd < bestDist) { bestDist = rd; best = { sprite: remote.sprite, dist: rd }; }
+                    }
+                }
+                this._nearestAlly = best;
+            }
+            return this._nearestAlly;
+        }});
+
         return ctx;
     }
 
@@ -683,6 +700,14 @@
                         name: 'Low HP Retreat',
                         check: (ctx) => ctx.hpRatio < 0.4 && ctx.distToFire > 60,
                         goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by }),
+                    },
+                    {
+                        name: 'Heal Near Ally',
+                        check: (ctx) => ctx.hpRatio < 0.5 && ctx.nearestAlly !== null,
+                        goal: (ctx) => {
+                            const ally = ctx.nearestAlly;
+                            return { type: 'heal', target: ally.sprite, x: ally.sprite.x, y: ally.sprite.y };
+                        },
                     },
                     {
                         name: 'Dodge Projectile',
@@ -1076,6 +1101,22 @@
                 if (!currentPath) pathTo(sc, currentGoal.x, currentGoal.y);
                 const arrived = followPath(p);
                 if (arrived) orbitAround(p, currentGoal.x, currentGoal.y, 30);
+                break;
+            }
+
+            case 'heal': {
+                // Walk to ally, then stand still to trigger proximity healing
+                const ally = currentGoal.target;
+                if (!ally || !ally.active) { currentGoal = null; break; }
+                const healDist = d(p.x, p.y, ally.x, ally.y);
+                if (healDist < 60) {
+                    // Close enough — stop moving to trigger idle healing
+                    stopMove();
+                } else {
+                    moveWithEvasion(sc, p, ally.x, ally.y);
+                }
+                // Stop healing goal if HP is full
+                if (gameState.hp >= CONFIG.PLAYER_MAX_HP) { currentGoal = null; }
                 break;
             }
 
