@@ -2159,13 +2159,10 @@ class GameScene extends Phaser.Scene {
         const phase = attacking ? (1 - cooldownRatio) : 0;
 
         const attackType = weapon.attackType || 'swing';
-        const facingLeft = p.facing.x < 0;
 
-        // Sprite base orientation: tip at upper-right (~-45°), handle at lower-left
-        // FlipY is applied AFTER rotation in Phaser, so with flipY:
-        //   rot = BASE_ROT - facingAngle (instead of facingAngle + BASE_ROT)
+        // Simple rotation: tip at upper-right (-PI/4), so rot = facingAngle + PI/4
+        // No flip — just pure rotation, works for all directions
         const BASE_ROT = Math.PI / 4;
-        const rotSign = facingLeft ? -1 : 1;
 
         let wx, wy, rot;
 
@@ -2173,43 +2170,39 @@ class GameScene extends Phaser.Scene {
             const restDist = 8;
             const swingDist = 14;
             if (attacking) {
-                // Swing arc: quick forward sweep then slow return
                 const swingPhase = phase < 0.4 ? phase / 0.4 : 1 - (phase - 0.4) / 0.6;
                 const arcAngle = (swingPhase - 0.3) * 2.5;
                 const dist = restDist + swingDist * Math.sin(swingPhase * Math.PI);
-                const side = facingLeft ? -1 : 1;
-                wx = p.x + Math.cos(facingAngle + arcAngle * side * 0.5) * dist;
-                wy = p.y + Math.sin(facingAngle + arcAngle * side * 0.5) * dist;
-                rot = BASE_ROT + facingAngle * rotSign + arcAngle * side;
+                wx = p.x + Math.cos(facingAngle + arcAngle * 0.5) * dist;
+                wy = p.y + Math.sin(facingAngle + arcAngle * 0.5) * dist;
+                rot = facingAngle + BASE_ROT + arcAngle;
             } else {
-                // Resting: held at the side
-                const sideAngle = facingAngle + (facingLeft ? 0.6 : -0.6);
+                const sideAngle = facingAngle - 0.6;
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = BASE_ROT + facingAngle * rotSign;
+                rot = facingAngle + BASE_ROT;
             }
         } else if (attackType === 'thrust') {
             const restDist = 8;
             if (attacking) {
-                // Stab forward then pull back
                 const thrustPhase = phase < 0.3 ? phase / 0.3 : 1 - (phase - 0.3) / 0.7;
                 const dist = restDist + 18 * thrustPhase;
                 wx = p.x + Math.cos(facingAngle) * dist;
                 wy = p.y + Math.sin(facingAngle) * dist;
-                rot = BASE_ROT + facingAngle * rotSign;
+                rot = facingAngle + BASE_ROT;
             } else {
-                const sideAngle = facingAngle + (facingLeft ? 0.4 : -0.4);
+                const sideAngle = facingAngle - 0.4;
                 wx = p.x + Math.cos(sideAngle) * restDist;
                 wy = p.y + Math.sin(sideAngle) * restDist;
-                rot = BASE_ROT + facingAngle * rotSign;
+                rot = facingAngle + BASE_ROT;
             }
         } else {
             // 'shoot' — bow stays at the side, slight pullback on attack
             const restDist = 7;
-            const sideAngle = facingAngle + (facingLeft ? 0.5 : -0.5);
+            const sideAngle = facingAngle - 0.5;
             wx = p.x + Math.cos(sideAngle) * restDist;
             wy = p.y + Math.sin(sideAngle) * restDist;
-            rot = BASE_ROT + facingAngle * rotSign;
+            rot = facingAngle + BASE_ROT;
             if (attacking && phase < 0.3) {
                 const pullback = (0.3 - phase) / 0.3 * 4;
                 wx -= Math.cos(facingAngle) * pullback;
@@ -2220,7 +2213,7 @@ class GameScene extends Phaser.Scene {
         this._weaponSprite.x = wx;
         this._weaponSprite.y = wy;
         this._weaponSprite.setRotation(rot);
-        this._weaponSprite.setFlipY(facingLeft);
+        this._weaponSprite.setFlipY(false);
 
         // Depth: in front or behind player
         this._weaponSprite.setDepth(p.facing.y >= 0 ? p.depth + 0.1 : p.depth - 0.1);
