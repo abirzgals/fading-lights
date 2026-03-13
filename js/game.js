@@ -183,6 +183,42 @@ class GameScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-FOUR', () => this.selectBuild('ARMOR_WORKSHOP'));
         this.input.keyboard.on('keydown-FIVE', () => this.selectBuild('FRIEND_HUT'));
 
+        // --- AI toggle (backtick or I) ---
+        this.input.keyboard.on('keydown-I', () => {
+            if (this._chatOpen) return;
+            if (window.toggleAI) window.toggleAI();
+        });
+        this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK)
+            .on('down', () => {
+                if (this._chatOpen) return;
+                if (window.toggleAI) window.toggleAI();
+            });
+
+        // --- Cheat mode (O key, dev mode only) ---
+        this._cheatMode = false;
+        this.input.keyboard.on('keydown-O', () => {
+            if (!window._debugMode || this._chatOpen) return;
+            this._cheatMode = !this._cheatMode;
+            if (this._cheatMode) {
+                // Full HP
+                gameState.hp = CONFIG.PLAYER_MAX_HP;
+                // Max out all bonfires: full fuel, campFuelAdded just 1 below next level
+                const levels = CONFIG.FIRE_LEVELS;
+                for (const bonfire of this.bonfires) {
+                    bonfire.setData('fuel', bonfire.getData('maxFuel') * 0.99);
+                    const curLevel = bonfire.getData('campFireLevel') || 1;
+                    const nextThreshold = levels[curLevel] || levels[levels.length - 1];
+                    bonfire.setData('campFuelAdded', nextThreshold - 1);
+                    if (bonfire.getData('isMain')) {
+                        gameState.fuelAdded = nextThreshold - 1;
+                    }
+                }
+                this.showFloatingText(this.player.x, this.player.y - 30, 'CHEAT ON', '#FF0000');
+            } else {
+                this.showFloatingText(this.player.x, this.player.y - 30, 'CHEAT OFF', '#888888');
+            }
+        });
+
         // --- Mouse input (hold to repeat) ---
         this._mouseLeftHeld = false;
         this._mouseRightHeld = false;
@@ -1940,8 +1976,8 @@ class GameScene extends Phaser.Scene {
             if (this._mouseLeftHeld) this.updateFacingToMouse(this.input.activePointer);
             // Mobile/keyboard: auto-face nearest choppable resource if in range
             if (!this._mouseLeftHeld) {
-                const weapon = WEAPONS[gameState.weapon];
-                let nearRes = null, nearDist = weapon.range + 20;
+                const wRange = this._cheatMode ? 200 : WEAPONS[gameState.weapon].range;
+                let nearRes = null, nearDist = wRange + 20;
                 for (const group of [this.trees, this.stones, this.metals]) {
                     for (const obj of group.children.entries) {
                         if (!obj.active) continue;
@@ -1960,8 +1996,7 @@ class GameScene extends Phaser.Scene {
 
         // Autoattack: if idle and enemy in weapon range, face it and attack
         if (!wantAttack && p.attackCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
-            const weapon = WEAPONS[gameState.weapon];
-            const autoRange = weapon.range + 20;
+            const autoRange = (this._cheatMode ? 200 : WEAPONS[gameState.weapon].range) + 20;
             let nearest = null, nearDist = Infinity;
             for (const enemy of this.enemies.children.entries) {
                 if (!enemy.active) continue;
@@ -2008,7 +2043,10 @@ class GameScene extends Phaser.Scene {
 
     playerAttack() {
         const p = this.player;
-        const weapon = WEAPONS[gameState.weapon];
+        let weapon = WEAPONS[gameState.weapon];
+        if (this._cheatMode) {
+            weapon = { ...weapon, damage: 9999, range: 200 };
+        }
         p.attackCooldown = weapon.speed;
         audioEngine.playAttack();
 
