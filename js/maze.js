@@ -102,11 +102,14 @@ class MazeScene extends Phaser.Scene {
         // --- Input ---
         this.cursors = this.input.keyboard.createCursorKeys();
         this.wasd    = this.input.keyboard.addKeys({ up: 'W', down: 'S', left: 'A', right: 'D' });
-        this.input.keyboard.on('keydown-E',     () => this._interact());
-        this.input.keyboard.on('keydown-SPACE', () => this._interact());
-        this.input.keyboard.on('keydown-F',     () => this._interact());
-        this.input.on('pointerdown', (ptr) => { if (ptr.leftButtonDown()) this._attack(); });
-        this._attackKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
+        this.input.keyboard.on('keydown-E', () => this._interact());
+        this.input.keyboard.on('keydown-F', () => this._interact());
+        this.input.on('pointerdown', (ptr) => {
+            if (ptr.leftButtonDown())  this._attack();
+            if (ptr.rightButtonDown()) this._interact();
+        });
+        this._attackKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
+        this._interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
         // --- HUD (scroll-fixed) ---
         this._hudHp = this.add.text(8, 8, '', {
@@ -340,11 +343,13 @@ class MazeScene extends Phaser.Scene {
         // Attack cooldown
         if (p.attackCooldown > 0) p.attackCooldown -= delta;
 
-        // Keyboard attack
-        if (Phaser.Input.Keyboard.JustDown(this._attackKey)) this._attack();
+        // Keyboard attack (SPACE) + interact (E)
+        if (Phaser.Input.Keyboard.JustDown(this._attackKey))   this._attack();
+        if (Phaser.Input.Keyboard.JustDown(this._interactKey)) this._interact();
 
-        // Mouse facing
+        // Mouse facing + held-LMB auto-attack
         const ptr = this.input.activePointer;
+        if (ptr.isDown && ptr.leftButtonDown() && p.attackCooldown <= 0) this._attack();
         if (ptr.isDown) {
             const wx = ptr.worldX, wy = ptr.worldY;
             const dx = wx - p.x, dy = wy - p.y;
