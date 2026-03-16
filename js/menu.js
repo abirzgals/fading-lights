@@ -147,9 +147,11 @@ class MenuScene extends Phaser.Scene {
         // --- Name input (HTML overlay) ---
         this._createNameInput(w, h);
 
+        this._launching = false;
+
         // --- Resize handler: save name then restart to reflow positioned elements ---
         this.scale.on('resize', () => {
-            if (!this.sys.isActive()) return; // Don't restart if not the current scene
+            if (!this.sys.isActive() || this._launching) return;
             const nameEl = document.getElementById('player-name-input');
             if (nameEl && nameEl.value.trim()) network.saveName(nameEl.value.trim());
             this.scene.restart();
@@ -207,6 +209,7 @@ class MenuScene extends Phaser.Scene {
         };
 
         this._launchGame = () => {
+            this._launching = true;
             // Remove input overlay
             const overlay = document.getElementById('name-input-overlay');
             if (overlay) overlay.style.display = 'none';
