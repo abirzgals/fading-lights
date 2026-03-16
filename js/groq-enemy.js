@@ -16,7 +16,7 @@ const GROQ_MAX_TOKENS  = 2000;
 const SHADOW_MIND_STATS = {
     name: 'Shadow Mind',
     hp: 220,
-    damage: 28,
+    damage: 3,
     speed: 68,
     xp: 150,
     size: 24,
@@ -37,72 +37,81 @@ const groqEnemyAI = {
 
     // ----------------------------------------------------------
     // 1. BUILD WORLD STATE — snapshot of everything the AI needs
+    //    All positions and distances are in TILES (1 tile = 32 px).
+    //    Distances use Euclidean (√(dx²+dy²)) so diagonals are correct.
     // ----------------------------------------------------------
     buildWorldState(enemy, scene) {
         const T = CONFIG.TILE_SIZE;
 
-        const eTile = { x: Math.round(enemy.x / T), y: Math.round(enemy.y / T) };
-        const pTile = { x: Math.round(scene.player.x / T), y: Math.round(scene.player.y / T) };
-        const distToPlayer = Math.round(Phaser.Math.Distance.Between(
-            enemy.x, enemy.y, scene.player.x, scene.player.y));
+        const ex = Math.round(enemy.x / T);
+        const ey = Math.round(enemy.y / T);
+        const px = Math.round(scene.player.x / T);
+        const py = Math.round(scene.player.y / T);
 
-        // All player fire camps
+        // Euclidean tile distance helper
+        const tileDist = (ax, ay, bx, by) => Math.round(Math.sqrt((bx-ax)**2 + (by-ay)**2));
+
+        const distToPlayerTiles = tileDist(ex, ey, px, py);
+        // Keep pixel distance only for internal threshold checks
+        const distToPlayerPx = Phaser.Math.Distance.Between(
+            enemy.x, enemy.y, scene.player.x, scene.player.y);
+
+        // All player fire camps — positions and distances in tiles
         const camps = scene.bonfires
             .filter(b => !b.getData('isLairCamp'))
             .map((b, i) => {
                 const fuel    = b.getData('fuel') || 0;
                 const maxFuel = b.getData('maxFuel') || 1;
                 const lit     = !!(b.getData('lit') || b.getData('isMain'));
-                const dist    = Math.round(Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y));
+                const btx     = Math.round(b.x / T);
+                const bty     = Math.round(b.y / T);
                 return {
-                    idx:      i,
-                    label:    b.getData('isMain') ? 'MAIN BASE' : 'OUTPOST',
-                    wx:       Math.round(b.x),
-                    wy:       Math.round(b.y),
-                    fuelPct:  Math.round((fuel / maxFuel) * 100),
+                    idx:     i,
+                    label:   b.getData('isMain') ? 'MAIN BASE' : 'OUTPOST',
+                    tx:      btx,
+                    ty:      bty,
+                    fuelPct: Math.round((fuel / maxFuel) * 100),
                     lit,
-                    dist,
+                    dist:    tileDist(ex, ey, btx, bty),
                 };
             });
 
-        // Nearby player buildings (turrets etc.) within 800px
+        // Nearby player buildings within 25 tiles (~800 px)
         const buildings = [];
         if (scene.buildingsGroup) {
             for (const b of scene.buildingsGroup.children.entries) {
                 if (!b.active) continue;
-                const d = Math.round(Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y));
-                if (d < 800) {
+                const btx  = Math.round(b.x / T);
+                const bty  = Math.round(b.y / T);
+                const dist = tileDist(ex, ey, btx, bty);
+                if (dist < 25) {
                     const atkRange = b.getData('attackRange') || 0;
-                    const bhp     = b.getData('hp') || 0;
-                    const bmaxHp  = BUILDINGS[b.getData('type')]?.hp || bhp || 1;
+                    const bhp      = b.getData('hp') || 0;
+                    const bmaxHp   = BUILDINGS[b.getData('type')]?.hp || bhp || 1;
                     buildings.push({
-                        idx:        buildings.length,
-                        type:       b.getData('type') || 'BUILDING',
-                        wx:         Math.round(b.x),
-                        wy:         Math.round(b.y),
-                        dist:       d,
-                        attackRange: atkRange,           // px — 0 means not a shooter
-                        hpPct:      Math.round((bhp / bmaxHp) * 100),
+                        idx:              buildings.length,
+                        type:             b.getData('type') || 'BUILDING',
+                        tx:               btx,
+                        ty:               bty,
+                        dist,
+                        attackRangeTiles: Math.round(atkRange / T),  // 0 = not a shooter
+                        hpPct:            Math.round((bhp / bmaxHp) * 100),
                     });
                 }
             }
         }
 
-        const hpPct    = Math.round((enemy.getData('hp') / enemy.getData('maxHp')) * 100);
-        const pHpPct   = Math.round(((gameState.hp ?? gameState.health ?? 100) / (gameState.maxHealth || CONFIG.PLAYER_MAX_HP)) * 100);
-        const meleeRng = (enemy.getData('size') || 22) + 34;
+        const hpPct  = Math.round((enemy.getData('hp') / enemy.getData('maxHp')) * 100);
+        const pHpPct = Math.round(((gameState.hp ?? gameState.health ?? 100) / (gameState.maxHealth || CONFIG.PLAYER_MAX_HP)) * 100);
+        const meleeRng = (enemy.getData('size') || 22) + 34; // px, internal only
 
         return {
-            self: {
-                wx: Math.round(enemy.x), wy: Math.round(enemy.y),
-                tile: eTile, hpPct,
-                damage: enemy.getData('damage'),
-            },
+            self:   { tx: ex, ty: ey, hpPct, damage: enemy.getData('damage') },
             player: {
-                wx: Math.round(scene.player.x), wy: Math.round(scene.player.y),
-                tile: pTile, hpPct: pHpPct, dist: distToPlayer,
-                inMeleeRange: distToPlayer < meleeRng,
-                canSee:       distToPlayer < 420,
+                tx: px, ty: py, hpPct: pHpPct,
+                dist:        distToPlayerTiles,
+                inMeleeRange: distToPlayerPx < meleeRng,
+                canSee:       distToPlayerPx < 420,
             },
             camps,
             buildings,
@@ -112,30 +121,36 @@ const groqEnemyAI = {
 
     // ----------------------------------------------------------
     // 2. BUILD PROMPT — AD&D flavoured tactical briefing
+    //    All coordinates and distances are in TILES.
     // ----------------------------------------------------------
-    buildPrompt(ws) {
+    buildPrompt(ws, recentSteps) {
         const campsLines = ws.camps.map(c =>
-            `  [${c.idx}] ${c.label}: pos(${c.wx},${c.wy}), fuel:${c.fuelPct}%, lit:${c.lit}, dist:${c.dist}px`
+            `  [${c.idx}] ${c.label}: tile(${c.tx},${c.ty}), fuel:${c.fuelPct}%, lit:${c.lit}, dist:${c.dist}t`
         ).join('\n');
 
         const buildLines = ws.buildings.length
             ? ws.buildings.map(b => {
-                const danger = b.attackRange > 0
-                    ? ` ⚠ TURRET attackRange:${b.attackRange}px — STAY >${b.attackRange}px away or destroy`
+                const danger = b.attackRangeTiles > 0
+                    ? ` ⚠ TURRET range:${b.attackRangeTiles}t — stay >${b.attackRangeTiles}t away or destroy`
                     : '';
-                return `  [${b.idx}] ${b.type} at (${b.wx},${b.wy}), dist:${b.dist}px, HP:${b.hpPct}%${danger}`;
+                return `  [${b.idx}] ${b.type} at tile(${b.tx},${b.ty}), dist:${b.dist}t, HP:${b.hpPct}%${danger}`;
               }).join('\n')
             : '  none nearby';
 
-        const playerThreat = ws.player.inMeleeRange ? 'IN MELEE RANGE — striking now is free'
-            : ws.player.canSee ? `visible, ${ws.player.dist}px away`
-            : `out of sight, ${ws.player.dist}px away`;
+        const playerThreat = ws.player.inMeleeRange ? 'IN MELEE RANGE — strike now'
+            : ws.player.canSee ? `visible, ${ws.player.dist}t away`
+            : `out of sight, ${ws.player.dist}t away`;
 
-        return `You are SHADOW_MIND, an ancient darkness creature playing a top-down survival game — like a dungeon master controlling a monster in AD&D. The map is tile-based (1 tile = 32px). Coordinates are in pixels.
+        const recentSection = recentSteps && recentSteps.length > 0
+            ? `\n=== YOUR LAST ACTIONS ===\n${recentSteps.map((s, i) => `  ${i + 1}. ${JSON.stringify(s)}`).join('\n')}\n`
+            : '';
+
+        return `You are SHADOW_MIND, an ancient darkness creature in a top-down survival game.
+All positions and distances are in TILES (integers). Diagonal distance = round(√(dx²+dy²)).
 
 === CURRENT SITUATION ===
-YOU       : (${ws.self.wx},${ws.self.wy}), HP:${ws.self.hpPct}%, dmg:${ws.self.damage}
-PLAYER    : (${ws.player.wx},${ws.player.wy}), HP:${ws.player.hpPct}% — ${playerThreat}
+YOU       : tile(${ws.self.tx},${ws.self.ty}), HP:${ws.self.hpPct}%, dmg:${ws.self.damage}
+PLAYER    : tile(${ws.player.tx},${ws.player.ty}), HP:${ws.player.hpPct}% — ${playerThreat}
 
 FIRE CAMPS (drain their fuel to win):
 ${campsLines}
@@ -144,27 +159,28 @@ PLAYER BUILDINGS (avoid if dangerous, or destroy):
 ${buildLines}
 
 GAME TIME: ${ws.gameTimeSec}s
-
+${recentSection}
 === YOUR OBJECTIVE ===
 PRIMARY  — extinguish ALL fire camps (attack each until fuelPct = 0)
 SECONDARY — kill the player if they get in your way or have low HP
-TERTIARY  — survive (flee if you drop below 25% HP)
+TERTIARY  — survive (flee if HP < 25%)
 
 === AVAILABLE ACTIONS ===
-Each step MUST be a JSON object with an "action" key. No shorthand strings.
+Each step MUST be a JSON object. All coords are tile integers.
 
-{"action":"MOVE_TO","x":1234,"y":567}
+{"action":"MOVE_TO","tx":75,"ty":55}
 {"action":"ATTACK_CAMP","idx":0}
 {"action":"ATTACK_PLAYER"}
 {"action":"DESTROY_BUILDING","idx":0}
-{"action":"FLEE","x":1234,"y":567}
+{"action":"FLEE","tx":60,"ty":70}
 {"action":"WAIT","seconds":2}
 
 === TACTICAL HINTS ===
-- TURRETS shoot anything within their attackRange px. Before approaching a camp, check if a turret covers it. If so: either DESTROY_BUILDING first, or MOVE_TO a flanking coord on the FAR side of the camp (campX + offset away from turret), then ATTACK_CAMP.
-- To flank: if turret is at (tx,ty) and camp at (cx,cy), move to (cx + (cx-tx)/|cx-tx| * (attackRange+60), cy) — that puts you behind the camp out of turret arc.
-- Prioritise camp with lowest fuelPct.
-- If player HP < 30% and nearby, kill first.
+- TURRET shoots anything within its range (tiles). Before approaching a camp, check if a turret covers it.
+  If so: DESTROY_BUILDING first, OR flank — move to the far side of the camp away from the turret.
+  Flanking formula: flankTx = campTx + sign(campTx - turretTx) * (turretRange + 2)
+- Prioritise camp with lowest fuelPct (closest to 0).
+- If player HP < 30% and nearby (<8t), kill first.
 - Max 5 steps. You will be re-queried after execution.
 
 OUTPUT FORMAT — respond with ONLY this JSON, nothing else:
@@ -174,8 +190,8 @@ OUTPUT FORMAT — respond with ONLY this JSON, nothing else:
     // ----------------------------------------------------------
     // 3. CALL GROQ API
     // ----------------------------------------------------------
-    async queryGroq(worldState) {
-        const prompt = this.buildPrompt(worldState);
+    async queryGroq(worldState, recentSteps) {
+        const prompt = this.buildPrompt(worldState, recentSteps);
         this._pushLog('REQUEST', prompt);
 
         let content = '';

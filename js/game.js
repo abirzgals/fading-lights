@@ -413,6 +413,36 @@ class GameScene extends Phaser.Scene {
 
         this.updateHUD();
 
+        // --- Shadow Mind: one every 5 minutes, cycling through ENEMY_WEAPONS ---
+        this._shadowMindWeaponIdx = 0;
+        this.time.addEvent({
+            delay: 300000, // 5 minutes
+            loop: true,
+            callback: () => {
+                if (gameState.gameOver) return;
+                let sx = this.player.x + 400, sy = this.player.y;
+                if (this._lairMarchPath && this._lairMarchPath.length > 3) {
+                    const wp = this._lairMarchPath[Math.min(3, this._lairMarchPath.length - 1)];
+                    sx = wp.x; sy = wp.y;
+                }
+                const weapon = ENEMY_WEAPONS[this._shadowMindWeaponIdx % ENEMY_WEAPONS.length];
+                this._shadowMindWeaponIdx++;
+                const sm = this._spawnGroqEnemy(sx, sy);
+                // Override weapon with the sequential one
+                const old = sm.getData('weaponSprite');
+                if (old) old.destroy();
+                sm.setData('enemyWeapon', weapon);
+                sm.setData('damage', Math.max(1, Math.round(weapon.damage * ENEMY_WEAPON_DMG_MULT)));
+                if (this.textures.exists('weapons_sheet')) {
+                    const ws = this.add.sprite(sx, sy, 'weapons_sheet', weapon.spriteFrame);
+                    ws.setOrigin(0.2, 0.8).setScale(0.65).setDepth(sm.depth + 1).setAlpha(0.85);
+                    sm.setData('weaponSprite', ws);
+                }
+                this.showFloatingText(sx, sy - 44, `☠ SHADOW MIND AWAKENS`, '#CC44FF');
+                this.showFloatingText(sx, sy - 28, weapon.name, '#AA88FF');
+            },
+        });
+
         // --- Dev mode: Groq log panel + auto-spawn Shadow Mind ---
         if (window._debugMode) {
             this._createGroqPanel();
@@ -1323,12 +1353,20 @@ class GameScene extends Phaser.Scene {
         if (marker) this.tweens.add({ targets: marker, alpha: 0, duration: 1000, onComplete: () => marker.destroy() });
         if (label) this.tweens.add({ targets: label, alpha: 0, duration: 1000, onComplete: () => label.destroy() });
 
-        this.showFloatingText(bonfire.x, bonfire.y - 50, 'CAMP DISCOVERED!', '#FFCC00');
-        this._trackObjective('second_camp_lit', 1);
+        if (bonfire.getData('isLairCamp')) {
+            // Lair cave — becomes permanently lit, changes look, spawns the torch
+            bonfire.setData('permanentlyLit', true);
+            this.time.delayedCall(1200, () => bonfire.setTexture('abandoned_cave'));
+            this.showFloatingText(bonfire.x, bonfire.y - 50, 'ANCIENT LAIR ILLUMINATED!', '#FFAA44');
+            this.time.delayedCall(600, () => this._spawnTorchDrop(bonfire.x, bonfire.y));
+        } else {
+            this.showFloatingText(bonfire.x, bonfire.y - 50, 'CAMP DISCOVERED!', '#FFCC00');
+            this._trackObjective('second_camp_lit', 1);
 
-        // Broadcast second camp lit to peers
-        if (network.peerCount > 0) {
-            network.broadcastReliable({ t: 'sc', x: bonfire.x, y: bonfire.y });
+            // Broadcast second camp lit to peers
+            if (network.peerCount > 0) {
+                network.broadcastReliable({ t: 'sc', x: bonfire.x, y: bonfire.y });
+            }
         }
     }
 
@@ -1469,7 +1507,72 @@ class GameScene extends Phaser.Scene {
         if (aura) aura.destroy();
 
         this.showFloatingText(lair.x, lair.y - 30, 'LAIR DESTROYED!', '#44FF44');
-        this._doVictory();
+        this.time.delayedCall(800, () => {
+            this.showFloatingText(lair.x, lair.y - 55, 'LIGHT THE ANCIENT BONFIRE', '#FFAA44');
+            this.showFloatingText(lair.x, lair.y - 72, 'TO CLAIM YOUR TORCH!', '#FFD700');
+        });
+    }
+
+    _spawnTorchDrop(x, y) {
+        const torch = this.drops.create(x, y, 'torch_item');
+        torch.setDepth(3.5).setScale(1.1);
+        torch.body.setAllowGravity(false);
+        torch.setData('resourceType', 'torch');
+
+        // Pulsing golden aura
+        const aura = this.add.image(x, y, 'glow').setDepth(3.4).setScale(2.2).setAlpha(0.55).setTint(0xFFAA00);
+        this.tweens.add({ targets: aura, scale: 2.8, alpha: 0.3, duration: 700, yoyo: true, repeat: -1 });
+        torch.setData('glowAura', aura);
+
+        const hint = this.add.text(x, y - 28, '[E] Take the Torch', {
+            fontSize: '9px', fill: '#FFEE44', fontFamily: 'monospace',
+        }).setOrigin(0.5).setDepth(10);
+        torch.setData('hintLabel', hint);
+
+        this.showFloatingText(x, y - 52, 'A TORCH AWAITS...', '#FFD700');
+        this.showFloatingText(x, y - 68, 'PICK IT UP TO CONTINUE!', '#FFAA44');
+        audioEngine.playWave();
+    }
+
+    _onTorchPickedUp() {
+        this.player.setVelocity(0, 0);
+        this.cameras.main.flash(900, 255, 200, 60);
+        audioEngine.playWave();
+
+        // Show overlay then transition to Level 2
+        const overlay = document.createElement('div');
+        overlay.style.cssText = [
+            'position:fixed;top:0;left:0;width:100%;height:100%;',
+            'background:rgba(0,0,0,0.88);display:flex;flex-direction:column;',
+            'align-items:center;justify-content:center;z-index:9999;',
+            'font-family:monospace;color:#fff;text-align:center;',
+        ].join('');
+        overlay.innerHTML = `
+            <div style="color:#FFD700;font-size:1.8em;margin-bottom:18px;letter-spacing:2px;">— THE LAIR IS BROKEN —</div>
+            <div style="color:#FFEECC;font-size:1em;margin-bottom:8px;max-width:540px;line-height:1.7em;">
+                From the smoldering ruins of the Shadow Lair you wrench a burning torch —<br>
+                ancient, eternal, untouched by the dark.
+            </div>
+            <div style="color:#FFDDAA;font-size:1em;margin-bottom:8px;max-width:540px;line-height:1.7em;">
+                But the lair had a belly. Deeper passages, sealed for centuries,<br>
+                where the shadow once hoarded its power — and its <em style="color:#FFD700">treasures</em>.
+            </div>
+            <div style="color:#CCAAFF;font-size:1em;margin-bottom:24px;max-width:540px;line-height:1.7em;">
+                You descend, torch in hand, into stone corridors that have not known<br>
+                light since before your world was born. Something still moves down there.
+            </div>
+            <div style="color:#88CCFF;font-size:1.5em;letter-spacing:3px;">⚡  DESCEND INTO THE LAIR  ⚡</div>
+        `;
+        document.body.appendChild(overlay);
+
+        this.time.delayedCall(3200, () => {
+            overlay.remove();
+            audioEngine.stopLoop('music', 400);
+            audioEngine.stopLoop('ambient', 400);
+            audioEngine.stopLoop('fire_crackle', 300);
+            audioEngine.stopFootsteps();
+            this.scene.start('MazeScene');
+        });
     }
 
     _doVictory() {
@@ -1522,19 +1625,6 @@ class GameScene extends Phaser.Scene {
             type = roll < 0.3 ? 'FOG_CRAWLER' : roll < 0.5 ? 'SHADOW_BEAST' : roll < 0.75 ? 'SHADOW_STALKER' : 'SHADOW_ARCHER';
         } else {
             type = roll < 0.25 ? 'FOG_CRAWLER' : roll < 0.45 ? 'SHADOW_BEAST' : roll < 0.6 ? 'SHADOW_LORD' : roll < 0.8 ? 'VOID_MAGE' : 'SHADOW_ARCHER';
-        }
-
-        // After 5 minutes, 20% chance to spawn a Groq-controlled Shadow Mind instead
-        if (elapsed >= 300 && Math.random() < 0.20) {
-            // Spawn on the road path, a few steps from the lair
-            let sx = lx, sy = ly;
-            if (this._lairMarchPath && this._lairMarchPath.length > 3) {
-                const wp = this._lairMarchPath[Math.min(3, this._lairMarchPath.length - 1)];
-                sx = wp.x; sy = wp.y;
-            }
-            this._spawnGroqEnemy(sx, sy);
-            this.showFloatingText(sx, sy - 40, 'SHADOW MIND AWAKENS', '#CC44FF');
-            return;
         }
 
         const stats = ENEMIES[type];
@@ -2363,6 +2453,7 @@ class GameScene extends Phaser.Scene {
         const phase = attacking ? (1 - cooldownRatio) : 0;
 
         const attackType = weapon.attackType || 'swing';
+        const arcDeg = weapon.arcDeg ?? 120;
 
         // Simple rotation: tip at upper-right (-PI/4), so rot = facingAngle + PI/4
         // No flip — just pure rotation, works for all directions
@@ -2370,12 +2461,17 @@ class GameScene extends Phaser.Scene {
 
         let wx, wy, rot;
 
-        if (attackType === 'swing') {
+        // Wide-arc thrust (pike/lance ≥200°) uses a spinning sweep animation
+        const isWideSweep = attackType === 'thrust' && arcDeg >= 200;
+
+        if (attackType === 'swing' || isWideSweep) {
             const restDist = 8;
-            const swingDist = 14;
+            const swingDist = isWideSweep ? 20 : 14;
+            // Scale visual arc to weapon arcDeg (cap at 270° so animation stays readable)
+            const arcSpan = Math.min(arcDeg, 270) * Math.PI / 180;
             if (attacking) {
                 const swingPhase = phase < 0.4 ? phase / 0.4 : 1 - (phase - 0.4) / 0.6;
-                const arcAngle = (swingPhase - 0.3) * 2.5;
+                const arcAngle = (swingPhase - 0.5) * arcSpan;
                 const dist = restDist + swingDist * Math.sin(swingPhase * Math.PI);
                 wx = p.x + Math.cos(facingAngle + arcAngle * 0.5) * dist;
                 wy = p.y + Math.sin(facingAngle + arcAngle * 0.5) * dist;
@@ -2401,7 +2497,7 @@ class GameScene extends Phaser.Scene {
                 rot = facingAngle + BASE_ROT;
             }
         } else {
-            // 'shoot' — bow stays at the side, slight pullback on attack
+            // 'shoot' — bow/staff stays at the side, slight pullback on attack
             const restDist = 7;
             const sideAngle = facingAngle - 0.5;
             wx = p.x + Math.cos(sideAngle) * restDist;
@@ -2450,41 +2546,86 @@ class GameScene extends Phaser.Scene {
         // Hit radius — narrow weapons (e.g. bow) use hitRadius, others use range
         const hitR = weapon.hitRadius || weapon.range;
 
-        // Attack position
+        // Attack position (for resource hits and projectile target)
         const ax = p.x + p.facing.x * weapon.range;
         const ay = p.y + p.facing.y * weapon.range;
 
         // Attack visual — depends on weapon type
         const attackType = weapon.attackType || 'swing';
         const facingAngle = Math.atan2(p.facing.y, p.facing.x);
+        const arcRad = (weapon.arcDeg ?? 360) * Math.PI / 180;
+        const splashR = weapon.splashRadius || 0;
 
+        // Helper: is a world position within the weapon's attack arc?
+        const inArc = (tx, ty) => {
+            if (arcRad >= Math.PI * 2 - 0.01) return true;
+            const a = Math.atan2(ty - p.y, tx - p.x);
+            return Math.abs(Phaser.Math.Angle.Wrap(a - facingAngle)) <= arcRad / 2;
+        };
+
+        // --- Visuals ---
         if (attackType === 'shoot') {
-            // Arrow projectile flying from player to attack point
-            const arrow = this.add.image(p.x, p.y, 'arrow_proj').setDepth(4910).setAlpha(0.9);
-            arrow.setRotation(facingAngle);
+            const texKey = splashR > 0 ? 'proj_magic' : 'arrow_proj';
+            const proj = this.add.image(p.x, p.y, texKey).setDepth(4910).setAlpha(0.9);
+            proj.setRotation(facingAngle);
+            const travelMs = splashR > 0 ? 380 : 240;
             this.tweens.add({
-                targets: arrow,
-                x: ax, y: ay,
-                alpha: 0.3,
-                duration: 250,
-                onComplete: () => arrow.destroy()
+                targets: proj, x: ax, y: ay, alpha: 0.3,
+                duration: travelMs,
+                onComplete: () => {
+                    proj.destroy();
+                    if (splashR > 0) {
+                        // AOE splash for magic staff — bigger area, lower damage
+                        const splash = this.add.image(ax, ay, 'slash')
+                            .setDepth(4910).setAlpha(0.9).setScale(splashR / 38).setBlendMode('ADD');
+                        this.tweens.add({ targets: splash, alpha: 0, scale: splashR / 18, duration: 380, onComplete: () => splash.destroy() });
+                        for (const e of [...this.enemies.children.entries]) {
+                            if (!e.active) continue;
+                            if (Phaser.Math.Distance.Between(ax, ay, e.x, e.y) < splashR + e.getData('size')) {
+                                let dmg = weapon.damage;
+                                if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                                this.damageEnemy(e, dmg);
+                                audioEngine.playHit();
+                                network.broadcastAction('hit', e.x, e.y);
+                            }
+                        }
+                    } else {
+                        // Arrow — narrow point impact
+                        for (const e of [...this.enemies.children.entries]) {
+                            if (!e.active) continue;
+                            if (Phaser.Math.Distance.Between(ax, ay, e.x, e.y) < hitR + e.getData('size')) {
+                                let dmg = weapon.damage;
+                                if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                                this.damageEnemy(e, dmg);
+                                audioEngine.playHit();
+                                network.broadcastAction('hit', e.x, e.y);
+                            }
+                        }
+                    }
+                    // Lair hit for ranged
+                    if (this._monsterLair && this._monsterLair.getData('active')) {
+                        if (Phaser.Math.Distance.Between(ax, ay, this._monsterLair.x, this._monsterLair.y) < (splashR || hitR) + 32) {
+                            let dmg = weapon.damage;
+                            if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                            this._damageLair(dmg);
+                            audioEngine.playHit();
+                        }
+                    }
+                },
             });
         } else {
-            // Melee slash visual — scale with hit radius
-            const slashScale = hitR / 50;
+            // Melee slash visual — scale with arc width
+            const slashScale = weapon.range / 50;
             const slash = this.add.image(ax, ay, 'slash').setDepth(4910).setAlpha(0.8).setScale(slashScale);
             slash.setBlendMode('ADD');
             slash.setRotation(facingAngle);
             this.tweens.add({
-                targets: slash,
-                alpha: 0,
-                scale: slashScale * 1.5,
-                duration: 200,
-                onComplete: () => slash.destroy()
+                targets: slash, alpha: 0, scale: slashScale * 1.5, duration: 200,
+                onComplete: () => slash.destroy(),
             });
         }
 
-        // Check hits on resources (copy array to avoid mutation during iteration)
+        // Check hits on resources — no arc filter (convenience: just aim roughly at tree)
         const hitResources = (group, maxHits, dropType, dropAmount) => {
             const targets = [...group.children.entries];
             for (const obj of targets) {
@@ -2551,34 +2692,35 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // Check hits on enemies (copy array to avoid mutation during iteration)
-        const enemyTargets = [...this.enemies.children.entries];
-        for (const enemy of enemyTargets) {
-            if (!enemy.active) continue;
-            const dist = Phaser.Math.Distance.Between(ax, ay, enemy.x, enemy.y);
-            if (dist < hitR + enemy.getData('size')) {
-                let dmg = weapon.damage;
-                if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
-                this.damageEnemy(enemy, dmg);
-                audioEngine.playHit();
-                network.broadcastAction('hit', enemy.x, enemy.y);
+        // Melee enemy hits — player-centred range + arc filter (shoot handled above in tween)
+        if (attackType !== 'shoot') {
+            for (const enemy of [...this.enemies.children.entries]) {
+                if (!enemy.active) continue;
+                const dist = Phaser.Math.Distance.Between(p.x, p.y, enemy.x, enemy.y);
+                if (dist < weapon.range + enemy.getData('size') && inArc(enemy.x, enemy.y)) {
+                    let dmg = weapon.damage;
+                    if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                    this.damageEnemy(enemy, dmg);
+                    audioEngine.playHit();
+                    network.broadcastAction('hit', enemy.x, enemy.y);
+                }
             }
-        }
 
-        // Check hit on monster lair
-        if (this._monsterLair && this._monsterLair.getData('active')) {
-            const lairDist = Phaser.Math.Distance.Between(ax, ay, this._monsterLair.x, this._monsterLair.y);
-            if (lairDist < hitR + 32) {
-                let dmg = weapon.damage;
-                if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
-                this._damageLair(dmg);
-                audioEngine.playHit();
+            // Monster lair hit
+            if (this._monsterLair && this._monsterLair.getData('active')) {
+                const lairDist = Phaser.Math.Distance.Between(p.x, p.y, this._monsterLair.x, this._monsterLair.y);
+                if (lairDist < weapon.range + 32 && inArc(this._monsterLair.x, this._monsterLair.y)) {
+                    let dmg = weapon.damage;
+                    if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                    this._damageLair(dmg);
+                    audioEngine.playHit();
+                }
             }
-        }
 
-        // Screen shake for heavy weapons
-        if (weapon.tier >= 2) {
-            this.cameras.main.shake(80, 0.003);
+            // Screen shake for heavy weapons
+            if (weapon.tier >= 2) {
+                this.cameras.main.shake(80, 0.003);
+            }
         }
 
         // Broadcast attack to peers
@@ -2592,6 +2734,69 @@ class GameScene extends Phaser.Scene {
 
     playerInteract() {
         const p = this.player;
+
+        // Check torch pickup (primary objective after lair destroyed)
+        for (const drop of [...this.drops.children.entries]) {
+            if (!drop.active || drop.getData('resourceType') !== 'torch') continue;
+            const dist = Phaser.Math.Distance.Between(p.x, p.y, drop.x, drop.y);
+            if (dist < CONFIG.INTERACT_RADIUS) {
+                gameState.hasTorch = true;
+                const hint = drop.getData('hintLabel');
+                const aura = drop.getData('glowAura');
+                if (hint && hint.active) hint.destroy();
+                if (aura && aura.active) aura.destroy();
+                drop.destroy();
+                this._onTorchPickedUp();
+                return;
+            }
+        }
+
+        // Check nearby weapon drops — E swaps weapons
+        for (const drop of [...this.drops.children.entries]) {
+            if (!drop.active || drop.getData('resourceType') !== 'weapon') continue;
+            const dist = Phaser.Math.Distance.Between(p.x, p.y, drop.x, drop.y);
+            if (dist < CONFIG.INTERACT_RADIUS) {
+                const weaponData = drop.getData('weaponData');
+                // Drop player's current weapon at their feet first
+                this._dropPlayerWeapon(p.x, p.y);
+                // Register picked-up weapon and equip
+                const wKey = 'DROP_' + weaponData.name.replace(/\s+/g, '_').toUpperCase();
+                WEAPONS[wKey] = { ...weaponData };
+                if (!gameState.unlockedWeapons.includes(wKey)) gameState.unlockedWeapons.push(wKey);
+                gameState.weapon = wKey;
+                this._updateWeaponSprite();
+                this.showFloatingText(p.x, p.y - 44, `Equipped: ${weaponData.name}`, '#FFEE44');
+                audioEngine.playPickup();
+                // Destroy glow/sparks/hint before drop
+                const hint   = drop.getData('hintLabel');
+                const aura   = drop.getData('glowAura');
+                const sparks = drop.getData('glowSparks');
+                if (hint   && hint.active)   hint.destroy();
+                if (aura   && aura.active)   aura.destroy();
+                if (sparks && sparks.active) sparks.destroy();
+                drop.destroy();
+                return;
+            }
+        }
+
+        // Check nearby hearts — E to heal
+        for (const drop of [...this.drops.children.entries]) {
+            if (!drop.active || drop.getData('resourceType') !== 'heart') continue;
+            const dist = Phaser.Math.Distance.Between(p.x, p.y, drop.x, drop.y);
+            if (dist < CONFIG.INTERACT_RADIUS) {
+                const heal = Math.round(CONFIG.PLAYER_MAX_HP * 0.15);
+                gameState.hp = Math.min(CONFIG.PLAYER_MAX_HP, (gameState.hp || 0) + heal);
+                this.updateHUD();
+                this.showFloatingText(p.x, p.y - 44, `+${heal} HP`, '#FF4488');
+                audioEngine.playPickup();
+                const hint = drop.getData('hintLabel');
+                const aura = drop.getData('glowAura');
+                if (hint && hint.active) hint.destroy();
+                if (aura && aura.active) aura.destroy();
+                drop.destroy();
+                return;
+            }
+        }
 
         // Check shop interaction
         if (this.shopSprite) {
@@ -2609,6 +2814,8 @@ class GameScene extends Phaser.Scene {
         for (const bonfire of this.bonfires) {
             const dist = Phaser.Math.Distance.Between(p.x, p.y, bonfire.x, bonfire.y);
             if (dist < CONFIG.INTERACT_RADIUS && gameState.resources.wood > 0) {
+                // Permanently lit lair cave cannot be fueled — it burns forever
+                if (bonfire.getData('permanentlyLit')) continue;
                 const fuel = bonfire.getData('fuel');
                 const maxFuel = bonfire.getData('maxFuel');
                 if (fuel < maxFuel) {
@@ -2655,6 +2862,16 @@ class GameScene extends Phaser.Scene {
                         if (bonfire.getData('isSecondCamp')) {
                             this._updateSecondCampBuildSpots(bonfire, newLevel);
                         }
+                        // Level-up angers the darkness — burst scales with new level (none at lvl 1→2)
+                        const burst = Math.max(0, newLevel - 2) + 1; // lvl2: 1, lvl3: 2, lvl4: 3 …
+                        const maxSpawn = CONFIG.MAX_ENEMIES - this.enemies.countActive();
+                        const toSpawn = Math.min(burst, maxSpawn);
+                        for (let i = 0; i < toSpawn; i++) {
+                            this.time.delayedCall(i * 600, () => this.spawnEnemy());
+                        }
+                        if (toSpawn > 0) {
+                            this.showFloatingText(bonfire.x, bonfire.y - 40, 'THE DARKNESS STIRS...', '#FF2222');
+                        }
                     }
 
                     // Update active camp for dashboard
@@ -2670,17 +2887,6 @@ class GameScene extends Phaser.Scene {
                     const bIdx = this.bonfires.indexOf(bonfire);
                     if (network.peerCount > 0) {
                         network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD * spend });
-                    }
-
-                    // Upgrading fire angers the darkness — spawn a small burst
-                    const burst = CONFIG.FUEL_SPAWN_BURST + Math.floor(gameState.waveNumber / 3);
-                    const maxSpawn = CONFIG.MAX_ENEMIES - this.enemies.countActive();
-                    const toSpawn = Math.min(burst, maxSpawn);
-                    for (let i = 0; i < toSpawn; i++) {
-                        this.time.delayedCall(i * 600, () => this.spawnEnemy());
-                    }
-                    if (toSpawn > 0) {
-                        this.showFloatingText(bonfire.x, bonfire.y - 40, 'THE DARKNESS STIRS...', '#FF2222');
                     }
 
                     // Update build spots visibility
@@ -2815,9 +3021,12 @@ class GameScene extends Phaser.Scene {
     updateBonfires(dt) {
         for (const bonfire of this.bonfires) {
             let fuel = bonfire.getData('fuel');
-            fuel -= CONFIG.BONFIRE_BURN_RATE * dt;
-            if (fuel < 0) fuel = 0;
-            bonfire.setData('fuel', fuel);
+            // Permanently lit lair cave never loses fuel — it burns forever
+            if (!bonfire.getData('permanentlyLit')) {
+                fuel -= CONFIG.BONFIRE_BURN_RATE * dt;
+                if (fuel < 0) fuel = 0;
+                bonfire.setData('fuel', fuel);
+            }
 
             // Update particle emission rate based on fuel
             const emitter = bonfire.getData('emitter');
@@ -2828,7 +3037,7 @@ class GameScene extends Phaser.Scene {
             }
 
             // When fuel runs out on a lit non-main camp — extinguish it
-            if (fuel <= 0 && bonfire.getData('lit') && !bonfire.getData('isMain')) {
+            if (fuel <= 0 && bonfire.getData('lit') && !bonfire.getData('isMain') && !bonfire.getData('permanentlyLit')) {
                 this._extinguishCamp(bonfire);
             }
         }
@@ -2964,6 +3173,7 @@ class GameScene extends Phaser.Scene {
     // Darkness damage
     // --------------------------------------------------------
     updateDarknessDamage(dt) {
+        if (gameState.hasTorch) return;
         const p = this.player;
         let inLight = false;
         for (const bonfire of this.bonfires) {
@@ -3041,7 +3251,9 @@ class GameScene extends Phaser.Scene {
 
         // Base spawns: normal enemies from the darkness
         const maxLevel = gameState.fireLevel;
-        if (this.spawnTimer >= CONFIG.SPAWN_INTERVAL && this.enemies.countActive() < CONFIG.MAX_ENEMIES) {
+        // Enemy cap scales with fire level so early game stays manageable
+        const levelCap = Math.min(CONFIG.MAX_ENEMIES, 2 + maxLevel * 2); // lvl1:4  lvl2:6  lvl3:8
+        if (this.spawnTimer >= CONFIG.SPAWN_INTERVAL && this.enemies.countActive() < levelCap) {
             this.spawnTimer = 0;
             const count = gameState.waveNumber < 3 ? 1 : Math.min(2, Math.floor(gameState.waveNumber / 3));
             for (let i = 0; i < count; i++) {
@@ -3165,6 +3377,9 @@ class GameScene extends Phaser.Scene {
         // Roar on spawn (30% chance, not every enemy)
         if (Math.random() < 0.3) audioEngine.playEnemyRoar();
 
+        // Assign weapon
+        this._assignEnemyWeapon(enemy);
+
         // Broadcast spawn to clients
         if (network.isHost && network.peerCount > 0) {
             network.broadcastReliable({
@@ -3266,6 +3481,7 @@ class GameScene extends Phaser.Scene {
             });
         }
 
+        this._assignEnemyWeapon(enemy);
         return enemy;
     }
 
@@ -3476,7 +3692,7 @@ class GameScene extends Phaser.Scene {
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let cd = enemy.getData('attackCooldown') - dt * 1000;
                 enemy.setData('attackCooldown', cd);
-                if (dist < enemy.getData('size') + 28 && cd <= 0) {
+                if (dist < 10 && cd <= 0) {
                     enemy.setData('attackCooldown', 1000);
                     this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                     this.damagePlayer(enemy.getData('damage'));
@@ -3555,8 +3771,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         // Melee lair enemy: stop at attack range
-                        const lairMeleeRange = enemy.getData('size') + 28;
-                        if (distToPlayer < lairMeleeRange + 10) {
+                        if (distToPlayer < 14) {
                             enemy.setData('aiState', 'ATK PLAYER');
                             enemy.setVelocity(0, 0);
                             enemy.setFlipX(this.player.x < enemy.x);
@@ -3773,8 +3988,7 @@ class GameScene extends Phaser.Scene {
 
                 if (raidMode === 'chase') {
                     // Chase player — stop at melee range
-                    const raidMeleeRange = enemy.getData('size') + 28;
-                    if (distToPlayer < raidMeleeRange + 10) {
+                    if (distToPlayer < 24) {
                         enemy.setVelocity(0, 0);
                         enemy.setFlipX(this.player.x < enemy.x);
                         enemy.setData('aiState', 'ATK PLAYER');
@@ -3871,10 +4085,8 @@ class GameScene extends Phaser.Scene {
                     if (bd < fallbackDist) { fallbackDist = bd; fallbackBonfire = b; }
                 }
 
-                const meleeRange = enemy.getData('size') + 28;
-
                 // Priority: player in melee > at bonfire = attack fire > chase player > move to bonfire > wander
-                if (aggro && distToPlayer < meleeRange + 10) {
+                if (aggro && distToPlayer < 14) {
                     // Player in melee range — stop and attack
                     enemy.setVelocity(0, 0);
                     enemy.setFlipX(this.player.x < enemy.x);
@@ -4008,6 +4220,9 @@ class GameScene extends Phaser.Scene {
                 const label = enemy.getData('_dbgLabel');
                 if (label) label.setVisible(false);
             }
+
+            // Keep weapon sprite in sync every frame
+            this._updateEnemyWeaponSprite(enemy);
         }
     }
 
@@ -4104,6 +4319,129 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    // --------------------------------------------------------
+    // Enemy weapon system
+    // --------------------------------------------------------
+
+    // Assign a random weapon to an enemy; create its visible sprite
+    _assignEnemyWeapon(enemy) {
+        const type = enemy.getData('type');
+        // Wisps and fog crawlers carry no weapon
+        if (type === 'SHADOW_WISP' || type === 'FOG_CRAWLER') return;
+        if (!this.textures.exists('weapons_sheet')) return;
+
+        const w = ENEMY_WEAPONS[Math.floor(Math.random() * ENEMY_WEAPONS.length)];
+        enemy.setData('enemyWeapon', w);
+        // Override base damage with weapon damage at reduced multiplier
+        enemy.setData('damage', Math.max(1, Math.round(w.damage * ENEMY_WEAPON_DMG_MULT)));
+
+        const ws = this.add.sprite(enemy.x, enemy.y, 'weapons_sheet', w.spriteFrame);
+        ws.setOrigin(0.2, 0.8);
+        ws.setScale(0.65);
+        ws.setDepth(enemy.depth + 1);
+        ws.setAlpha(0.85);
+        enemy.setData('weaponSprite', ws);
+    }
+
+    // Update weapon sprite position + rotation to match enemy facing each frame
+    _updateEnemyWeaponSprite(enemy) {
+        const ws = enemy.getData('weaponSprite');
+        if (!ws || !ws.active) return;
+
+        const vx = enemy.body.velocity.x;
+        const vy = enemy.body.velocity.y;
+        const BASE_ROT = Math.PI / 4; // blade upper-right, handle lower-left
+
+        let facing;
+        if (vx * vx + vy * vy > 100) {
+            facing = Math.atan2(vy, vx);
+            enemy.setData('_weapFacing', facing);
+        } else {
+            facing = enemy.getData('_weapFacing') ?? 0;
+        }
+
+        // Offset weapon to the side of the enemy in facing direction
+        const sideAngle = facing - 0.5;
+        ws.setPosition(
+            enemy.x + Math.cos(sideAngle) * 12,
+            enemy.y + Math.sin(sideAngle) * 12
+        );
+        ws.setRotation(facing + BASE_ROT);
+    }
+
+    // Create a weapon item on the ground (picked up with E)
+    _dropWeapon(x, y, weaponData) {
+        if (!this.textures.exists('weapons_sheet')) return;
+        const drop = this.drops.create(x, y, 'weapons_sheet', weaponData.spriteFrame);
+        drop.setDepth(3.2);
+        drop.setScale(0.9);
+        drop.setAngle(Phaser.Math.Between(0, 359));
+        drop.setData('resourceType', 'weapon');
+        drop.setData('weaponData', weaponData);
+        drop.body.setAllowGravity(false);
+
+        // Glow tier: 0 = none, 1 = subtle, 2 = bright
+        const dmg   = weaponData.damage || 0;
+        const range = weaponData.range  || 0;
+        const tier  = (dmg >= 30 || range >= 90) ? 2 : (dmg >= 20 || range >= 65) ? 1 : 0;
+        const color = weaponData.color ?? 0xFFDD44;
+
+        if (tier > 0 && this.textures.exists('glow')) {
+            // Pulsing glow aura behind the weapon
+            const aura = this.add.image(x, y, 'glow');
+            aura.setDepth(3.0);
+            aura.setTint(color);
+            const baseAlpha = tier === 2 ? 0.65 : 0.38;
+            const baseScale = tier === 2 ? 1.3  : 0.85;
+            aura.setAlpha(baseAlpha).setScale(baseScale);
+            this.tweens.add({
+                targets: aura,
+                alpha:   { from: baseAlpha, to: baseAlpha * 0.35 },
+                scale:   { from: baseScale, to: baseScale * 1.35 },
+                duration: tier === 2 ? 650 : 900,
+                yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+            });
+            drop.setData('glowAura', aura);
+
+            // Spark particles
+            const sparks = this.add.particles(x, y, 'particle', {
+                speed:    { min: 12, max: tier === 2 ? 45 : 28 },
+                lifespan: { min: 350, max: 700 },
+                scale:    { start: tier === 2 ? 0.35 : 0.22, end: 0 },
+                alpha:    { start: 1, end: 0 },
+                tint:     [color, 0xFFFFFF, color],
+                frequency: tier === 2 ? 220 : 480,
+                quantity:  1,
+                blendMode: 'ADD',
+                angle:     { min: 0, max: 360 },
+                gravityY:  -18,
+            });
+            sparks.setDepth(3.5);
+            drop.setData('glowSparks', sparks);
+        }
+
+        // "E" hint label
+        const hint = this.add.text(x, y - 18, 'E', {
+            font: 'bold 11px monospace',
+            fill: '#FFEE44',
+            stroke: '#000000',
+            strokeThickness: 3,
+        }).setDepth(4).setOrigin(0.5).setAlpha(0.85).setVisible(false);
+        drop.setData('hintLabel', hint);
+        return drop;
+    }
+
+    // Drop player's current weapon at (x, y)
+    _dropPlayerWeapon(x, y) {
+        const weapon = WEAPONS[gameState.weapon];
+        if (!weapon || weapon.spriteFrame === undefined) return;
+        this._dropWeapon(
+            x + Phaser.Math.Between(-8, 8),
+            y + Phaser.Math.Between(-8, 8),
+            weapon
+        );
+    }
+
     _killEnemy(enemy) {
         const enemyId = enemy.getData('enemyId');
         gameState.kills++;
@@ -4115,6 +4453,44 @@ class GameScene extends Phaser.Scene {
         if (enemy.getData('isRaider')) this._trackObjective('raiders_killed', 1);
         if (enemyType === 'SHADOW_ARCHER') this._trackObjective('archers_killed', 1);
         if (enemyType === 'VOID_MAGE') this._trackObjective('mages_killed', 1);
+
+        // Destroy weapon sprite
+        const weapSprite = enemy.getData('weaponSprite');
+        if (weapSprite) weapSprite.destroy();
+
+        // Only the AI boss (Shadow Mind) drops its weapon; big round mobs drop HP instead
+        const isBig = enemyType === 'SHADOW_MIND';
+        const enemyWeapon = enemy.getData('enemyWeapon');
+        if (isBig && enemyWeapon) {
+            this._dropWeapon(
+                enemy.x + Phaser.Math.Between(-10, 10),
+                enemy.y + Phaser.Math.Between(-10, 10),
+                enemyWeapon
+            );
+        }
+
+        // Big round monsters drop a heart (+15% HP — press E to pick up)
+        if (enemyType === 'SHADOW_BEAST' || enemyType === 'SHADOW_LORD') {
+            const heart = this.drops.create(enemy.x, enemy.y - 8, 'heart_drop');
+            heart.setDepth(3);
+            heart.setData('resourceType', 'heart');
+            heart.body.setAllowGravity(false);
+            // Pulsing pink glow
+            if (this.textures.exists('glow')) {
+                const aura = this.add.image(enemy.x, enemy.y - 8, 'glow');
+                aura.setDepth(2.9).setTint(0xFF1144).setAlpha(0.5).setScale(0.7);
+                this.tweens.add({
+                    targets: aura, alpha: { from: 0.5, to: 0.15 }, scale: { from: 0.7, to: 1.0 },
+                    duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+                });
+                heart.setData('glowAura', aura);
+            }
+            const hint = this.add.text(enemy.x, enemy.y - 26, 'E', {
+                font: 'bold 11px monospace', fill: '#FF4488',
+                stroke: '#000000', strokeThickness: 3,
+            }).setDepth(4).setOrigin(0.5).setAlpha(0.85).setVisible(false);
+            heart.setData('hintLabel', hint);
+        }
 
         // Drop gold
         const goldAmount = ENEMIES[enemyType] ? ENEMIES[enemyType].gold || 1 : 1;
@@ -4481,22 +4857,61 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     updateDropPickup() {
         const dropList = [...this.drops.children.entries];
+        let nearestWeapon = null, nearestWeaponDist = Infinity;
+
         for (const drop of dropList) {
             if (!drop.active) continue;
             const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, drop.x, drop.y);
+            const type = drop.getData('resourceType');
+
+            // Weapons require E key — track nearest for hint
+            if (type === 'weapon') {
+                if (dist < CONFIG.INTERACT_RADIUS && dist < nearestWeaponDist) {
+                    nearestWeaponDist = dist;
+                    nearestWeapon = drop;
+                }
+                continue;
+            }
+
+            // Hearts require E key (handled in playerInteract)
+            if (type === 'heart') {
+                if (dist < CONFIG.INTERACT_RADIUS && dist < nearestWeaponDist) {
+                    nearestWeaponDist = dist;
+                    nearestWeapon = drop; // reuse nearestWeapon slot for hint visibility
+                }
+                continue;
+            }
+
+            // Torch requires E key — never auto-collect
+            if (type === 'torch') {
+                if (dist < CONFIG.INTERACT_RADIUS && dist < nearestWeaponDist) {
+                    nearestWeaponDist = dist;
+                    nearestWeapon = drop;
+                }
+                continue;
+            }
+
             if (dist < CONFIG.PICKUP_RADIUS) {
-                const type = drop.getData('resourceType');
                 gameState.resources[type]++;
                 this._trackObjective(type + '_collected', 1);
                 this.showFloatingText(drop.x, drop.y - 10, `+1 ${type}`, '#88FF88');
                 audioEngine.playPickup();
                 network.broadcastAction('pickup', drop.x, drop.y);
-                // Broadcast pickup to peers so they remove the drop
                 if (network.peerCount > 0) {
                     network.broadcastReliable({ t: 'dp', x: Math.round(drop.x), y: Math.round(drop.y), res: type });
                 }
                 drop.destroy();
             }
+        }
+
+        // Show "E" hint for the nearest weapon or heart in range; hide all others
+        for (const drop of dropList) {
+            if (!drop.active) continue;
+            const type = drop.getData('resourceType');
+            if (type !== 'weapon' && type !== 'heart') continue;
+            const hint = drop.getData('hintLabel');
+            if (!hint || !hint.active) continue;
+            hint.setVisible(drop === nearestWeapon);
         }
     }
 
@@ -5564,16 +5979,19 @@ class GameScene extends Phaser.Scene {
             wordWrap: { width: 160 },
         }).setDepth(5200).setOrigin(0.5, 1).setVisible(false);
         enemy.setData('groqLabel', label);
+        this._assignEnemyWeapon(enemy);
         return enemy;
     }
 
     async _groqRequestPlan(enemy) {
         if (!enemy.active) return;
         enemy.setData('groqState', 'PLANNING');
+        // Grab recent steps before clearing them (sent to AI as context)
+        const prevSteps = enemy.getData('groqSteps') || [];
         enemy.setData('groqSteps', null);
         enemy.setData('groqStepIdx', 0);
         const ws = groqEnemyAI.buildWorldState(enemy, this);
-        const steps = await groqEnemyAI.queryGroq(ws);
+        const steps = await groqEnemyAI.queryGroq(ws, prevSteps.slice(0, 5));
         if (!enemy.active) return; // destroyed while waiting
         if (steps && steps.steps && steps.steps.length > 0) {
             enemy.setData('groqSteps', steps.steps);
@@ -5670,7 +6088,10 @@ class GameScene extends Phaser.Scene {
         switch (step.action) {
 
             case 'MOVE_TO': {
-                const tx = step.x, ty = step.y;
+                // Coords are in tiles — convert to pixels for pathfinding
+                const T = CONFIG.TILE_SIZE;
+                const tx = (step.tx != null ? step.tx : step.x) * T;
+                const ty = (step.ty != null ? step.ty : step.y) * T;
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
                 enemy.setData('aiState', 'MOVE_TO');
                 if (dist < 40) return true; // arrived
@@ -5710,8 +6131,7 @@ class GameScene extends Phaser.Scene {
             case 'ATTACK_PLAYER': {
                 const px = this.player.x, py = this.player.y;
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, px, py);
-                const meleeRange = enemy.getData('size') + 34;
-                if (dist < meleeRange + 10) {
+                if (dist < 14) {
                     enemy.setVelocity(0, 0);
                     enemy.setFlipX(px < enemy.x);
                     enemy.setData('aiState', 'ATK PLAYER');
@@ -5756,8 +6176,12 @@ class GameScene extends Phaser.Scene {
             }
 
             case 'FLEE': {
-                const tx = step.x || (this.bonfires[0] ? this.bonfires[0].x + 400 : enemy.x + 400);
-                const ty = step.y || (this.bonfires[0] ? this.bonfires[0].y + 400 : enemy.y + 400);
+                // Coords are in tiles — convert to pixels; fallback if omitted
+                const T = CONFIG.TILE_SIZE;
+                const rawTx = step.tx != null ? step.tx : (step.x != null ? step.x : null);
+                const rawTy = step.ty != null ? step.ty : (step.y != null ? step.y : null);
+                const tx = rawTx != null ? rawTx * T : (this.bonfires[0] ? this.bonfires[0].x + 400 : enemy.x + 400);
+                const ty = rawTy != null ? rawTy * T : (this.bonfires[0] ? this.bonfires[0].y + 400 : enemy.y + 400);
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
                 enemy.setData('aiState', 'FLEE');
                 if (dist < 80) return true;

@@ -221,6 +221,16 @@ function generateTextures(scene) {
     g.fillCircle(10, 10, 2);
     g.generateTexture('gold_drop', 16, 16);
 
+    // Heart drop (big round monsters)
+    g.clear();
+    g.fillStyle(0xFF1144, 1);
+    g.fillCircle(5, 5, 4);   // left lobe
+    g.fillCircle(10, 5, 4);  // right lobe
+    g.fillTriangle(1, 6, 14, 6, 7, 14); // bottom point
+    g.fillStyle(0xFF6688, 0.6);
+    g.fillCircle(4, 4, 2);   // highlight
+    g.generateTexture('heart_drop', 15, 15);
+
     // Buildings
     // Turret
     g.clear();
@@ -571,6 +581,103 @@ function generateTextures(scene) {
     g.fillCircle(10, 30, 16);
     g.fillCircle(24, 35, 14);
     g.generateTexture('menu_tree', 48, 100);
+
+    // Torch item drop — flickering flame on a stick
+    g.clear();
+    g.fillStyle(0x6B4C1A, 1);
+    g.fillRect(6, 14, 4, 18);           // handle
+    g.fillStyle(0xFFCC00, 1);
+    g.fillCircle(8, 10, 6);             // main flame
+    g.fillStyle(0xFF6600, 0.85);
+    g.fillCircle(8, 8, 4);
+    g.fillStyle(0xFFFFAA, 0.7);
+    g.fillCircle(8, 7, 2);             // bright core
+    g.generateTexture('torch_item', 16, 32);
+
+    // Abandoned cave — like monster_lair but worn and warm-lit (no evil eyes)
+    g.clear();
+    // Rough stone base
+    g.fillStyle(0x2A2830, 1);
+    g.fillRect(0, 20, 64, 44);
+    // Mossy/cracked stone blocks
+    g.fillStyle(0x1E1C24, 1);
+    g.fillRect(4, 28, 18, 14);
+    g.fillRect(24, 32, 16, 10);
+    g.fillRect(42, 26, 16, 14);
+    g.fillStyle(0x35303E, 0.5);
+    g.fillRect(6, 38, 14, 4);
+    g.fillRect(44, 36, 12, 4);
+    // Cave mouth (dark opening)
+    g.fillStyle(0x0A080F, 1);
+    g.fillEllipse(32, 44, 26, 18);
+    g.fillStyle(0x100E18, 0.85);
+    g.fillEllipse(32, 42, 20, 13);
+    // Worn stone spires (crumbled, not sharp like lair)
+    g.fillStyle(0x1A1820, 1);
+    g.fillTriangle(10, 26, 16, 14, 22, 26);
+    g.fillTriangle(26, 22, 32, 8,  38, 22);
+    g.fillTriangle(42, 26, 48, 14, 54, 26);
+    // Warm torch glow from inside (orange, not red/evil)
+    g.fillStyle(0xFF8800, 0.18);
+    g.fillCircle(32, 44, 14);
+    g.fillStyle(0xFFCC44, 0.1);
+    g.fillCircle(32, 42, 9);
+    // Faint embers scattered on floor
+    g.fillStyle(0xFF6600, 0.35);
+    g.fillCircle(24, 50, 2);
+    g.fillCircle(38, 52, 1.5);
+    g.fillCircle(32, 55, 1.5);
+    // Overgrown vines hint
+    g.fillStyle(0x2A3B1A, 0.45);
+    g.fillRect(0, 40, 6, 16);
+    g.fillRect(58, 38, 6, 18);
+    g.generateTexture('abandoned_cave', 64, 64);
+
+    // Maze stone wall tile (32x32 — solid underground block)
+    g.clear();
+    g.fillStyle(0x2A2A35, 1);
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x333340, 0.9);
+    g.fillRect(1, 1, 14, 14);
+    g.fillRect(17, 1, 14, 14);
+    g.fillRect(1, 17, 30, 14);
+    g.fillStyle(0x1E1E28, 0.6);
+    g.fillRect(0, 15, 32, 2);
+    g.fillRect(15, 0, 2, 15);
+    g.fillStyle(0x3D3D4D, 0.3);
+    g.fillRect(3, 3, 4, 2);
+    g.fillRect(20, 5, 6, 2);
+    g.fillRect(5, 22, 8, 2);
+    g.fillRect(20, 25, 5, 2);
+    g.generateTexture('maze_stone', 32, 32);
+
+    // Maze floor tile (32x32 — dark underground floor)
+    g.clear();
+    g.fillStyle(0x18181F, 1);
+    g.fillRect(0, 0, 32, 32);
+    g.fillStyle(0x222230, 0.5);
+    g.fillRect(0, 0, 32, 1);
+    g.fillRect(0, 0, 1, 32);
+    g.fillStyle(0x1C1C25, 0.4);
+    for (let i = 0; i < 6; i++) {
+        g.fillRect(Math.floor(Math.random() * 28) + 2, Math.floor(Math.random() * 28) + 2, 2, 1);
+    }
+    g.generateTexture('maze_floor', 32, 32);
+
+    // Treasure chest (24x20)
+    g.clear();
+    g.fillStyle(0x7B4A0E, 1);
+    g.fillRect(0, 6, 24, 14);           // chest body
+    g.fillStyle(0x5C3508, 1);
+    g.fillRect(0, 6, 24, 3);            // lid bottom edge
+    g.fillStyle(0xA0631A, 1);
+    g.fillRect(0, 0, 24, 9);            // lid
+    g.fillStyle(0xFFCC00, 1);
+    g.fillRect(9, 3, 6, 5);             // clasp
+    g.fillRect(2, 8, 20, 2);            // metal band
+    g.fillStyle(0xFFDD44, 0.6);
+    g.fillRect(1, 1, 6, 2);             // highlight
+    g.generateTexture('treasure_chest', 24, 20);
 
     g.destroy();
 }

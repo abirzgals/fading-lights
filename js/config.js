@@ -2,7 +2,7 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.5.45';
+const GAME_VERSION = '0.5.46';
 
 const CONFIG = {
     // World
@@ -29,9 +29,9 @@ const CONFIG = {
     FUEL_PER_WOOD: 15,
 
     // Enemies
-    SPAWN_INTERVAL: 9000,
+    SPAWN_INTERVAL: 14000,
     SPAWN_MARGIN: 120,
-    MAX_ENEMIES: 15,
+    MAX_ENEMIES: 8,
     FUEL_SPAWN_BURST: 2,       // enemies spawned when upgrading fire
 
     // Rain system
@@ -78,10 +78,11 @@ const CONFIG = {
 };
 
 const WEAPONS = {
-    WOODEN_CLUB:  { name: 'Wooden Club',  damage: 10, range: 44, speed: 800, tier: 0, color: 0x8B6914, spriteFrame: 21, attackType: 'swing' },
-    STONE_AXE:    { name: 'Stone Axe',    damage: 18, range: 52, speed: 600, tier: 1, color: 0x888888, chopBonus: 2, cost: { wood: 10, stone: 8 }, spriteFrame: 37, attackType: 'swing' },
-    IRON_SWORD:   { name: 'Iron Sword',   damage: 30, range: 60, speed: 400, tier: 2, color: 0xC0C0C0, cost: { wood: 5, stone: 10, metal: 8 }, spriteFrame: 12, attackType: 'swing' },
-    FLAME_BLADE:  { name: 'Flame Blade',  damage: 38, range: 65, speed: 350, tier: 3, color: 0xFF6600, shadowBonus: 1.5, cost: { wood: 5, stone: 5, metal: 15 }, spriteFrame: 68, attackType: 'swing' },
+    // arcDeg = attack arc in degrees (cone centred on facing direction). 360 = hits all around.
+    WOODEN_CLUB:  { name: 'Wooden Club',  damage: 10, range: 32, speed: 800, tier: 0, color: 0x8B6914, spriteFrame: 21, attackType: 'swing',  arcDeg: 120 },
+    STONE_AXE:    { name: 'Stone Axe',    damage: 18, range: 52, speed: 600, tier: 1, color: 0x888888, chopBonus: 2, cost: { wood: 10, stone: 8 }, spriteFrame: 37, attackType: 'swing',  arcDeg: 155 },
+    IRON_SWORD:   { name: 'Iron Sword',   damage: 30, range: 60, speed: 400, tier: 2, color: 0xC0C0C0, cost: { wood: 5, stone: 10, metal: 8 }, spriteFrame: 12, attackType: 'swing',  arcDeg: 115 },
+    FLAME_BLADE:  { name: 'Flame Blade',  damage: 38, range: 65, speed: 350, tier: 3, color: 0xFF6600, shadowBonus: 1.5, cost: { wood: 5, stone: 5, metal: 15 }, spriteFrame: 68, attackType: 'swing',  arcDeg: 115 },
 };
 
 const ENEMIES = {
@@ -103,19 +104,33 @@ const BUILDINGS = {
     FRIEND_HUT:     { name: 'Friend Hut',      cost: { wood: 25, stone: 15, metal: 5 },   hp: 180, spawnsAlly: true, desc: 'Spawns NPC ally' },
 };
 
+// Weapons enemies can carry and drop — player can pick up and equip them
+// damage here = what the player gets; enemies deal 40% of this (see ENEMY_WEAPON_DMG_MULT)
+const ENEMY_WEAPONS = [
+    { name: 'Rusty Blade',   damage: 14, range: 52, speed: 700, color: 0x998877, spriteFrame: 1,  attackType: 'swing',  arcDeg: 115 },
+    { name: 'Bone Club',     damage: 10, range: 38, speed: 900, color: 0xCCBB99, spriteFrame: 21, attackType: 'swing',  arcDeg: 120 },
+    { name: 'Dark Axe',      damage: 20, range: 50, speed: 650, color: 0x554433, spriteFrame: 17, attackType: 'swing',  arcDeg: 155 },
+    { name: 'Shadow Blade',  damage: 22, range: 55, speed: 550, color: 0x662288, spriteFrame: 24, attackType: 'swing',  arcDeg: 115 },
+    { name: 'Dark Dagger',   damage: 12, range: 34, speed: 300, color: 0x334455, spriteFrame: 0,  attackType: 'swing',  arcDeg: 50  },
+    { name: 'Void Mace',     damage: 18, range: 48, speed: 800, color: 0x550077, spriteFrame: 28, attackType: 'swing',  arcDeg: 150 },
+    { name: 'Plague Lance',  damage: 24, range: 65, speed: 520, color: 0x335533, spriteFrame: 35, attackType: 'thrust', arcDeg: 270 },
+    { name: 'Hex Staff',     damage: 16, range: 80, speed: 600, color: 0x7733CC, spriteFrame: 25, attackType: 'shoot',  arcDeg: 30, hitRadius: 18, splashRadius: 50 },
+];
+const ENEMY_WEAPON_DMG_MULT = 0.4; // enemies deal 40% of the weapon's damage stat
+
 // Shop — wandering merchant weapon templates
 // Each weapon has base stats; actual values are randomized ±20% per session
 const SHOP_WEAPONS = [
-    { name: 'Short Sword',    baseDmg: 15, baseRange: 48, baseSpeed: 650, color: 0xAAAAAA, baseGold: 8,  spriteFrame: 1, attackType: 'swing' },
-    { name: 'Battle Axe',     baseDmg: 28, baseRange: 56, baseSpeed: 550, color: 0x888888, baseGold: 15, chopBonus: 3, spriteFrame: 17, attackType: 'swing' },
-    { name: 'War Hammer',     baseDmg: 35, baseRange: 50, baseSpeed: 700, color: 0x666688, baseGold: 20, spriteFrame: 28, attackType: 'swing' },
-    { name: 'Elven Bow',      baseDmg: 12, baseRange: 120, baseSpeed: 400, color: 0x88AA44, baseGold: 18, hitRadius: 20, spriteFrame: 16, attackType: 'shoot' },
-    { name: 'Crystal Staff',  baseDmg: 20, baseRange: 90, baseSpeed: 500, color: 0xAA44FF, baseGold: 22, shadowBonus: 1.3, spriteFrame: 25, attackType: 'thrust' },
-    { name: 'Obsidian Blade', baseDmg: 40, baseRange: 62, baseSpeed: 380, color: 0x333344, baseGold: 30, shadowBonus: 1.4, spriteFrame: 24, attackType: 'swing' },
-    { name: 'Fire Lance',     baseDmg: 32, baseRange: 70, baseSpeed: 450, color: 0xFF6622, baseGold: 25, spriteFrame: 35, attackType: 'thrust' },
-    { name: 'Shadow Dagger',  baseDmg: 18, baseRange: 40, baseSpeed: 250, color: 0x442266, baseGold: 14, shadowBonus: 1.6, spriteFrame: 0, attackType: 'swing' },
-    { name: 'Holy Mace',      baseDmg: 22, baseRange: 52, baseSpeed: 600, color: 0xFFDD88, baseGold: 16, shadowBonus: 1.8, spriteFrame: 40, attackType: 'swing' },
-    { name: 'Runic Greatsword', baseDmg: 45, baseRange: 68, baseSpeed: 500, color: 0x4488FF, baseGold: 35, spriteFrame: 41, attackType: 'swing' },
+    { name: 'Short Sword',    baseDmg: 15, baseRange: 48, baseSpeed: 650, color: 0xAAAAAA, baseGold: 8,  spriteFrame: 1,  attackType: 'swing',  arcDeg: 115 },
+    { name: 'Battle Axe',     baseDmg: 28, baseRange: 56, baseSpeed: 550, color: 0x888888, baseGold: 15, chopBonus: 3, spriteFrame: 17, attackType: 'swing',  arcDeg: 155 },
+    { name: 'War Hammer',     baseDmg: 35, baseRange: 50, baseSpeed: 700, color: 0x666688, baseGold: 20, spriteFrame: 28, attackType: 'swing',  arcDeg: 150 },
+    { name: 'Elven Bow',      baseDmg: 12, baseRange: 120, baseSpeed: 400, color: 0x88AA44, baseGold: 18, hitRadius: 20, spriteFrame: 16, attackType: 'shoot',  arcDeg: 25 },
+    { name: 'Crystal Staff',  baseDmg: 18, baseRange: 90,  baseSpeed: 550, color: 0xAA44FF, baseGold: 22, shadowBonus: 1.3, spriteFrame: 25, attackType: 'shoot',  arcDeg: 30, splashRadius: 55 },
+    { name: 'Obsidian Blade', baseDmg: 40, baseRange: 62, baseSpeed: 380, color: 0x333344, baseGold: 30, shadowBonus: 1.4, spriteFrame: 24, attackType: 'swing',  arcDeg: 115 },
+    { name: 'Fire Lance',     baseDmg: 32, baseRange: 70, baseSpeed: 450, color: 0xFF6622, baseGold: 25, spriteFrame: 35, attackType: 'thrust', arcDeg: 270 },
+    { name: 'Shadow Dagger',  baseDmg: 18, baseRange: 36, baseSpeed: 250, color: 0x442266, baseGold: 14, shadowBonus: 1.6, spriteFrame: 0,  attackType: 'swing',  arcDeg: 50  },
+    { name: 'Holy Mace',      baseDmg: 22, baseRange: 52, baseSpeed: 600, color: 0xFFDD88, baseGold: 16, shadowBonus: 1.8, spriteFrame: 40, attackType: 'swing',  arcDeg: 150 },
+    { name: 'Runic Greatsword', baseDmg: 45, baseRange: 68, baseSpeed: 500, color: 0x4488FF, baseGold: 35, spriteFrame: 41, attackType: 'swing',  arcDeg: 130 },
 ];
 
 // How many weapons the shop offers per session
@@ -170,6 +185,7 @@ function createGameState() {
         buildMode: false,
         buildType: null,
         gameOver: false,
+        hasTorch: false,
     };
 }
 
