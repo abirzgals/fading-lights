@@ -1,0 +1,24 @@
+{
+  "name": "fading-lights",
+  "version": "1.0.0",
+  "main": "sw.js",
+  "scripts": {
+    "test": "playwright test --config=playwright.config.js --reporter=list"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abirzgals/fading-lights.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/abirzgals/fading-lights/issues"
+  },
+  "homepage": "https://github.com/abirzgals/fading-lights#readme",
+  "description": "",
+  "devDependencies": {
+    "@playwright/test": "^1.58.2",
+    "http-server": "^14.1.1"
+  }
+}
