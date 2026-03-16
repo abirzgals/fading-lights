@@ -15,11 +15,20 @@ const mobileControls = {
 
         if (!this.isMobile) return;
 
-        const controls = document.getElementById('mobile-controls');
-        if (controls) controls.style.display = 'block';
-
+        // Register listeners but keep controls hidden — call show() when game starts
         this._setupJoystick();
         this._setupButtons();
+    },
+
+    show() {
+        if (!this.isMobile) return;
+        const controls = document.getElementById('mobile-controls');
+        if (controls) controls.style.display = 'block';
+    },
+
+    hide() {
+        const controls = document.getElementById('mobile-controls');
+        if (controls) controls.style.display = 'none';
     },
 
     _setupJoystick() {

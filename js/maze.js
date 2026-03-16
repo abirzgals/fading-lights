@@ -98,6 +98,7 @@ class MazeScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
         this.cameras.main.setBounds(0, 0, worldW, worldH);
         this.cameras.main.fadeIn(1600, 0, 0, 0);
+        if (typeof mobileControls !== 'undefined') mobileControls.show();
 
         // --- Input ---
         this.cursors = this.input.keyboard.createCursorKeys();
@@ -534,6 +535,7 @@ class MazeScene extends Phaser.Scene {
         if (this._done) return;
         this._done = true;
         this.player.setVelocity(0, 0);
+        if (typeof mobileControls !== 'undefined') mobileControls.hide();
         this.cameras.main.flash(400, 80, 0, 0);
         this.time.delayedCall(600, () => {
             const goScreen = document.getElementById('game-over-screen');
@@ -551,6 +553,7 @@ class MazeScene extends Phaser.Scene {
     _collectTreasure() {
         this._done = true;
         this.player.setVelocity(0, 0);
+        if (typeof mobileControls !== 'undefined') mobileControls.hide();
         this.treasure.destroy();
         this._treasureHint.destroy();
 

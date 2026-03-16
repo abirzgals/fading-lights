@@ -6,6 +6,7 @@ class GameScene extends Phaser.Scene {
         document.getElementById('hud').style.display = 'flex';
         document.getElementById('game-over-screen').style.display = 'none';
         this.cameras.main.fadeIn(1500, 0, 0, 0);
+        mobileControls.show();
 
         // Ensure menu music is stopped, start in-game music
         audioEngine.stopLoop('menu_music', 500);
@@ -3214,6 +3215,7 @@ class GameScene extends Phaser.Scene {
     doGameOver() {
         gameState.gameOver = true;
         this.player.setVelocity(0, 0);
+        mobileControls.hide();
         const goScreen = document.getElementById('game-over-screen');
         const goStats = document.getElementById('game-over-stats');
         const objDone = this._objectives ? this._objectives.filter(o => o.completed).length : 0;
