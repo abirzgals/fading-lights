@@ -4,9 +4,13 @@
 // Model: openai/gpt-oss-120b (OpenAI GPT OSS 120B via Groq)
 // ============================================================
 
-// GROQ_API_KEY is loaded from js/groq-config.js (gitignored — see groq-config.example.js)
-const GROQ_MODEL    = 'openai/gpt-oss-120b';
-const GROQ_ENDPOINT = 'https://api.groq.com/openai/v1/chat/completions';
+// Cloudflare Worker proxy — holds the API key server-side (no key needed in client code)
+const GROQ_ENDPOINT = 'https://thefadinglight.arturs-birzgals.workers.dev';
+
+// All model params — change here without touching the Worker
+const GROQ_MODEL       = 'openai/gpt-oss-120b';
+const GROQ_TEMPERATURE = 0.4;
+const GROQ_MAX_TOKENS  = 2000;
 
 // Stats for the Shadow Mind enemy type
 const SHADOW_MIND_STATS = {
@@ -178,13 +182,13 @@ OUTPUT FORMAT — respond with ONLY this JSON, nothing else:
         try {
             const resp = await fetch(GROQ_ENDPOINT, {
                 method: 'POST',
-                headers: {
-                    'Authorization': `Bearer ${GROQ_API_KEY}`,
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    model: GROQ_MODEL,
-                    response_format: { type: 'json_object' },  // guaranteed JSON, no parsing tricks needed
+                    model:           GROQ_MODEL,
+                    temperature:     GROQ_TEMPERATURE,
+                    max_tokens:      GROQ_MAX_TOKENS,
+                    stream:          false,
+                    response_format: { type: 'json_object' },
                     messages: [
                         {
                             role: 'system',
@@ -192,9 +196,6 @@ OUTPUT FORMAT — respond with ONLY this JSON, nothing else:
                         },
                         { role: 'user', content: prompt },
                     ],
-                    temperature: 0.4,
-                    max_tokens: 2000,
-                    stream: false,
                 }),
             });
 
