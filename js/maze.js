@@ -106,8 +106,8 @@ class MazeScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-E', () => this._interact());
         this.input.keyboard.on('keydown-F', () => this._interact());
         this.input.on('pointerdown', (ptr) => {
-            if (ptr.leftButtonDown())  this._attack();
             if (ptr.rightButtonDown()) this._interact();
+            // leftButtonDown() is false on touch — handled via ptr.isDown in update loop
         });
         this._attackKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this._interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
@@ -348,9 +348,15 @@ class MazeScene extends Phaser.Scene {
         if (Phaser.Input.Keyboard.JustDown(this._attackKey))   this._attack();
         if (Phaser.Input.Keyboard.JustDown(this._interactKey)) this._interact();
 
-        // Mouse facing + held-LMB auto-attack
+        // Mobile ATK / USE buttons
+        if (typeof mobileControls !== 'undefined') {
+            if (mobileControls.attackHeld  && p.attackCooldown <= 0) this._attack();
+            if (mobileControls.interactHeld) this._interact();
+        }
+
+        // Mouse / touch tap attack (ptr.isDown covers both mouse LMB and touch)
         const ptr = this.input.activePointer;
-        if (ptr.isDown && ptr.leftButtonDown() && p.attackCooldown <= 0) this._attack();
+        if (ptr.isDown && !ptr.rightButtonDown() && p.attackCooldown <= 0) this._attack();
         if (ptr.isDown) {
             const wx = ptr.worldX, wy = ptr.worldY;
             const dx = wx - p.x, dy = wy - p.y;

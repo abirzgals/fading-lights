@@ -2,7 +2,7 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.5.50';
+const GAME_VERSION = '0.5.51';
 
 const CONFIG = {
     // World

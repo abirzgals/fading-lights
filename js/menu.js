@@ -261,6 +261,11 @@ class MenuScene extends Phaser.Scene {
                     statusEl.textContent = 'Playing solo';
                 }
             }
+            // If server unavailable — force solo host so enemy AI runs
+            if (!hostOk) {
+                network.isHost = true;
+                if (!network.worldSeed) network.worldSeed = network.generateSeed();
+            }
             setTimeout(() => this._launchGame(), hostOk ? 2000 : 400);
         };
 
