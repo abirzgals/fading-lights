@@ -2,7 +2,7 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.5.44';
+const GAME_VERSION = '0.5.45';
 
 const CONFIG = {
     // World
@@ -78,10 +78,10 @@ const CONFIG = {
 };
 
 const WEAPONS = {
-    WOODEN_CLUB:  { name: 'Wooden Club',  damage: 10, range: 44, speed: 800, tier: 0, color: 0x8B6914, spriteFrame: 6, attackType: 'swing' },
-    STONE_AXE:    { name: 'Stone Axe',    damage: 18, range: 52, speed: 600, tier: 1, color: 0x888888, chopBonus: 2, cost: { wood: 10, stone: 8 }, spriteFrame: 8, attackType: 'swing' },
-    IRON_SWORD:   { name: 'Iron Sword',   damage: 30, range: 60, speed: 400, tier: 2, color: 0xC0C0C0, cost: { wood: 5, stone: 10, metal: 8 }, spriteFrame: 2, attackType: 'swing' },
-    FLAME_BLADE:  { name: 'Flame Blade',  damage: 38, range: 65, speed: 350, tier: 3, color: 0xFF6600, shadowBonus: 1.5, cost: { wood: 5, stone: 5, metal: 15 }, spriteFrame: 3, attackType: 'swing' },
+    WOODEN_CLUB:  { name: 'Wooden Club',  damage: 10, range: 44, speed: 800, tier: 0, color: 0x8B6914, spriteFrame: 21, attackType: 'swing' },
+    STONE_AXE:    { name: 'Stone Axe',    damage: 18, range: 52, speed: 600, tier: 1, color: 0x888888, chopBonus: 2, cost: { wood: 10, stone: 8 }, spriteFrame: 37, attackType: 'swing' },
+    IRON_SWORD:   { name: 'Iron Sword',   damage: 30, range: 60, speed: 400, tier: 2, color: 0xC0C0C0, cost: { wood: 5, stone: 10, metal: 8 }, spriteFrame: 12, attackType: 'swing' },
+    FLAME_BLADE:  { name: 'Flame Blade',  damage: 38, range: 65, speed: 350, tier: 3, color: 0xFF6600, shadowBonus: 1.5, cost: { wood: 5, stone: 5, metal: 15 }, spriteFrame: 68, attackType: 'swing' },
 };
 
 const ENEMIES = {

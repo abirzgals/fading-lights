@@ -347,6 +347,50 @@ function generateTextures(scene) {
     g.fillCircle(28, 12, 2);
     g.generateTexture('enemy_crawler', 40, 32);
 
+    // Shadow Mind — dark humanoid mirroring player shape, glowing purple eyes
+    g.clear();
+    // Shadow aura wisps (behind body)
+    g.fillStyle(0x6600AA, 0.12);
+    g.fillCircle(16, 24, 18);
+    g.fillStyle(0x440088, 0.10);
+    g.fillCircle(14, 28, 10);
+    g.fillCircle(20, 26, 8);
+    // Legs (dark void)
+    g.fillStyle(0x0A0010, 1);
+    g.fillRect(10, 36, 5, 8);
+    g.fillRect(17, 36, 5, 8);
+    // Purple-black boots
+    g.fillStyle(0x1A0030, 1);
+    g.fillRect(9, 40, 6, 4);
+    g.fillRect(16, 40, 6, 4);
+    // Body / torso (dark void)
+    g.fillStyle(0x080012, 1);
+    g.fillRect(10, 22, 12, 14);
+    // Shoulder guards (dark purple)
+    g.fillStyle(0x2A0050, 0.9);
+    g.fillRect(8, 22, 4, 6);
+    g.fillRect(20, 22, 4, 6);
+    // Dark cloak over body
+    g.fillStyle(0x110020, 0.7);
+    g.fillRect(11, 24, 10, 10);
+    // Head (shadow orb)
+    g.fillStyle(0x0A0015, 1);
+    g.fillCircle(16, 14, 8);
+    // Glowing purple eyes
+    g.fillStyle(0xCC44FF, 1);
+    g.fillCircle(13, 13, 2.5);
+    g.fillCircle(19, 13, 2.5);
+    // Eye inner glow
+    g.fillStyle(0xFFAAFF, 0.9);
+    g.fillCircle(13, 12.5, 1);
+    g.fillCircle(19, 12.5, 1);
+    // Shadow wisps rising (top of head)
+    g.fillStyle(0x8822CC, 0.25);
+    g.fillCircle(13, 6, 3);
+    g.fillCircle(19, 4, 2.5);
+    g.fillCircle(16, 2, 2);
+    g.generateTexture('enemy_shadow_mind', 32, 48);
+
     // Shadow Archer — hooded figure with bow
     g.clear();
     g.fillStyle(0x1A0033, 0.8);

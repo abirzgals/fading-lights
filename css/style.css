@@ -244,8 +244,16 @@ body {
     z-index: 20;
     min-width: clamp(280px, 32vw, 400px);
     max-height: 80vh;
-    overflow-y: auto;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
     pointer-events: auto;
+}
+
+#shop-list {
+    overflow-y: auto;
+    flex: 1;
+    min-height: 0;
 }
 
 #shop-menu h2 {
@@ -298,18 +306,22 @@ body {
 }
 
 #shop-close-btn {
+    flex-shrink: 0;
     text-align: center;
     margin-top: 12px;
-    padding: 8px 0;
-    color: #887766;
-    font-size: clamp(11px, 1.2vw, 13px);
+    padding: 12px 0;
+    color: #FFD700;
+    font-size: clamp(12px, 1.3vw, 14px);
     cursor: pointer;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    transition: color 0.2s;
+    border: 1px solid rgba(255, 215, 0, 0.25);
+    border-radius: 6px;
+    background: rgba(255, 215, 0, 0.06);
+    transition: background 0.2s, color 0.2s;
     text-transform: uppercase;
-    letter-spacing: 1px;
+    letter-spacing: 2px;
+    user-select: none;
 }
-#shop-close-btn:hover { color: #FFD700; }
+#shop-close-btn:hover { background: rgba(255, 215, 0, 0.15); color: #fff; }
 
 /* ── Chat Input ── */
 #chat-input-container {

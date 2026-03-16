@@ -147,6 +147,13 @@ class MenuScene extends Phaser.Scene {
         // --- Name input (HTML overlay) ---
         this._createNameInput(w, h);
 
+        // --- Resize handler: save name then restart to reflow positioned elements ---
+        this.scale.on('resize', () => {
+            const nameEl = document.getElementById('player-name-input');
+            if (nameEl && nameEl.value.trim()) network.saveName(nameEl.value.trim());
+            this.scene.restart();
+        }, this);
+
         // --- Start button ---
         const btnY = h * 0.78;
         const btnBg = this.add.graphics().setDepth(20);

@@ -85,7 +85,7 @@ class GameScene extends Phaser.Scene {
         if (this.textures.exists('weapons_sheet')) {
             this._weaponSprite = this.add.sprite(0, 0, 'weapons_sheet', 6).setDepth(6);
             this._weaponSprite.setScale(0.75);
-            this._weaponSprite.setOrigin(0.2, 0.8); // pivot near handle
+            this._weaponSprite.setOrigin(0.2, 0.8); // pivot near handle (lower-left)
             this._updateWeaponSprite();
         }
 
@@ -254,6 +254,15 @@ class GameScene extends Phaser.Scene {
             gameState.resources.gold += 1000;
             this.showFloatingText(this.player.x, this.player.y - 30, '+1000 GOLD', '#FFD700');
         });
+        // --- Spawn Shadow Mind (Groq AI enemy) for testing ---
+        this.input.keyboard.on('keydown-N', () => {
+            if (!window._debugMode || this._chatOpen) return;
+            const angle = Math.random() * Math.PI * 2;
+            const sx = this.player.x + Math.cos(angle) * 200;
+            const sy = this.player.y + Math.sin(angle) * 200;
+            this._spawnGroqEnemy(sx, sy);
+            this.showFloatingText(sx, sy - 30, 'SHADOW MIND', '#CC44FF');
+        });
 
         // --- Mouse input (hold to repeat) ---
         this._mouseLeftHeld = false;
@@ -403,6 +412,118 @@ class GameScene extends Phaser.Scene {
         });
 
         this.updateHUD();
+
+        // --- Dev mode: Groq log panel + auto-spawn Shadow Mind ---
+        if (window._debugMode) {
+            this._createGroqPanel();
+            // Delay a bit so world/paths are fully initialized before spawning
+            this.time.delayedCall(800, () => {
+                if (!gameState.gameOver) {
+                    // Prefer a point on the march road, ~400-700px from player
+                    let sx = this.player.x + 400, sy = this.player.y;
+                    if (this._lairMarchPath && this._lairMarchPath.length > 0) {
+                        const px = this.player.x, py = this.player.y;
+                        let best = null, bestScore = Infinity;
+                        for (const wp of this._lairMarchPath) {
+                            const d = Phaser.Math.Distance.Between(px, py, wp.x, wp.y);
+                            // Want waypoint 350-700px away from player
+                            const score = Math.abs(d - 500);
+                            if (d > 200 && score < bestScore) { bestScore = score; best = wp; }
+                        }
+                        if (best) { sx = best.x; sy = best.y; }
+                    }
+                    this._spawnGroqEnemy(sx, sy);
+                    this.showFloatingText(sx, sy - 40, 'SHADOW MIND', '#CC44FF');
+                }
+            });
+        }
+    }
+
+    _createGroqPanel() {
+        // Remove any old panel first
+        const old = document.getElementById('groq-debug-panel');
+        if (old) old.remove();
+
+        const panel = document.createElement('div');
+        panel.id = 'groq-debug-panel';
+        panel.style.cssText = `
+            position: absolute; top: 8px; right: 8px; z-index: 10001;
+            width: 360px; max-height: calc(100% - 16px);
+            background: rgba(5,0,12,0.92);
+            color: #ccc; font-family: monospace; font-size: 10px; line-height: 1.4;
+            border: 1px solid rgba(180,60,255,0.35); border-radius: 6px;
+            display: flex; flex-direction: column;
+            pointer-events: auto;
+        `;
+        panel.innerHTML = `
+            <div style="padding:6px 10px;background:rgba(140,0,255,0.15);
+                        border-bottom:1px solid rgba(180,60,255,0.25);
+                        color:#CC44FF;font-weight:bold;font-size:11px;flex-shrink:0">
+                GROQ AI LOG
+                <span style="color:#666;font-weight:normal;font-size:9px;float:right">
+                    model: ${GROQ_MODEL}
+                </span>
+            </div>
+            <div id="groq-log-body" style="overflow-y:auto;flex:1;padding:4px 0;"></div>
+        `;
+        const container = document.getElementById('game-container') || document.body;
+        container.appendChild(panel);
+        this._groqPanel = panel;
+        this._groqPanelFrame = 0; // throttle DOM updates
+    }
+
+    _refreshGroqPanel() {
+        // Throttle to once every 30 frames (~0.5s) — DOM write is expensive
+        this._groqPanelFrame = (this._groqPanelFrame || 0) + 1;
+        if (this._groqPanelFrame % 30 !== 0) return;
+
+        const body = document.getElementById('groq-log-body');
+        if (!body) return;
+
+        const log = groqEnemyAI.log;
+        if (log.length === 0) {
+            body.innerHTML = '<div style="color:#555;padding:6px 10px;font-style:italic">No requests yet…</div>';
+            return;
+        }
+
+        let html = '';
+        // Render newest-last, last 10 entries
+        const entries = log.slice(-10);
+        for (const entry of entries) {
+            if (entry.type === 'REQUEST') {
+                html += `
+                <div style="border-top:1px solid rgba(180,60,255,0.2);padding:5px 10px;">
+                    <div style="color:#8844CC;font-size:9px;margin-bottom:2px">
+                        ${entry.ts} &nbsp;▶ REQUEST → GROQ
+                    </div>
+                    <pre style="margin:0;color:#998;white-space:pre-wrap;font-size:9px;">${_escHtml(entry.content)}</pre>
+                </div>`;
+            } else if (entry.type === 'RESPONSE') {
+                const { reasoning, steps } = entry.content;
+                const stepsStr = JSON.stringify(steps, null, 2);
+                html += `
+                <div style="border-top:1px solid rgba(180,60,255,0.2);padding:5px 10px;">
+                    <div style="color:#44CC88;font-size:9px;margin-bottom:2px">
+                        ${entry.ts} &nbsp;◀ RESPONSE ← GROQ
+                    </div>
+                    <div style="color:#CC88FF;font-size:9px;margin-bottom:3px;">💭 ${_escHtml(reasoning)}</div>
+                    <pre style="margin:0;color:#88CC88;white-space:pre-wrap;font-size:9px;">${_escHtml(stepsStr)}</pre>
+                    ${entry.content.thinking ? `<details style="margin-top:3px"><summary style="color:#555;font-size:8px;cursor:pointer">internal thinking…</summary><pre style="margin:2px 0 0;color:#444;white-space:pre-wrap;font-size:8px;">${_escHtml(entry.content.thinking)}</pre></details>` : ''}
+                </div>`;
+            } else {
+                html += `
+                <div style="border-top:1px solid rgba(180,60,255,0.2);padding:5px 10px;">
+                    <div style="color:#CC4444;font-size:9px;margin-bottom:2px">
+                        ${entry.ts} &nbsp;⚠ ERROR
+                    </div>
+                    <div style="color:#FF6666;font-size:9px;word-break:break-all;">${_escHtml(String(entry.content))}</div>
+                </div>`;
+            }
+        }
+        // Only auto-scroll if user is already near the bottom
+        const nearBottom = body.scrollHeight - body.scrollTop - body.clientHeight < 60;
+        body.innerHTML = html;
+        if (nearBottom) body.scrollTop = body.scrollHeight;
     }
 
     // --------------------------------------------------------
@@ -933,13 +1054,24 @@ class GameScene extends Phaser.Scene {
         if (!grid) return null;
 
         const sx = Math.floor(fromWX / T), sy = Math.floor(fromWY / T);
-        const ex = Math.floor(toWX / T), ey = Math.floor(toWY / T);
+        let ex = Math.floor(toWX / T), ey = Math.floor(toWY / T);
 
         // Clamp to bounds
         if (sx < 0 || sy < 0 || ex < 0 || ey < 0 || sx >= gs || sy >= gs || ex >= gs || ey >= gs) return null;
 
-        // Quick bail if start or end is blocked
-        if (!grid[sy * gs + sx] || !grid[ey * gs + ex]) return null;
+        // Quick bail if start is blocked
+        if (!grid[sy * gs + sx]) return null;
+        // If destination is blocked (e.g. bonfire tile), snap to nearest walkable neighbor
+        if (!grid[ey * gs + ex]) {
+            let snapped = false;
+            for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]) {
+                const nx = ex + dx, ny = ey + dy;
+                if (nx >= 0 && ny >= 0 && nx < gs && ny < gs && grid[ny * gs + nx]) {
+                    ex = nx; ey = ny; snapped = true; break;
+                }
+            }
+            if (!snapped) return null;
+        }
 
         const key = (x, y) => y * gs + x;
         const heuristic = (x, y) => Math.abs(x - ex) + Math.abs(y - ey);
@@ -1200,6 +1332,19 @@ class GameScene extends Phaser.Scene {
         }
     }
 
+    // Extinguish a camp when its fuel runs out — becomes abandoned again
+    _extinguishCamp(bonfire) {
+        bonfire.setData('lit', false);
+        bonfire.setData('campFuelAdded', 0);
+        bonfire.setData('campFireLevel', 1);
+        // Stop and destroy fire particles
+        const emitter = bonfire.getData('emitter');
+        if (emitter) { emitter.stop(); this.time.delayedCall(1000, () => emitter.destroy()); bonfire.setData('emitter', null); }
+        // Dim the bonfire sprite
+        this.tweens.add({ targets: bonfire, alpha: 0.3, duration: 2000 });
+        this.showFloatingText(bonfire.x, bonfire.y - 40, 'FIRE EXTINGUISHED!', '#FF4400');
+    }
+
     // Create second camp — unlit bonfire that glows on first fuel
     _createSecondCamp(x, y) {
         const bonfire = this.physics.add.staticImage(x, y, 'bonfire');
@@ -1379,6 +1524,19 @@ class GameScene extends Phaser.Scene {
             type = roll < 0.25 ? 'FOG_CRAWLER' : roll < 0.45 ? 'SHADOW_BEAST' : roll < 0.6 ? 'SHADOW_LORD' : roll < 0.8 ? 'VOID_MAGE' : 'SHADOW_ARCHER';
         }
 
+        // After 5 minutes, 20% chance to spawn a Groq-controlled Shadow Mind instead
+        if (elapsed >= 300 && Math.random() < 0.20) {
+            // Spawn on the road path, a few steps from the lair
+            let sx = lx, sy = ly;
+            if (this._lairMarchPath && this._lairMarchPath.length > 3) {
+                const wp = this._lairMarchPath[Math.min(3, this._lairMarchPath.length - 1)];
+                sx = wp.x; sy = wp.y;
+            }
+            this._spawnGroqEnemy(sx, sy);
+            this.showFloatingText(sx, sy - 40, 'SHADOW MIND AWAKENS', '#CC44FF');
+            return;
+        }
+
         const stats = ENEMIES[type];
         // Spawn near lair with slight offset
         const angle = Math.random() * Math.PI * 2;
@@ -1415,7 +1573,14 @@ class GameScene extends Phaser.Scene {
         enemy.setData('lairTargetY', this.bonfires[0].y);
         if (this._lairMarchPath && this._lairMarchPath.length > 0) {
             enemy.setData('marchPath', this._lairMarchPath);
-            enemy.setData('marchPathIdx', 0);
+            // Skip waypoints too close to spawn — step past the lair area first
+            let startIdx = 0;
+            while (startIdx < this._lairMarchPath.length - 1) {
+                const wp = this._lairMarchPath[startIdx];
+                if (Phaser.Math.Distance.Between(sx, sy, wp.x, wp.y) > 80) break;
+                startIdx++;
+            }
+            enemy.setData('marchPathIdx', startIdx);
         }
     }
 
@@ -1665,6 +1830,7 @@ class GameScene extends Phaser.Scene {
     }
 
     _updateBuildSpots() {
+        const BUILD_RADIUS = CONFIG.INTERACT_RADIUS * 1.6;
         for (const spot of this.buildSpots) {
             if (spot.built) continue;
             const wasUnlocked = spot.unlocked;
@@ -1684,18 +1850,30 @@ class GameScene extends Phaser.Scene {
                 this.tweens.add({ targets: spot.costText, alpha: 0.6, duration: 800 });
                 this.showFloatingText(spot.x, spot.y - 35, 'NEW BUILD SPOT!', '#FF8800');
             } else if (spot.unlocked) {
-                // Pulse gently
-                spot.sprite.setAlpha(0.5 + Math.sin(this.time.now * 0.003) * 0.2);
+                // Pulse gently, brighten when player is in range
+                const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, spot.x, spot.y);
+                const inRange = dist < BUILD_RADIUS;
+                spot.sprite.setAlpha(inRange ? 0.9 : 0.5 + Math.sin(this.time.now * 0.003) * 0.2);
+                spot.label.setAlpha(inRange ? 1.0 : 0.8);
+                spot.costText.setAlpha(inRange ? 0.9 : 0.6);
+                // Show "E to Build" hint when in range
+                if (inRange && !spot._hintShown) {
+                    spot._hintShown = true;
+                    this.showFloatingText(spot.x, spot.y - 35, 'E: Build ' + spot.config.label, '#00FFAA');
+                } else if (!inRange) {
+                    spot._hintShown = false;
+                }
             }
         }
     }
 
     _tryBuildOnSpot() {
         const p = this.player;
+        const BUILD_RADIUS = CONFIG.INTERACT_RADIUS * 1.6; // wider than default interact
         for (const spot of this.buildSpots) {
             if (spot.built || !spot.unlocked) continue;
             const dist = Phaser.Math.Distance.Between(p.x, p.y, spot.x, spot.y);
-            if (dist < CONFIG.INTERACT_RADIUS) {
+            if (dist < BUILD_RADIUS) {
                 const building = BUILDINGS[spot.config.type];
                 if (!building) continue;
 
@@ -1842,7 +2020,20 @@ class GameScene extends Phaser.Scene {
         const g = this._debugGfx;
         g.clear();
         if (this._debugText) this._debugText.setVisible(false);
+        // Hide all Groq enemy labels when not in debug mode
+        for (const enemy of this.enemies.children.entries) {
+            if (!enemy.active) continue;
+            const lbl = enemy.getData('groqLabel');
+            if (lbl) lbl.setVisible(false);
+        }
+        // Hide Groq panel when debug off
+        if (this._groqPanel) this._groqPanel.style.display = 'none';
         if (!window._debugMode) return;
+
+        // Show & refresh Groq panel
+        if (!this._groqPanel) this._createGroqPanel();
+        this._groqPanel.style.display = 'flex';
+        this._refreshGroqPanel();
 
         // Draw walk grid (blocked tiles) in camera view
         const cam = this.cameras.main;
@@ -1913,6 +2104,19 @@ class GameScene extends Phaser.Scene {
                     g.lineTo(raidPath[i].x, raidPath[i].y);
                 }
                 g.strokePath();
+            }
+
+            // Groq enemy — show reasoning + current step above the enemy
+            if (enemy.getData('fromGroq')) {
+                const label = enemy.getData('groqLabel');
+                if (label) {
+                    const reasoning = enemy.getData('groqReasoning') || '';
+                    const step = enemy.getData('groqCurrentStep') || enemy.getData('groqState') || '';
+                    const truncated = reasoning.length > 60 ? reasoning.slice(0, 57) + '…' : reasoning;
+                    label.setText(`[${step}]\n${truncated}`);
+                    label.setPosition(enemy.x, enemy.y - 20);
+                    label.setVisible(true);
+                }
             }
 
             // Direction line (cyan) — shows current velocity direction
@@ -2162,7 +2366,7 @@ class GameScene extends Phaser.Scene {
 
         // Simple rotation: tip at upper-right (-PI/4), so rot = facingAngle + PI/4
         // No flip — just pure rotation, works for all directions
-        const BASE_ROT = Math.PI / 4;
+        const BASE_ROT = Math.PI / 4; // sprites: blade at upper-right, pivot at handle
 
         let wx, wy, rot;
 
@@ -2623,6 +2827,18 @@ class GameScene extends Phaser.Scene {
                 emitter.setQuantity(fuelRatio > 0.3 ? 2 : 1);
             }
 
+            // When fuel runs out on a lit non-main camp — extinguish it
+            if (fuel <= 0 && bonfire.getData('lit') && !bonfire.getData('isMain')) {
+                this._extinguishCamp(bonfire);
+            }
+        }
+
+        // Game over when ALL player fire camps are out (no fuel anywhere)
+        if (!gameState.gameOver) {
+            const anyActive = this.bonfires.some(b =>
+                !b.getData('isLairCamp') && b.getData('fuel') > 0
+            );
+            if (!anyActive) this.doGameOver();
         }
 
         // Update fire crackle based on distance to nearest bonfire
@@ -2635,7 +2851,9 @@ class GameScene extends Phaser.Scene {
     }
 
     getLightRadius(bonfire) {
-        const fuelRatio = bonfire.getData('fuel') / bonfire.getData('maxFuel');
+        const fuel = bonfire.getData('fuel');
+        if (fuel <= 0) return 0; // no fuel = no light, no glow
+        const fuelRatio = fuel / bonfire.getData('maxFuel');
         const base = bonfire.getData('isMain') ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
         // Fire level multiplier: each level significantly increases radius
@@ -2892,13 +3110,19 @@ class GameScene extends Phaser.Scene {
         const stats = ENEMIES[type];
         const radius = this.getLightRadius(mainBonfire);
 
-        // Spawn in free space (try multiple positions, avoid trees)
+        // Spawn in free space outside ALL lit bonfires (main camp + outposts)
         let sx, sy;
-        for (let attempt = 0; attempt < 10; attempt++) {
+        for (let attempt = 0; attempt < 20; attempt++) {
             const angle = Math.random() * Math.PI * 2;
             const dist = radius + CONFIG.SPAWN_MARGIN + Math.random() * 100;
             sx = mainBonfire.x + Math.cos(angle) * dist;
             sy = mainBonfire.y + Math.sin(angle) * dist;
+            // Check not in any lit bonfire's light radius
+            const inAnyLight = this.bonfires.some(b => {
+                if (!b.getData('lit')) return false;
+                return Phaser.Math.Distance.Between(sx, sy, b.x, b.y) < this.getLightRadius(b);
+            });
+            if (inAnyLight) continue;
             // Check tile isn't occupied by a tree
             const ttx = Math.floor(sx / CONFIG.TILE_SIZE);
             const tty = Math.floor(sy / CONFIG.TILE_SIZE);
@@ -3276,21 +3500,25 @@ class GameScene extends Phaser.Scene {
             enemy.setData('attackCooldown', cd);
 
             if (targetsFire) {
-                // Fire-targeting enemies beeline to nearest bonfire and attack it
+                // Fire-targeting enemies beeline to nearest LIT bonfire and attack it
                 let target = null, nearestDist = Infinity;
                 for (const b of this.bonfires) {
+                    if (!b.getData('lit')) continue;
+                    if (b.getData('isLairCamp')) continue;
                     const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
                     if (d < nearestDist) { nearestDist = d; target = b; }
                 }
                 if (target) {
-                    if (nearestDist < 35) {
+                    if (nearestDist < 60) {
                         // At bonfire — attack it on cooldown
                         enemy.setVelocity(0, 0);
+                        enemy.setData('aiState', 'ATK FIRE');
                         if (cd <= 0) {
                             this._enemyAttackBonfire(enemy, target);
                             enemy.setData('attackCooldown', 1500);
                         }
                     } else {
+                        enemy.setData('aiState', '→ FIRE');
                         this._enemyPathToward(enemy, target.x, target.y, speed);
                     }
                 }
@@ -3310,11 +3538,14 @@ class GameScene extends Phaser.Scene {
                     } else if (isRanged) {
                         // Ranged lair enemy: keep distance and shoot
                         if (distToPlayer > atkRange * 0.8) {
+                            enemy.setData('aiState', 'CHASE');
                             this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
                         } else if (distToPlayer < atkRange * 0.4) {
+                            enemy.setData('aiState', 'RETREAT');
                             const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
                             this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
                         } else {
+                            enemy.setData('aiState', 'AIM');
                             enemy.setVelocity(0, 0);
                         }
                         enemy.setFlipX(this.player.x < enemy.x);
@@ -3326,6 +3557,7 @@ class GameScene extends Phaser.Scene {
                         // Melee lair enemy: stop at attack range
                         const lairMeleeRange = enemy.getData('size') + 28;
                         if (distToPlayer < lairMeleeRange + 10) {
+                            enemy.setData('aiState', 'ATK PLAYER');
                             enemy.setVelocity(0, 0);
                             enemy.setFlipX(this.player.x < enemy.x);
                             if (cd <= 0) {
@@ -3335,6 +3567,7 @@ class GameScene extends Phaser.Scene {
                                 this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                             }
                         } else {
+                            enemy.setData('aiState', 'CHASE');
                             this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                         }
                     }
@@ -3344,6 +3577,7 @@ class GameScene extends Phaser.Scene {
                     let marchIdx = enemy.getData('marchPathIdx') || 0;
 
                     if (marchPath && marchIdx < marchPath.length) {
+                        enemy.setData('aiState', 'MARCH');
                         const wp = marchPath[marchIdx];
                         const distToWP = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
                         if (distToWP < 24) {
@@ -3358,6 +3592,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         // No march path or reached end — walk directly to bonfire
+                        enemy.setData('aiState', '→ BASE');
                         const tx = enemy.getData('lairTargetX') || this.bonfires[0].x;
                         const ty = enemy.getData('lairTargetY') || this.bonfires[0].y;
                         this._enemyPathToward(enemy, tx, ty, speed * 0.7);
@@ -3369,13 +3604,16 @@ class GameScene extends Phaser.Scene {
                         enemy.setData('attackCooldown', stats.attackCooldown);
                     }
 
-                    // Attack nearest bonfire when reached
-                    let nearestBf = null, nearestBfDist = 45;
+                    // Attack nearest LIT bonfire when reached (skip unlit/abandoned camps)
+                    let nearestBf = null, nearestBfDist = 60;
                     for (const b of this.bonfires) {
+                        if (!b.getData('lit')) continue;
+                        if (b.getData('isLairCamp')) continue;
                         const bd = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
                         if (bd < nearestBfDist) { nearestBfDist = bd; nearestBf = b; }
                     }
                     if (nearestBf && cd <= 0) {
+                        enemy.setData('aiState', 'ATK FIRE');
                         this._enemyAttackBonfire(enemy, nearestBf);
                         enemy.setData('attackCooldown', 1500);
                     }
@@ -3404,6 +3642,7 @@ class GameScene extends Phaser.Scene {
 
                     if (enemy.getData('raidMode') === 'chase') {
                         // Chase player — keep at attack range
+                        enemy.setData('aiState', 'CHASE');
                         if (distToPlayer > atkRange * 0.8) {
                             this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
                         } else {
@@ -3423,6 +3662,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else if (distToTarget > atkRange * 0.9) {
                         // Follow pathfinding waypoints toward camp
+                        enemy.setData('aiState', 'MARCH');
                         const path = enemy.getData('raidPath');
                         let pathIdx = enemy.getData('raidPathIdx') || 0;
                         if (path && pathIdx < path.length) {
@@ -3437,6 +3677,7 @@ class GameScene extends Phaser.Scene {
                         enemy.setFlipX(Math.cos(angle) < 0);
                     } else {
                         // In range — strafe around target
+                        enemy.setData('aiState', 'PATROL');
                         let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(tx, ty, enemy.x, enemy.y);
                         orbitAngle += dt * 0.4;
                         enemy.setData('orbitAngle', orbitAngle);
@@ -3468,6 +3709,7 @@ class GameScene extends Phaser.Scene {
 
                     // If aggro'd and player too far to shoot, close the distance
                     if (isAggro && distToPlayer > atkRange && distToPlayer < AGGRO_RANGE) {
+                        enemy.setData('aiState', 'PURSUE');
                         this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
                         // Lose aggro if too far
                         if (distToPlayer > AGGRO_RANGE) enemy.setData('aggro', false);
@@ -3476,11 +3718,13 @@ class GameScene extends Phaser.Scene {
                         const fleeDist = atkRange * 0.5;
                         if (distToPlayer < fleeDist) {
                             // Too close — back away
+                            enemy.setData('aiState', 'FLEE');
                             const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
                             this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
                             enemy.setFlipX(this.player.x < enemy.x);
                         } else {
                             // Good range — strafe
+                            enemy.setData('aiState', 'AIM');
                             let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
                             orbitAngle += dt * 0.5;
                             enemy.setData('orbitAngle', orbitAngle);
@@ -3498,6 +3742,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         // Patrol the light edge
+                        enemy.setData('aiState', 'PATROL');
                         let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(mainBonfire.x, mainBonfire.y, enemy.x, enemy.y);
                         orbitAngle += dt * 0.3;
                         enemy.setData('orbitAngle', orbitAngle);
@@ -3532,6 +3777,7 @@ class GameScene extends Phaser.Scene {
                     if (distToPlayer < raidMeleeRange + 10) {
                         enemy.setVelocity(0, 0);
                         enemy.setFlipX(this.player.x < enemy.x);
+                        enemy.setData('aiState', 'ATK PLAYER');
                         if (cd <= 0) {
                             enemy.setData('attackCooldown', 1000);
                             this._enemyAttackVisual(enemy, this.player.x, this.player.y);
@@ -3539,10 +3785,12 @@ class GameScene extends Phaser.Scene {
                             this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                         }
                     } else {
+                        enemy.setData('aiState', 'CHASE');
                         this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
                     }
                 } else {
                     // March to camp following pathfinding waypoints
+                    enemy.setData('aiState', 'MARCH');
                     const path = enemy.getData('raidPath');
                     let pathIdx = enemy.getData('raidPathIdx') || 0;
 
@@ -3575,6 +3823,8 @@ class GameScene extends Phaser.Scene {
                     if (distToTarget < CONFIG.RAID_ATTACK_RANGE) {
                         let nearestBonfire = null, nearestDist = 60;
                         for (const b of this.bonfires) {
+                            if (!b.getData('lit')) continue;
+                            if (b.getData('isLairCamp')) continue;
                             const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
                             if (d < nearestDist) { nearestDist = d; nearestBonfire = b; }
                         }
@@ -3584,62 +3834,97 @@ class GameScene extends Phaser.Scene {
                         }
                     }
                 }
+            } else if (enemy.getData('fromGroq')) {
+                // GROQ AI: Shadow Mind — AI-planned step execution
+                this._updateGroqEnemy(enemy, dt);
             } else {
                 // Normal AI: decision tree — player nearby > bonfire > wander
                 const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let aggro = enemy.getData('aggro');
 
-                // Gain aggro: player in sight range
+                // Gain aggro: player in sight range (also cancels any active search)
                 if (!aggro && distToPlayer < SIGHT_RANGE) {
                     aggro = true;
                     enemy.setData('aggro', true);
+                    enemy.setData('_searching', false);
                 }
-                // Lose aggro if too far
+                // Lose aggro if too far — remember last known position, keep searching there
                 if (aggro && distToPlayer > AGGRO_RANGE) {
                     aggro = false;
                     enemy.setData('aggro', false);
+                    enemy.setData('_lastKnownX', this.player.x);
+                    enemy.setData('_lastKnownY', this.player.y);
+                    enemy.setData('_searching', true);
+                    // Don't clear _aiPath here — let it repath to last known position naturally
                 }
 
                 // Find nearest lit bonfire — enemies are drawn to light
+                // Primary: within light radius (full aggro). Fallback: any lit bonfire anywhere (enemy remembers the fire)
                 let nearestBonfire = null, bonfireDist = Infinity;
+                let fallbackBonfire = null, fallbackDist = Infinity;
                 for (const b of this.bonfires) {
                     if (!b.getData('lit')) continue;
+                    if (b.getData('isLairCamp')) continue;
                     const bd = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
-                    // Detect bonfires within their light radius (enemies are drawn to light)
                     const detectRange = this.getLightRadius(b) + 60;
                     if (bd < detectRange && bd < bonfireDist) { bonfireDist = bd; nearestBonfire = b; }
+                    if (bd < fallbackDist) { fallbackDist = bd; fallbackBonfire = b; }
                 }
 
                 const meleeRange = enemy.getData('size') + 28;
 
-                // Priority: player very close > bonfire nearby > chase player (aggro) > wander
+                // Priority: player in melee > at bonfire = attack fire > chase player > move to bonfire > wander
                 if (aggro && distToPlayer < meleeRange + 10) {
                     // Player in melee range — stop and attack
                     enemy.setVelocity(0, 0);
                     enemy.setFlipX(this.player.x < enemy.x);
+                    enemy.setData('aiState', 'ATK PLAYER');
                     if (cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
                         this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                         this.damagePlayer(enemy.getData('damage'));
                         this.showFloatingText(this.player.x, this.player.y - 20, `-${enemy.getData('damage')}`, '#FF4444');
                     }
+                } else if (nearestBonfire && bonfireDist < 60) {
+                    // At bonfire — attack it (even if aggro'd on player)
+                    enemy.setVelocity(0, 0);
+                    enemy.setFlipX(nearestBonfire.x < enemy.x);
+                    enemy.setData('aiState', 'ATK FIRE');
+                    if (cd <= 0) {
+                        this._enemyAttackBonfire(enemy, nearestBonfire);
+                        enemy.setData('attackCooldown', 1500);
+                    }
                 } else if (aggro && distToPlayer < SIGHT_RANGE) {
                     // Chase player — stop just before overlap
+                    enemy.setData('aiState', 'CHASE');
                     this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
-                } else if (nearestBonfire) {
-                    // Head toward bonfire and attack it
-                    if (bonfireDist < 40) {
-                        enemy.setVelocity(0, 0);
-                        enemy.setFlipX(nearestBonfire.x < enemy.x);
-                        if (cd <= 0) {
-                            this._enemyAttackBonfire(enemy, nearestBonfire);
-                            enemy.setData('attackCooldown', 1500);
-                        }
+                } else if (enemy.getData('_searching')) {
+                    // Go to last known player position before giving up
+                    const lkx = enemy.getData('_lastKnownX');
+                    const lky = enemy.getData('_lastKnownY');
+                    const distToLK = Phaser.Math.Distance.Between(enemy.x, enemy.y, lkx, lky);
+                    if (distToLK < 48) {
+                        // Reached it — give up search, go to fire
+                        enemy.setData('_searching', false);
+                        enemy.setData('_aiPath', null);
+                        enemy.setData('_aiPathIdx', 0);
                     } else {
-                        this._enemyPathToward(enemy, nearestBonfire.x, nearestBonfire.y, speed * 0.8);
+                        enemy.setData('aiState', 'SEARCH');
+                        this._enemyPathToward(enemy, lkx, lky, speed * 0.85);
                     }
+                } else if (nearestBonfire) {
+                    // Move toward bonfire (in detection range)
+                    enemy.setData('aiState', '→ FIRE');
+                    this._enemyPathToward(enemy, nearestBonfire.x, nearestBonfire.y, speed * 0.8);
+                } else if (fallbackBonfire) {
+                    // Strayed too far from fire — head back toward it (enemy "remembers" the light)
+                    enemy.setData('aiState', '→ FIRE');
+                    this._enemyPathToward(enemy, fallbackBonfire.x, fallbackBonfire.y, speed * 0.6);
                 } else {
-                    // Wander: slow random movement
+                    // No lit bonfires anywhere — wander aimlessly, clear stale path
+                    enemy.setData('aiState', 'WANDER');
+                    enemy.setData('_aiPath', null);
+                    enemy.setData('_aiPathIdx', 0);
                     let wt = enemy.getData('wanderTimer') - dt;
                     if (wt <= 0) {
                         wt = 2 + Math.random() * 3;
@@ -3653,17 +3938,17 @@ class GameScene extends Phaser.Scene {
             }
 
             // Attack buildings (cooldown-based, not per-frame)
-            if (cd <= 0) {
+            const dmgVal = enemy.getData('damage');
+            if (cd <= 0 && dmgVal > 0) {
                 const buildings = [...this.buildingsGroup.children.entries];
                 for (const building of buildings) {
                     if (!building.active) continue;
                     const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, building.x, building.y);
                     if (d < 35) {
-                        const dmg = enemy.getData('damage');
-                        let bhp = building.getData('hp') - dmg;
+                        let bhp = building.getData('hp') - dmgVal;
                         building.setData('hp', bhp);
                         this._enemyAttackVisual(enemy, building.x, building.y);
-                        this.showFloatingText(building.x, building.y - 20, `-${dmg}`, '#FF8844');
+                        this.showFloatingText(building.x, building.y - 20, `-${dmgVal}`, '#FF8844');
                         enemy.setData('attackCooldown', 1200);
                         if (bhp <= 0) {
                             this.destroyBuilding(building);
@@ -3682,25 +3967,47 @@ class GameScene extends Phaser.Scene {
             if (!enemy.active) continue;
             const hp = enemy.getData('hp');
             const maxHp = enemy.getData('maxHp');
-            if (hp >= maxHp) continue; // full health = no indicator
-            const ratio = Math.max(0, hp / maxHp);
             const size = enemy.getData('size') || 14;
-            const radius = size * 0.6 + 4;
-            const x = enemy.x;
-            const y = enemy.y - size - 6;
-            // Background circle (dark)
-            g.lineStyle(2.5, 0x000000, 0.5);
-            g.beginPath();
-            g.arc(x, y, radius, 0, Math.PI * 2);
-            g.strokePath();
-            // Health arc (pac-man style: colored arc proportional to remaining HP)
-            const color = ratio > 0.5 ? 0x44FF44 : ratio > 0.25 ? 0xFFAA00 : 0xFF3333;
-            const startAngle = -Math.PI / 2;
-            const endAngle = startAngle + ratio * Math.PI * 2;
-            g.lineStyle(2.5, color, 0.85);
-            g.beginPath();
-            g.arc(x, y, radius, startAngle, endAngle);
-            g.strokePath();
+
+            if (hp < maxHp) {
+                const ratio = Math.max(0, hp / maxHp);
+                const radius = size * 0.6 + 4;
+                const x = enemy.x;
+                const y = enemy.y - size - 6;
+                // Background circle (dark)
+                g.lineStyle(2.5, 0x000000, 0.5);
+                g.beginPath();
+                g.arc(x, y, radius, 0, Math.PI * 2);
+                g.strokePath();
+                // Health arc (pac-man style: colored arc proportional to remaining HP)
+                const color = ratio > 0.5 ? 0x44FF44 : ratio > 0.25 ? 0xFFAA00 : 0xFF3333;
+                const startAngle = -Math.PI / 2;
+                const endAngle = startAngle + ratio * Math.PI * 2;
+                g.lineStyle(2.5, color, 0.85);
+                g.beginPath();
+                g.arc(x, y, radius, startAngle, endAngle);
+                g.strokePath();
+            }
+
+            // Debug AI state label (dev mode only)
+            if (window._debugMode) {
+                let label = enemy.getData('_dbgLabel');
+                if (!label) {
+                    label = this.add.text(0, 0, '', {
+                        font: '9px monospace',
+                        fill: '#ffff44',
+                        stroke: '#000000',
+                        strokeThickness: 2,
+                    }).setDepth(5200).setOrigin(0.5, 1);
+                    enemy.setData('_dbgLabel', label);
+                }
+                label.setPosition(enemy.x, enemy.y - size - 18);
+                label.setText(enemy.getData('aiState') || '');
+                label.setVisible(true);
+            } else {
+                const label = enemy.getData('_dbgLabel');
+                if (label) label.setVisible(false);
+            }
         }
     }
 
@@ -3729,8 +4036,8 @@ class GameScene extends Phaser.Scene {
     // Enemy attacks a bonfire — drain fuel + possibly downgrade level
     _enemyAttackBonfire(enemy, bonfire) {
         const dmg = enemy.getData('damage');
-        const fuelDrain = Math.max(2, Math.floor(dmg * 0.3));
-        const progressDrain = Math.max(1, Math.floor(dmg * 0.15));
+        const fuelDrain = Math.max(8, Math.floor(dmg * 2.0));
+        const progressDrain = Math.max(3, Math.floor(dmg * 0.5));
         const fuel = bonfire.getData('fuel');
         bonfire.setData('fuel', Math.max(0, fuel - fuelDrain));
 
@@ -3844,6 +4151,10 @@ class GameScene extends Phaser.Scene {
         // Clean up prev state cache to prevent memory leak
         if (this._prevEnemyState) delete this._prevEnemyState[enemyId];
 
+        // Clean up Groq debug label if present
+        const groqLabel = enemy.getData('groqLabel');
+        if (groqLabel) groqLabel.destroy();
+
         enemy.destroy();
     }
 
@@ -3956,18 +4267,18 @@ class GameScene extends Phaser.Scene {
         this._trackObjective('buildings_built', 1);
         this._setGridBlocked(x, y);
 
-        // Push player out if standing on the newly blocked tile
+        // Push player out if overlapping the newly blocked tile
         const T = CONFIG.TILE_SIZE;
-        const ptx = Math.floor(this.player.x / T);
-        const pty = Math.floor(this.player.y / T);
         const btx = Math.floor(x / T);
         const bty = Math.floor(y / T);
-        if (ptx === btx && pty === bty) {
+        const playerOverlaps = this.player.x > btx * T - T * 0.5 && this.player.x < btx * T + T * 1.5 &&
+                               this.player.y > bty * T - T * 0.5 && this.player.y < bty * T + T * 1.5;
+        if (playerOverlaps) {
             // Nudge player to nearest free adjacent tile
-            const dirs = [[0,-1],[0,1],[-1,0],[1,0]];
+            const dirs = [[0,-1],[0,1],[-1,0],[1,0],[0,-2],[0,2],[-2,0],[2,0]];
             for (const [dx, dy] of dirs) {
-                if (!this._isGridBlocked(ptx + dx, pty + dy)) {
-                    this.player.setPosition((ptx + dx) * T + T / 2, (pty + dy) * T + T / 2);
+                if (!this._isGridBlocked(btx + dx, bty + dy)) {
+                    this.player.setPosition((btx + dx) * T + T / 2, (bty + dy) * T + T / 2);
                     break;
                 }
             }
@@ -4260,6 +4571,12 @@ class GameScene extends Phaser.Scene {
         placed.setDepth(4);
         placed.setData('type', type);
         placed.setData('hp', building.hp);
+        if (building.attackRange) {
+            placed.setData('attackRange', building.attackRange);
+            placed.setData('attackDamage', building.attackDamage);
+            placed.setData('attackSpeed', building.attackSpeed);
+            placed.setData('lastAttack', 0);
+        }
 
         gameState.buildings.push({ type, x: bx, y: by });
         this._trackObjective('buildings_built', 1);
@@ -5208,6 +5525,270 @@ class GameScene extends Phaser.Scene {
     }
 
     // --------------------------------------------------------
+    // Groq AI Enemy — Shadow Mind
+    // --------------------------------------------------------
+    _spawnGroqEnemy(x, y) {
+        const stats = SHADOW_MIND_STATS;
+        const enemy = this.enemies.create(x, y, 'enemy_shadow_mind');
+        enemy.setDepth(5);
+        const bodyW = Math.round(stats.size * 0.8);
+        enemy.body.setSize(bodyW, bodyW);
+        enemy.setData('type', 'SHADOW_MIND');
+        enemy.setData('hp', stats.hp);
+        enemy.setData('maxHp', stats.hp);
+        enemy.setData('damage', stats.damage);
+        enemy.setData('speed', stats.speed);
+        enemy.setData('xp', stats.xp);
+        enemy.setData('size', stats.size);
+        enemy.setData('gold', stats.gold);
+        enemy.setData('attackCooldown', 0);
+        enemy.setData('targetsFire', false);
+        enemy.setData('ranged', false);
+        enemy.setData('fromGroq', true);
+        // Groq state machine
+        enemy.setData('groqState', 'IDLE');   // IDLE | PLANNING | EXECUTING | FALLBACK
+        enemy.setData('groqSteps', null);     // queued steps from last plan
+        enemy.setData('groqStepIdx', 0);
+        enemy.setData('groqTimer', 0);        // countdown for WAIT steps / re-plan
+        enemy.setData('groqPlanCooldown', 0); // seconds until next plan request
+        enemy.setData('groqReasoning', '');
+        enemy.setData('groqCurrentStep', '');
+
+        // Debug label (only visible in debug mode)
+        const label = this.add.text(x, y - 52, '', {
+            font: '9px monospace',
+            fill: '#CC44FF',
+            stroke: '#000000',
+            strokeThickness: 2,
+            align: 'center',
+            wordWrap: { width: 160 },
+        }).setDepth(5200).setOrigin(0.5, 1).setVisible(false);
+        enemy.setData('groqLabel', label);
+        return enemy;
+    }
+
+    async _groqRequestPlan(enemy) {
+        if (!enemy.active) return;
+        enemy.setData('groqState', 'PLANNING');
+        enemy.setData('groqSteps', null);
+        enemy.setData('groqStepIdx', 0);
+        const ws = groqEnemyAI.buildWorldState(enemy, this);
+        const steps = await groqEnemyAI.queryGroq(ws);
+        if (!enemy.active) return; // destroyed while waiting
+        if (steps && steps.steps && steps.steps.length > 0) {
+            enemy.setData('groqSteps', steps.steps);
+            enemy.setData('groqStepIdx', 0);
+            enemy.setData('groqState', 'EXECUTING');
+            enemy.setData('groqReasoning', steps.reasoning || '');
+            enemy.setData('groqCurrentStep', steps.steps[0]?.action || '');
+        } else {
+            // API failed — fallback to simple bonfire-attack logic for 10s
+            enemy.setData('groqState', 'FALLBACK');
+            enemy.setData('groqTimer', 20);
+            enemy.setData('groqReasoning', '[API error — fallback mode]');
+        }
+        // Next plan will be requested after all steps are done
+        enemy.setData('groqPlanCooldown', 0);
+    }
+
+    _updateGroqEnemy(enemy, dt) {
+        const groqState = enemy.getData('groqState');
+        const speed = enemy.getData('speed');
+
+        if (groqState === 'IDLE') {
+            // First update — kick off planning
+            this._groqRequestPlan(enemy);
+            enemy.setVelocity(0, 0);
+            enemy.setData('aiState', 'PLANNING');
+
+        } else if (groqState === 'PLANNING') {
+            // Waiting for API — shuffle slightly so it doesn't look frozen
+            enemy.setData('aiState', 'PLANNING');
+            const wa = enemy.getData('wanderAngle') || 0;
+            enemy.setData('wanderAngle', wa + dt * 1.5);
+            this._setVelocityWithGrid(enemy, Math.cos(wa), Math.sin(wa), speed * 0.2);
+
+        } else if (groqState === 'EXECUTING') {
+            const steps = enemy.getData('groqSteps') || [];
+            let idx = enemy.getData('groqStepIdx') || 0;
+
+            if (idx >= steps.length) {
+                // All steps done — request a new plan
+                enemy.setData('groqState', 'IDLE');
+                return;
+            }
+
+            const done = this._groqExecuteStep(enemy, dt, steps[idx]);
+            if (done) {
+                idx++;
+                enemy.setData('groqStepIdx', idx);
+                if (idx >= steps.length) {
+                    // All steps done — wait 20s before next plan
+                    enemy.setData('groqState', 'FALLBACK');
+                    enemy.setData('groqTimer', 20);
+                    enemy.setData('groqCurrentStep', 'WAITING…');
+                } else {
+                    enemy.setData('groqCurrentStep', steps[idx]?.action || '');
+                }
+            }
+
+        } else if (groqState === 'FALLBACK') {
+            // Simple fallback: attack nearest lit bonfire (mirrors normal fire-targeting AI)
+            enemy.setData('aiState', 'FALLBACK');
+            let timer = enemy.getData('groqTimer') - dt;
+            enemy.setData('groqTimer', timer);
+
+            let target = null, nearestDist = Infinity;
+            for (const b of this.bonfires) {
+                if (!b.getData('lit') || b.getData('isLairCamp')) continue;
+                const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, b.x, b.y);
+                if (d < nearestDist) { nearestDist = d; target = b; }
+            }
+            if (target) {
+                if (nearestDist < 60) {
+                    enemy.setVelocity(0, 0);
+                    const cd = enemy.getData('attackCooldown');
+                    if (cd <= 0) {
+                        this._enemyAttackBonfire(enemy, target);
+                        enemy.setData('attackCooldown', 1500);
+                    }
+                } else {
+                    this._enemyPathToward(enemy, target.x, target.y, speed);
+                }
+            }
+
+            if (timer <= 0) enemy.setData('groqState', 'IDLE');
+        }
+    }
+
+    // Returns true when the step is complete (advance to next step)
+    _groqExecuteStep(enemy, dt, step) {
+        if (!step || !step.action) return true;
+        const speed = enemy.getData('speed');
+        const cd = enemy.getData('attackCooldown');
+
+        switch (step.action) {
+
+            case 'MOVE_TO': {
+                const tx = step.x, ty = step.y;
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+                enemy.setData('aiState', 'MOVE_TO');
+                if (dist < 40) return true; // arrived
+                this._enemyPathToward(enemy, tx, ty, speed);
+                return false;
+            }
+
+            case 'ATTACK_CAMP': {
+                const idx = step.idx;
+                // Filter out lair camps to get the same list the AI sees
+                const camps = this.bonfires.filter(b => !b.getData('isLairCamp'));
+                const camp = camps[idx];
+                if (!camp || !camp.active || camp.getData('fuel') <= 0) return true; // gone/empty
+
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, camp.x, camp.y);
+                if (dist < 60) {
+                    enemy.setVelocity(0, 0);
+                    enemy.setData('aiState', 'ATK CAMP');
+                    if (cd <= 0) {
+                        this._enemyAttackBonfire(enemy, camp);
+                        enemy.setData('attackCooldown', 1500);
+                    }
+                    // Done with step once camp fuel hits 0 or after 8s of attacking
+                    let atkTimer = (enemy.getData('groqAtkTimer') || 0) + dt;
+                    enemy.setData('groqAtkTimer', atkTimer);
+                    if (camp.getData('fuel') <= 0 || atkTimer > 8) {
+                        enemy.setData('groqAtkTimer', 0);
+                        return true;
+                    }
+                } else {
+                    enemy.setData('aiState', 'MOVE_TO CAMP');
+                    this._enemyPathToward(enemy, camp.x, camp.y, speed);
+                }
+                return false;
+            }
+
+            case 'ATTACK_PLAYER': {
+                const px = this.player.x, py = this.player.y;
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, px, py);
+                const meleeRange = enemy.getData('size') + 34;
+                if (dist < meleeRange + 10) {
+                    enemy.setVelocity(0, 0);
+                    enemy.setFlipX(px < enemy.x);
+                    enemy.setData('aiState', 'ATK PLAYER');
+                    if (cd <= 0) {
+                        enemy.setData('attackCooldown', 1000);
+                        this._enemyAttackVisual(enemy, px, py);
+                        this.damagePlayer(enemy.getData('damage'));
+                        this.showFloatingText(px, py - 20, `-${enemy.getData('damage')}`, '#FF4444');
+                    }
+                    // Finish after 1 hit connects OR if player moves far away
+                    if (cd <= 0 || dist > 300) return true;
+                } else {
+                    enemy.setData('aiState', 'CHASE');
+                    this._enemyPathToward(enemy, px, py, speed);
+                }
+                return false;
+            }
+
+            case 'DESTROY_BUILDING': {
+                const bList = [...this.buildingsGroup.children.entries].filter(b => b.active);
+                const bldg = bList[step.idx];
+                if (!bldg || !bldg.active) return true; // already gone
+
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, bldg.x, bldg.y);
+                if (dist < 38) {
+                    enemy.setVelocity(0, 0);
+                    enemy.setData('aiState', 'DESTROY BLDG');
+                    if (cd <= 0) {
+                        const dmgVal = enemy.getData('damage');
+                        let bhp = bldg.getData('hp') - dmgVal;
+                        bldg.setData('hp', bhp);
+                        this._enemyAttackVisual(enemy, bldg.x, bldg.y);
+                        this.showFloatingText(bldg.x, bldg.y - 20, `-${dmgVal}`, '#FF8844');
+                        enemy.setData('attackCooldown', 1200);
+                        if (bhp <= 0) { this.destroyBuilding(bldg); return true; }
+                    }
+                } else {
+                    enemy.setData('aiState', 'MOVE_TO BLDG');
+                    this._enemyPathToward(enemy, bldg.x, bldg.y, speed);
+                }
+                return false;
+            }
+
+            case 'FLEE': {
+                const tx = step.x || (this.bonfires[0] ? this.bonfires[0].x + 400 : enemy.x + 400);
+                const ty = step.y || (this.bonfires[0] ? this.bonfires[0].y + 400 : enemy.y + 400);
+                const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, tx, ty);
+                enemy.setData('aiState', 'FLEE');
+                if (dist < 80) return true;
+                this._enemyPathToward(enemy, tx, ty, speed * 1.3);
+                return false;
+            }
+
+            case 'WAIT': {
+                enemy.setVelocity(0, 0);
+                enemy.setData('aiState', 'WAIT');
+                let wt = enemy.getData('groqWaitTimer');
+                if (wt === undefined || wt === null) {
+                    const secs = Math.max(0.5, Math.min(step.seconds || 1, 3));
+                    enemy.setData('groqWaitTimer', secs);
+                    wt = secs;
+                }
+                wt -= dt;
+                enemy.setData('groqWaitTimer', wt);
+                if (wt <= 0) {
+                    enemy.setData('groqWaitTimer', null);
+                    return true;
+                }
+                return false;
+            }
+
+            default:
+                return true; // unknown action — skip
+        }
+    }
+
+    // --------------------------------------------------------
     // Floating Text
     // --------------------------------------------------------
     showFloatingText(x, y, text, color = '#FFFFFF') {
@@ -5228,4 +5809,13 @@ class GameScene extends Phaser.Scene {
             onComplete: () => t.destroy()
         });
     }
+}
+
+// HTML-escape helper used by the Groq debug panel
+function _escHtml(str) {
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
 }

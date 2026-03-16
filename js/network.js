@@ -45,15 +45,8 @@ const network = {
     SYNC_RATE: 100,
     HOST_SYNC_RATE: 200,
 
-    // Relay server URL — change this after deploying to Render
-    RELAY_URL: (() => {
-        // Auto-detect: use localhost in dev, deployed URL in production
-        if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
-            return 'ws://localhost:9090';
-        }
-        // TODO: Replace with your Render deployment URL
-        return 'wss://fading-light-relay.onrender.com';
-    })(),
+    // Relay server URL
+    RELAY_URL: 'wss://fading-light-relay.onrender.com',
 
     // Available tshirt colors
     TSHIRT_COLORS: [
