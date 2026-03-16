@@ -1,4 +1,4 @@
-const SW_VERSION = '0.5.44';
+const SW_VERSION = '0.5.46';
 const CACHE_NAME = 'fading-light-' + SW_VERSION;
 const ASSETS = [
     './',
@@ -11,6 +11,8 @@ const ASSETS = [
     './js/textures.js',
     './js/menu.js',
     './js/game.js',
+    './js/maze.js',
+    './js/groq-enemy.js',
     './js/main.js',
     './js/bot.js',
     './js/autotest.js',
