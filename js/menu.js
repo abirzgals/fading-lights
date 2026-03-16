@@ -149,6 +149,7 @@ class MenuScene extends Phaser.Scene {
 
         // --- Resize handler: save name then restart to reflow positioned elements ---
         this.scale.on('resize', () => {
+            if (!this.sys.isActive()) return; // Don't restart if not the current scene
             const nameEl = document.getElementById('player-name-input');
             if (nameEl && nameEl.value.trim()) network.saveName(nameEl.value.trim());
             this.scene.restart();
