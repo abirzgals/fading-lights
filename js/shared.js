@@ -293,3 +293,49 @@ function cleanupDebugLabels(enemies) {
         }
     }
 }
+
+// --------------------------------------------------------
+// Health bar update (HTML HUD)
+// --------------------------------------------------------
+function updateHealthBar() {
+    const el = document.getElementById('health-fill');
+    if (el) el.style.width = `${(gameState.hp / CONFIG.PLAYER_MAX_HP) * 100}%`;
+}
+
+// --------------------------------------------------------
+// Damage player (shared across scenes)
+// --------------------------------------------------------
+function damagePlayerShared(scene, amount) {
+    const armor = gameState.armor || 0;
+    const reduced = Math.max(1, Math.floor(amount * (1 - armor)));
+    gameState.hp -= reduced;
+    updateHealthBar();
+    if (gameState.hp <= 0) gameState.hp = 0;
+    return reduced;
+}
+
+// --------------------------------------------------------
+// HUD visibility helpers for scene transitions
+// --------------------------------------------------------
+function showFullHUD() {
+    const hud = document.getElementById('hud');
+    if (hud) hud.style.display = 'flex';
+    const hudRight = document.querySelector('.hud-right');
+    if (hudRight) hudRight.style.display = '';
+    const fuelBar = document.getElementById('fuel-fill');
+    if (fuelBar) fuelBar.parentElement.parentElement.style.display = '';
+    const levelBar = document.getElementById('fire-level-fill');
+    if (levelBar) levelBar.parentElement.parentElement.style.display = '';
+}
+
+function showMazeHUD() {
+    const hud = document.getElementById('hud');
+    if (hud) hud.style.display = 'flex';
+    // Hide fire/resources — not relevant in maze
+    const hudRight = document.querySelector('.hud-right');
+    if (hudRight) hudRight.style.display = 'none';
+    const fuelBar = document.getElementById('fuel-fill');
+    if (fuelBar) fuelBar.parentElement.parentElement.style.display = 'none';
+    const levelBar = document.getElementById('fire-level-fill');
+    if (levelBar) levelBar.parentElement.parentElement.style.display = 'none';
+}

@@ -2,8 +2,8 @@ class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
 
     create() {
-        // Show HUD, hide menu elements
-        document.getElementById('hud').style.display = 'flex';
+        // Show HUD, restore all parts (maze may have hidden some)
+        showFullHUD();
         document.getElementById('game-over-screen').style.display = 'none';
         this.cameras.main.fadeIn(1500, 0, 0, 0);
         mobileControls.show();

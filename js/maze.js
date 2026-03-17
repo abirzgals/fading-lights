@@ -131,6 +131,9 @@ class MazeScene extends Phaser.Scene {
         this._attackKey   = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
         this._interactKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
 
+        // Show HTML HUD (health bar only, hide fire/resources)
+        showMazeHUD();
+
         // --- HUD (scroll-fixed) ---
         this._hudHp = this.add.text(8, 8, '', {
             fontSize: '10px', fill: '#FF4444', fontFamily: 'monospace',
@@ -514,6 +517,7 @@ class MazeScene extends Phaser.Scene {
         // --- HUD ---
         gameState.hp = Math.max(0, gameState.hp);
         this._hudHp.setText(`♥ HP: ${Math.ceil(gameState.hp)} / ${CONFIG.PLAYER_MAX_HP}`);
+        updateHealthBar();
 
         const ang  = Phaser.Math.Angle.Between(p.x, p.y, this.treasure.x, this.treasure.y);
         const arrs = ['→','↘','↓','↙','←','↖','↑','↗'];
@@ -550,13 +554,11 @@ class MazeScene extends Phaser.Scene {
                 e.setData('aiState', dist < 16 ? 'ATK PLAYER' : 'CHASE');
 
                 // Melee attack
-                if (dist < 16 && ecd <= 0) {
+                if (dist < CONFIG.ENEMY_MELEE_RANGE && ecd <= 0) {
                     e.setData('atkCd', 1100);
-                    const armor = gameState.armor || 0;
-                    const dmg   = Math.max(1, Math.floor(e.getData('dmg') * (1 - armor)));
-                    gameState.hp -= dmg;
+                    const dmg = damagePlayerShared(this, e.getData('dmg'));
                     this.cameras.main.flash(120, 80, 0, 0);
-                    this._floatText(p.x, p.y - 20, `-${dmg}`, '#FF4444');
+                    showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#FF4444');
                 }
             } else {
                 // Wander inside room
@@ -697,7 +699,7 @@ class MazeScene extends Phaser.Scene {
     _damageEnemy(e, amount) {
         let hp = e.getData('hp') - amount;
         e.setData('hp', hp);
-        this._floatText(e.x, e.y - 16, `-${amount}`, '#FF6644');
+        showFloatingText(this, e.x, e.y - 16, `-${amount}`, '#FF6644');
         this.tweens.add({ targets: e, alpha: 0.15, duration: 60, yoyo: true,
             onComplete: () => { if (e.active) e.setAlpha(0.92); } });
 
@@ -705,19 +707,12 @@ class MazeScene extends Phaser.Scene {
             this._killCount++;
             const gold = 1 + Math.floor(Math.random() * 3);
             gameState.resources.gold = (gameState.resources.gold || 0) + gold;
-            this._floatText(e.x, e.y - 30, `+${gold} gold`, '#FFD700');
+            showFloatingText(this, e.x, e.y - 30, `+${gold} gold`, '#FFD700');
             e.destroy();
         }
     }
 
-    _floatText(x, y, msg, color) {
-        const t = this.add.text(x, y, msg, {
-            fontSize: '9px', fill: color, fontFamily: 'monospace',
-            stroke: '#000', strokeThickness: 2,
-        }).setOrigin(0.5).setDepth(55);
-        this.tweens.add({ targets: t, y: y - 22, alpha: 0, duration: 650,
-            onComplete: () => t.destroy() });
-    }
+    // _floatText removed — use shared showFloatingText(scene, x, y, msg, color)
 
     // ----------------------------------------------------------
     // INTERACT  (treasure)
