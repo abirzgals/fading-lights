@@ -2095,27 +2095,51 @@ class GameScene extends Phaser.Scene {
             if (d < lightDist) { lightDist = d; lightX = bf.x; lightY = bf.y; }
         }
 
-        const MAX_SHADOW = 600;
+        // Build list of active light sources with their radii
+        const lights = [];
+        for (const bf of this.bonfires) {
+            if (!bf.getData('lit')) continue;
+            lights.push({ x: bf.x, y: bf.y, r: this.getLightRadius(bf) });
+        }
+        // Also include outpost buildings (they extend light)
+        for (const b of this.buildingsGroup.children.entries) {
+            if (!b.active || b.getData('type') !== 'outpost') continue;
+            lights.push({ x: b.x, y: b.y, r: 120 });
+        }
+        if (lights.length === 0) return;
+
+        // Find nearest light to an object and check if within range
+        const findLight = (ox, oy) => {
+            let best = null, bestD = Infinity;
+            for (const l of lights) {
+                const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
+                if (d < l.r && d < bestD) { best = l; bestD = d; }
+            }
+            return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.r } : null;
+        };
+
         // Draw a rotated ellipse shadow stretched away from the light source
         const drawShadow = (baseX, baseY, objW, objH) => {
             if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
-            const dx = baseX - lightX;
-            const dy = baseY - lightY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 2 || dist > MAX_SHADOW) return;
+            const light = findLight(baseX, baseY);
+            if (!light) return; // outside all light radii — no shadow
 
-            // Direction away from light
+            const dx = baseX - light.lx;
+            const dy = baseY - light.ly;
+            const dist = light.dist;
+            if (dist < 2) return;
+
             const angle = Math.atan2(dy, dx);
-            // Shadow length scales with object height and inversely with distance
+            // Shadow length: longer near light, fades at edge of radius
             const shadowLen = Math.min(objH * 1.2, objH * 400 / dist);
-            // Shadow center is offset from base along the light direction
             const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
             const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
-            const alpha = Math.max(0.05, 0.3 - dist / MAX_SHADOW * 0.25);
+            // Fade shadow as object approaches edge of light radius
+            const edgeFade = 1 - (dist / light.radius);
+            const alpha = Math.max(0.04, 0.3 * edgeFade);
 
-            // Draw rotated ellipse as a polygon (16 segments)
-            const halfW = objW * 0.3; // narrow width
-            const halfH = shadowLen * 0.5; // long stretch
+            const halfW = objW * 0.3;
+            const halfH = shadowLen * 0.5;
             const cos = Math.cos(angle);
             const sin = Math.sin(angle);
             const pts = [];
@@ -2123,7 +2147,6 @@ class GameScene extends Phaser.Scene {
                 const t = (i / 16) * Math.PI * 2;
                 const ex = Math.cos(t) * halfW;
                 const ey = Math.sin(t) * halfH;
-                // Rotate by shadow angle
                 pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
             }
             g.fillStyle(0x000000, alpha);
@@ -2134,12 +2157,12 @@ class GameScene extends Phaser.Scene {
             g.fillPath();
         };
 
-        // Trees — base is at (tree.x, tree.y) since origin is (0.5, 1)
+        // Trees
         for (const tree of this.trees.children.entries) {
             if (!tree.active) continue;
             drawShadow(tree.x, tree.y, tree.width || 48, tree.height || 64);
         }
-        // Player — base at feet
+        // Player
         const p = this.player;
         drawShadow(p.x, p.y + (p.height || 48) * 0.3, 20, 32);
         // Enemies

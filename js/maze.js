@@ -76,6 +76,9 @@ class MazeScene extends Phaser.Scene {
 
         // HP graphics (redrawn each frame)
         this._hpGfx = this.add.graphics().setDepth(60);
+        // Shadow graphics — player is the light source in the maze
+        this._shadowGfx = this.add.graphics().setDepth(1);
+        this._shadowTimer = 0;
 
         // --- Treasure (last room centre) ---
         const er       = rooms[rooms.length - 1];
@@ -424,6 +427,10 @@ class MazeScene extends Phaser.Scene {
         // --- Enemy AI ---
         this._updateEnemies(dt);
 
+        // --- Shadows (player is light source) ---
+        this._shadowTimer += delta;
+        if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateMazeShadows(); }
+
         // --- Visuals ---
         this._updateTorchLight();
         this._updateWeaponPos();
@@ -491,6 +498,53 @@ class MazeScene extends Phaser.Scene {
                 const spd = e.getData('spd') * 0.35;
                 e.setVelocity(Math.cos(wa) * spd, Math.sin(wa) * spd);
             }
+        }
+    }
+
+    _updateMazeShadows() {
+        const g = this._shadowGfx;
+        if (!g) return;
+        g.clear();
+        const p = this.player;
+        const lightX = p.x, lightY = p.y;
+        const TORCH_R = 145; // matches torch light radius
+
+        const cam = this.cameras.main;
+        const m = 80;
+        const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+        const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+
+        const drawShadow = (baseX, baseY, objW, objH) => {
+            if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
+            const dx = baseX - lightX, dy = baseY - lightY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 4 || dist > TORCH_R) return;
+            const angle = Math.atan2(dy, dx);
+            const shadowLen = Math.min(objH * 1.0, objH * 300 / dist);
+            const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
+            const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
+            const alpha = Math.max(0.04, 0.35 * (1 - dist / TORCH_R));
+            const halfW = objW * 0.3, halfH = shadowLen * 0.5;
+            const cos = Math.cos(angle), sin = Math.sin(angle);
+            const pts = [];
+            for (let i = 0; i < 12; i++) {
+                const t = (i / 12) * Math.PI * 2;
+                const ex = Math.cos(t) * halfW, ey = Math.sin(t) * halfH;
+                pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
+            }
+            g.fillStyle(0x000000, alpha);
+            g.beginPath();
+            g.moveTo(pts[0], pts[1]);
+            for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+            g.closePath();
+            g.fillPath();
+        };
+
+        // Enemies cast shadows from the player's torch light
+        for (const e of this.mazeEnemies.children.entries) {
+            if (!e.active) continue;
+            const sz = e.getData('size') || 14;
+            drawShadow(e.x, e.y + sz * 0.3, sz * 1.2, sz * 1.5);
         }
     }
 
