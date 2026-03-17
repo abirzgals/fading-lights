@@ -4278,9 +4278,18 @@ class GameScene extends Phaser.Scene {
         if (this._hasPixelArtPlayer) {
             const dir = facingToDirection(p.facing.x, p.facing.y);
             const isMoving = p.body && (p.body.velocity.x !== 0 || p.body.velocity.y !== 0);
+            // Don't interrupt attack animations
+            const curKey = p.anims.currentAnim?.key || '';
+            const isAttacking = curKey.startsWith('player_melee_') || curKey.startsWith('player_ranged_');
+            if (isAttacking && p.anims.isPlaying) {
+                // Let attack animation finish — don't override
+                p._lastDir = dir;
+                p.setFlipX(false);
+                return;
+            }
             const animKey = 'player_walk_' + dir;
             if (isMoving && this.anims.exists(animKey)) {
-                if (p.anims.currentAnim?.key !== animKey) {
+                if (curKey !== animKey) {
                     p.play(animKey);
                 }
             } else {

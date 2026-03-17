@@ -347,13 +347,18 @@ class MazeScene extends Phaser.Scene {
         }
 
         p.setVelocity(vx, vy);
-        if (vx !== 0 || vy !== 0) {
+        // Don't interrupt attack animations
+        const curKey = p.anims.currentAnim?.key || '';
+        const isAttacking = curKey.startsWith('player_melee_') || curKey.startsWith('player_ranged_');
+        if (isAttacking && p.anims.isPlaying) {
+            // Let attack finish
+        } else if (vx !== 0 || vy !== 0) {
             p.facing = { x: Math.sign(vx), y: Math.sign(vy) };
             if (this._hasPixelArtPlayer) {
                 const dir = facingToDirection(p.facing.x, p.facing.y);
                 const animKey = 'player_walk_' + dir;
                 if (this.anims.exists(animKey)) {
-                    if (p.anims.currentAnim?.key !== animKey) p.play(animKey);
+                    if (curKey !== animKey) p.play(animKey);
                 } else if (dir !== p._lastDir) {
                     p.setTexture('player_' + dir);
                 }
