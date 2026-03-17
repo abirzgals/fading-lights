@@ -12,7 +12,6 @@ class IntroScene extends Phaser.Scene {
         // Always clean up any leftover intro elements from previous sessions
         document.querySelectorAll('[data-intro]').forEach(el => el.remove());
 
-        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
         const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
         // --- Phase 1: "Tap to start" splash screen ---
@@ -51,12 +50,6 @@ class IntroScene extends Phaser.Scene {
             splash.style.transition = 'opacity 0.4s';
             splash.style.opacity = '0';
             splash.style.pointerEvents = 'none';
-
-            // iOS Safari: skip video entirely — it crashes/reloads the page
-            if (isIOS) {
-                setTimeout(goToMenu, 400);
-                return;
-            }
 
             setTimeout(() => {
                 splash.remove();

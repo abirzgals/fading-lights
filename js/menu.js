@@ -486,6 +486,12 @@ class MenuScene extends Phaser.Scene {
                 <div id="room-status"></div>
                 <div id="room-code-display" style="display:none"></div>
             </div>
+            <button id="html-start-btn" style="
+                margin-top: 16px; padding: 12px 40px;
+                background: rgba(255, 102, 0, 0.2); border: 1px solid rgba(255, 102, 0, 0.4);
+                border-radius: 8px; color: #FF9944; font-family: monospace; font-size: 16px;
+                letter-spacing: 3px; cursor: pointer; -webkit-tap-highlight-color: transparent;
+            ">START GAME</button>
             <label id="dev-mode-label" style="
                 display: flex; align-items: center; gap: 6px;
                 color: #555; font-family: monospace; font-size: 11px;
@@ -502,6 +508,20 @@ class MenuScene extends Phaser.Scene {
             const input = document.getElementById('player-name-input');
             const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
             if (input && !isMobile) input.focus();
+
+            // Wire up HTML start button
+            const htmlStartBtn = document.getElementById('html-start-btn');
+            if (htmlStartBtn) {
+                htmlStartBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (this._startGame) this._startGame();
+                });
+                htmlStartBtn.addEventListener('touchend', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (this._startGame) this._startGame();
+                });
+            }
 
             // Wire up multiplayer buttons (must wait for DOM)
             const createBtn = document.getElementById('btn-create-room');
