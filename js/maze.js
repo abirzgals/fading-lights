@@ -305,6 +305,9 @@ class MazeScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ONE', () => {
             if (!window._debugMode) return;
             if (typeof audioEngine !== 'undefined') audioEngine.stopLoop?.('music_lvl2', 400);
+            if (typeof network !== 'undefined' && network.peerCount > 0) {
+                network.broadcastReliable({ t: 'lv', scene: 'GameScene' });
+            }
             this.scene.start('GameScene');
         });
         this.input.on('pointerdown', (ptr) => {
