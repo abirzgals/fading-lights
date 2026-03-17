@@ -80,6 +80,8 @@ class MazeScene extends Phaser.Scene {
         // Shadow graphics — player is the light source in the maze
         this._shadowGfx = this.add.graphics().setDepth(1);
         this._shadowTimer = 0;
+        // Debug overlay graphics
+        this._debugGfx = this.add.graphics().setDepth(4999);
 
         // --- Treasure (last room centre) ---
         const er       = rooms[rooms.length - 1];
@@ -502,6 +504,9 @@ class MazeScene extends Phaser.Scene {
         this._updateWeaponPos();
         this._drawEnemyHpBars();
 
+        // --- Debug overlay (shared with overworld) ---
+        drawEnemyDebug(this, this._debugGfx, this.mazeEnemies.children.entries, {});
+
         // --- Treasure hint ---
         const distT = Phaser.Math.Distance.Between(p.x, p.y, this.treasure.x, this.treasure.y);
         this._treasureHint.setAlpha(distT < 58 ? 1 : 0);
@@ -542,6 +547,7 @@ class MazeScene extends Phaser.Scene {
                 const spd   = e.getData('spd');
                 e.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
                 e.setFlipX(p.x < e.x);
+                e.setData('aiState', dist < 16 ? 'ATK PLAYER' : 'CHASE');
 
                 // Melee attack
                 if (dist < 16 && ecd <= 0) {
@@ -554,6 +560,7 @@ class MazeScene extends Phaser.Scene {
                 }
             } else {
                 // Wander inside room
+                e.setData('aiState', 'WANDER');
                 let wt = (e.getData('wanderTimer') || 0) - dt;
                 if (wt <= 0) {
                     e.setData('wanderAngle', Math.random() * Math.PI * 2);

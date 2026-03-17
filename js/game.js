@@ -2249,100 +2249,23 @@ class GameScene extends Phaser.Scene {
         this._groqPanel.style.display = 'flex';
         this._refreshGroqPanel();
 
-        // Draw walk grid (blocked tiles) in camera view
-        const cam = this.cameras.main;
-        const T = CONFIG.TILE_SIZE;
-        const startTX = Math.max(0, Math.floor((cam.scrollX - 32) / T));
-        const startTY = Math.max(0, Math.floor((cam.scrollY - 32) / T));
-        const endTX = Math.min(this._gridSize - 1, Math.ceil((cam.scrollX + cam.width + 32) / T));
-        const endTY = Math.min(this._gridSize - 1, Math.ceil((cam.scrollY + cam.height + 32) / T));
+        // Shared enemy debug: walk grid, paths, AI states, velocity lines
+        drawEnemyDebug(this, g, this.enemies.children.entries, {
+            walkGrid: this._walkGrid,
+            gridSize: this._gridSize,
+        });
 
-        g.fillStyle(0xFF0000, 0.15);
-        for (let ty = startTY; ty <= endTY; ty++) {
-            for (let tx = startTX; tx <= endTX; tx++) {
-                if (this._walkGrid[ty * this._gridSize + tx] === 0) {
-                    g.fillRect(tx * T, ty * T, T, T);
-                }
-            }
-        }
-
-        // Draw enemy paths
+        // Groq enemy labels (game-specific)
         for (const enemy of this.enemies.children.entries) {
-            if (!enemy.active) continue;
-
-            const path = enemy.getData('_aiPath');
-            const pathIdx = enemy.getData('_aiPathIdx') || 0;
-            const raidPath = enemy.getData('raidPath');
-            const raidPathIdx = enemy.getData('raidPathIdx') || 0;
-
-            // Draw A* path (green)
-            if (path && pathIdx < path.length) {
-                g.lineStyle(2, 0x00FF00, 0.7);
-                g.beginPath();
-                g.moveTo(enemy.x, enemy.y);
-                for (let i = pathIdx; i < path.length; i++) {
-                    g.lineTo(path[i].x, path[i].y);
-                }
-                g.strokePath();
-
-                // Waypoint dots
-                g.fillStyle(0x00FF00, 0.8);
-                for (let i = pathIdx; i < path.length; i++) {
-                    g.fillCircle(path[i].x, path[i].y, 3);
-                }
-            }
-
-            // Draw march path (orange) — lair enemies following road
-            const marchPath = enemy.getData('marchPath');
-            const marchIdx = enemy.getData('marchPathIdx') || 0;
-            if (marchPath && marchIdx < marchPath.length) {
-                g.lineStyle(2, 0xFF8800, 0.6);
-                g.beginPath();
-                g.moveTo(enemy.x, enemy.y);
-                for (let i = marchIdx; i < marchPath.length; i++) {
-                    g.lineTo(marchPath[i].x, marchPath[i].y);
-                }
-                g.strokePath();
-                g.fillStyle(0xFF8800, 0.8);
-                for (let i = marchIdx; i < marchPath.length; i++) {
-                    g.fillCircle(marchPath[i].x, marchPath[i].y, 3);
-                }
-            }
-
-            // Draw raid path (yellow)
-            if (raidPath && raidPathIdx < raidPath.length) {
-                g.lineStyle(2, 0xFFFF00, 0.5);
-                g.beginPath();
-                g.moveTo(enemy.x, enemy.y);
-                for (let i = raidPathIdx; i < raidPath.length; i++) {
-                    g.lineTo(raidPath[i].x, raidPath[i].y);
-                }
-                g.strokePath();
-            }
-
-            // Groq enemy — show reasoning + current step above the enemy
-            if (enemy.getData('fromGroq')) {
-                const label = enemy.getData('groqLabel');
-                if (label) {
-                    const reasoning = enemy.getData('groqReasoning') || '';
-                    const step = enemy.getData('groqCurrentStep') || enemy.getData('groqState') || '';
-                    const truncated = reasoning.length > 60 ? reasoning.slice(0, 57) + '…' : reasoning;
-                    label.setText(`[${step}]\n${truncated}`);
-                    label.setPosition(enemy.x, enemy.y - 20);
-                    label.setVisible(true);
-                }
-            }
-
-            // Direction line (cyan) — shows current velocity direction
-            const vx = enemy.body ? enemy.body.velocity.x : 0;
-            const vy = enemy.body ? enemy.body.velocity.y : 0;
-            if (Math.abs(vx) > 1 || Math.abs(vy) > 1) {
-                const len = Math.hypot(vx, vy);
-                g.lineStyle(1, 0x00FFFF, 0.6);
-                g.beginPath();
-                g.moveTo(enemy.x, enemy.y);
-                g.lineTo(enemy.x + (vx / len) * 30, enemy.y + (vy / len) * 30);
-                g.strokePath();
+            if (!enemy.active || !enemy.getData('fromGroq')) continue;
+            const label = enemy.getData('groqLabel');
+            if (label) {
+                const reasoning = enemy.getData('groqReasoning') || '';
+                const step = enemy.getData('groqCurrentStep') || enemy.getData('groqState') || '';
+                const truncated = reasoning.length > 60 ? reasoning.slice(0, 57) + '…' : reasoning;
+                label.setText(`[${step}]\n${truncated}`);
+                label.setPosition(enemy.x, enemy.y - 20);
+                label.setVisible(true);
             }
         }
 
