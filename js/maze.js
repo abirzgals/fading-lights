@@ -83,6 +83,7 @@ class MazeScene extends Phaser.Scene {
         }
 
         // --- Dungeon decorations (bones, torches scattered in rooms) ---
+        this._wallTorches = []; // stored as light sources
         if (hasDungeonTileset) {
             const hasBones = this.textures.exists('dungeon_bones');
             const hasTorch = this.textures.exists('dungeon_torch');
@@ -94,11 +95,24 @@ class MazeScene extends Phaser.Scene {
                     const by = (rm.y + 1 + Math.floor(Math.random() * (rm.h - 2))) * TILE + 16;
                     this.add.image(bx, by, 'dungeon_bones').setDepth(1).setAlpha(0.7);
                 }
-                // Place torches near room entrances/walls (~40% of rooms)
+                // Place torches near room walls (~40% of rooms)
                 if (hasTorch && Math.random() < 0.4) {
                     const tx = rm.x * TILE + 16;
                     const ty = rm.y * TILE + 16;
                     this.add.image(tx, ty, 'dungeon_torch').setDepth(3);
+                    this._wallTorches.push({ x: tx, y: ty });
+                    // Fire particle emitter on torch
+                    this.add.particles(tx, ty - 6, 'particle', {
+                        speed: { min: 8, max: 25 },
+                        angle: { min: 255, max: 285 },
+                        lifespan: { min: 300, max: 600 },
+                        scale: { start: 0.4, end: 0.05 },
+                        alpha: { start: 0.8, end: 0 },
+                        tint: [0xFF4400, 0xFF6600, 0xFFAA00],
+                        blendMode: 'ADD',
+                        frequency: 80,
+                        quantity: 1,
+                    }).setDepth(4);
                 }
             }
         }
@@ -438,6 +452,23 @@ class MazeScene extends Phaser.Scene {
         ctx.arc(px, py, fr, 0, Math.PI * 2);
         ctx.fill();
 
+        // Wall torches — smaller light sources
+        for (const torch of this._wallTorches) {
+            const { x: tlx, y: tly } = this._worldToScreen(torch.x, torch.y);
+            // Skip off-screen torches
+            if (tlx < -100 || tlx > gameW + 100 || tly < -100 || tly > gameH + 100) continue;
+            const tFlicker = 1.0 + Math.sin(this.time.now * 0.012 + torch.x) * 0.06;
+            const tr = 65 * tFlicker;
+            const tGrad = ctx.createRadialGradient(tlx, tly, 0, tlx, tly, tr);
+            tGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
+            tGrad.addColorStop(0.5, 'rgba(0,0,0,0.4)');
+            tGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = tGrad;
+            ctx.beginPath();
+            ctx.arc(tlx, tly, tr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         // Warm color tint in lit area
         ctx.globalCompositeOperation = 'source-atop';
         const tg = ctx.createRadialGradient(px, py, 0, px, py, fr);
@@ -448,6 +479,21 @@ class MazeScene extends Phaser.Scene {
         ctx.beginPath();
         ctx.arc(px, py, fr, 0, Math.PI * 2);
         ctx.fill();
+
+        // Warm tint for wall torches
+        for (const torch of this._wallTorches) {
+            const { x: tlx, y: tly } = this._worldToScreen(torch.x, torch.y);
+            if (tlx < -100 || tlx > gameW + 100 || tly < -100 || tly > gameH + 100) continue;
+            const tr = 65;
+            const ttg = ctx.createRadialGradient(tlx, tly, 0, tlx, tly, tr);
+            ttg.addColorStop(0, 'rgba(255, 120, 40, 0.18)');
+            ttg.addColorStop(0.5, 'rgba(255, 80, 20, 0.08)');
+            ttg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = ttg;
+            ctx.beginPath();
+            ctx.arc(tlx, tly, tr, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // Copy to Phaser texture
         this._fogTexture.context.clearRect(0, 0, gameW, gameH);
