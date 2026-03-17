@@ -29,6 +29,7 @@ const AUDIO_CONFIG = {
     // Loops
     menu_music:   { file: 'audio/menu_music.mp3',   volume: 0.3,  loop: true },
     music:        { file: 'audio/music.mp3',        volume: 0.25, loop: true },
+    music_lvl2:   { file: 'audio/music_lvl2.mp3',   volume: 0.25, loop: true },
     fire_crackle: { file: 'audio/fire_crackle.mp3', volume: 0.4,  loop: true },
     footsteps:    { file: 'audio/footsteps.mp3',    volume: 0.3,  loop: true },
     ambient:      { file: 'audio/ambient.mp3',      volume: 0.2,  loop: true },

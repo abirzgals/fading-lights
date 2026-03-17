@@ -11,6 +11,11 @@ class MazeScene extends Phaser.Scene {
     // ----------------------------------------------------------
     create() {
         this._done = false;
+        // Start level 2 music
+        if (typeof audioEngine !== 'undefined') {
+            audioEngine.stopLoop?.('music', 400);
+            audioEngine.startLoop?.('music_lvl2', 1500);
+        }
 
         const TILE   = 32;
         const GRID_W = 68, GRID_H = 68;
@@ -122,6 +127,7 @@ class MazeScene extends Phaser.Scene {
         // Dev: press 1 to return to level 1
         this.input.keyboard.on('keydown-ONE', () => {
             if (!window._debugMode) return;
+            if (typeof audioEngine !== 'undefined') audioEngine.stopLoop?.('music_lvl2', 400);
             this.scene.start('GameScene');
         });
         this.input.on('pointerdown', (ptr) => {
@@ -785,6 +791,7 @@ class MazeScene extends Phaser.Scene {
                 `${this._killCount} creatures slain · Survived ${Math.floor(gameState.time)}s`;
             gs.style.display = 'flex';
             if (typeof audioEngine !== 'undefined') {
+                audioEngine.stopLoop?.('music_lvl2', 500);
                 audioEngine.stopLoop?.('music', 500);
                 audioEngine.stopLoop?.('ambient', 500);
             }
