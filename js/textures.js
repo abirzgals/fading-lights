@@ -33,26 +33,6 @@ function getPlayerTextureKey(color) {
 function generateTextures(scene) {
     const g = scene.make.graphics({ add: false });
 
-    // Extract ground tiles from pixel art tileset spritesheet
-    if (scene.textures.exists('ground_tileset')) {
-        const tileset = scene.textures.get('ground_tileset');
-        // Frame 6 = pure grass (all-lower corners), Frame 12 = pure dirt (all-upper corners)
-        const extractFrame = (frameIdx, key) => {
-            const frame = tileset.get(frameIdx);
-            const canvas = scene.textures.createCanvas(key, 32, 32);
-            canvas.context.drawImage(frame.source.image,
-                frame.cutX, frame.cutY, 32, 32, 0, 0, 32, 32);
-            canvas.refresh();
-        };
-        extractFrame(6, 'ground_grass');
-        extractFrame(12, 'ground_dirt');
-        // Extract a few transition frames for road edges
-        extractFrame(3, 'ground_edge0');   // wang_12: upper top, lower bottom
-        extractFrame(9, 'ground_edge1');   // wang_3: lower top, upper bottom
-        extractFrame(5, 'ground_edge2');   // wang_5: upper-right, lower-left
-        extractFrame(1, 'ground_edge3');   // wang_10: upper-left, lower-right
-    }
-
     // Ground tiles
     for (let i = 0; i < 4; i++) {
         g.clear();

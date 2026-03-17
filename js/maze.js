@@ -351,12 +351,18 @@ class MazeScene extends Phaser.Scene {
             p.facing = { x: Math.sign(vx), y: Math.sign(vy) };
             if (this._hasPixelArtPlayer) {
                 const dir = facingToDirection(p.facing.x, p.facing.y);
-                if (dir !== p._lastDir) {
+                const animKey = 'player_walk_' + dir;
+                if (this.anims.exists(animKey)) {
+                    if (p.anims.currentAnim?.key !== animKey) p.play(animKey);
+                } else if (dir !== p._lastDir) {
                     p.setTexture('player_' + dir);
-                    p._lastDir = dir;
-                    p.setFlipX(false);
                 }
+                p._lastDir = dir;
+                p.setFlipX(false);
             }
+        } else if (this._hasPixelArtPlayer) {
+            if (p.anims.isPlaying) p.anims.stop();
+            p.setTexture('player_' + (p._lastDir || 'south'));
         }
 
         // Attack cooldown

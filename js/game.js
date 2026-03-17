@@ -19,8 +19,7 @@ class GameScene extends Phaser.Scene {
         // --- Ground (covers full world using tileSprite for performance) ---
         const centerTile = Math.floor(CONFIG.WORLD_TILES / 2);
         const worldPx = CONFIG.WORLD_TILES * CONFIG.TILE_SIZE;
-        const groundKey = this.textures.exists('ground_grass') ? 'ground_grass' : 'ground0';
-        this.groundTile = this.add.tileSprite(0, 0, worldPx, worldPx, groundKey)
+        this.groundTile = this.add.tileSprite(0, 0, worldPx, worldPx, 'ground0')
             .setOrigin(0, 0)
             .setDepth(-1);
 
@@ -28,7 +27,7 @@ class GameScene extends Phaser.Scene {
         this._hasPixelArtPlayer = this.textures.exists('player_south');
         this._hasPixelArtStalker = this.textures.exists('stalker_south');
         this._hasPixelArtTree = this.textures.exists('dark_tree');
-        this._hasPixelArtGround = this.textures.exists('ground_dirt');
+        this._hasPixelArtGround = this.textures.exists('ground_tileset');
 
         // --- Resource Groups ---
         this.trees = this.physics.add.staticGroup();
@@ -662,15 +661,22 @@ class GameScene extends Phaser.Scene {
                 }
             }
             if (neighbors >= 5) {
-                // Inner road tile
+                // Inner road tile — use tileset frame 12 (pure dirt) or procedural
                 const variant = (tx * 7 + ty * 13) % 4;
-                const roadKey = this._hasPixelArtGround ? 'ground_dirt' : 'road' + variant;
-                this.add.image(wx + 16, wy + 16, roadKey).setDepth(0);
+                if (this._hasPixelArtGround) {
+                    this.add.image(wx + 16, wy + 16, 'ground_tileset', 12).setDepth(0);
+                } else {
+                    this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+                }
             } else {
-                // Edge road tile (grass-dirt transition)
+                // Edge road tile — use tileset transition frames or procedural
                 const variant = (tx * 11 + ty * 3) % 4;
-                const edgeKey = this._hasPixelArtGround ? 'ground_edge' + variant : 'road_edge' + variant;
-                this.add.image(wx + 16, wy + 16, edgeKey).setDepth(0);
+                if (this._hasPixelArtGround) {
+                    const edgeFrames = [3, 9, 5, 1];
+                    this.add.image(wx + 16, wy + 16, 'ground_tileset', edgeFrames[variant]).setDepth(0);
+                } else {
+                    this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+                }
             }
         }
 
@@ -714,7 +720,7 @@ class GameScene extends Phaser.Scene {
                 tree.setDepth(3);
                 if (this._hasPixelArtTree) {
                     tree.body.setSize(22, 28);
-                    tree.body.setOffset(13, 20);
+                    tree.body.setOffset(13, 36);
                 } else {
                     tree.body.setSize(22, 28);
                     tree.body.setOffset(5, 22);
@@ -1033,12 +1039,19 @@ class GameScene extends Phaser.Scene {
             }
             if (neighbors >= 5) {
                 const variant = (ptx * 7 + pty * 13) % 4;
-                const roadKey2 = this._hasPixelArtGround ? 'ground_dirt' : 'road' + variant;
-                this.add.image(wx + 16, wy + 16, roadKey2).setDepth(0);
+                if (this._hasPixelArtGround) {
+                    this.add.image(wx + 16, wy + 16, 'ground_tileset', 12).setDepth(0);
+                } else {
+                    this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+                }
             } else if (neighbors >= 2) {
                 const variant = (ptx * 11 + pty * 3) % 4;
-                const edgeKey2 = this._hasPixelArtGround ? 'ground_edge' + variant : 'road_edge' + variant;
-                this.add.image(wx + 16, wy + 16, edgeKey2).setDepth(0);
+                if (this._hasPixelArtGround) {
+                    const edgeFrames = [3, 9, 5, 1];
+                    this.add.image(wx + 16, wy + 16, 'ground_tileset', edgeFrames[variant]).setDepth(0);
+                } else {
+                    this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+                }
             }
         }
 
@@ -4199,14 +4212,23 @@ class GameScene extends Phaser.Scene {
                 }
             }
 
-            // Update directional texture for pixel art stalker enemies
+            // Update directional texture/animation for pixel art stalker enemies
             if (this._hasPixelArtStalker && enemy.getData('type') === 'SHADOW_STALKER') {
                 const vx = enemy.body ? enemy.body.velocity.x : 0;
                 const vy = enemy.body ? enemy.body.velocity.y : 0;
                 if (vx !== 0 || vy !== 0) {
                     const dir = facingToDirection(vx, vy);
-                    enemy.setTexture('stalker_' + dir);
+                    const animKey = 'stalker_walk_' + dir;
+                    if (this.anims.exists(animKey)) {
+                        if (!enemy.anims || enemy.anims.currentAnim?.key !== animKey) {
+                            enemy.play(animKey);
+                        }
+                    } else {
+                        enemy.setTexture('stalker_' + dir);
+                    }
                     enemy.setFlipX(false);
+                } else {
+                    if (enemy.anims && enemy.anims.isPlaying) enemy.anims.stop();
                 }
             }
         }
@@ -4215,11 +4237,20 @@ class GameScene extends Phaser.Scene {
     _updatePlayerDir(p) {
         if (this._hasPixelArtPlayer) {
             const dir = facingToDirection(p.facing.x, p.facing.y);
-            if (dir !== p._lastDir) {
-                p.setTexture('player_' + dir);
-                p._lastDir = dir;
-                p.setFlipX(false);
+            const isMoving = p.body && (p.body.velocity.x !== 0 || p.body.velocity.y !== 0);
+            const animKey = 'player_walk_' + dir;
+            if (isMoving && this.anims.exists(animKey)) {
+                if (p.anims.currentAnim?.key !== animKey) {
+                    p.play(animKey);
+                }
+            } else {
+                if (p.anims.isPlaying) p.anims.stop();
+                if (dir !== p._lastDir) {
+                    p.setTexture('player_' + dir);
+                }
             }
+            p._lastDir = dir;
+            p.setFlipX(false);
         } else {
             if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
         }

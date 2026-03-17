@@ -15,6 +15,13 @@ class MenuScene extends Phaser.Scene {
         directions.forEach(dir => {
             this.load.image('player_' + dir, 'assets/pixelart/survivor-player/rotations/' + dir + '.png');
             this.load.image('stalker_' + dir, 'assets/pixelart/shadow-stalker/rotations/' + dir + '.png');
+            // Walk animation spritesheets (6 frames, 48x48 each)
+            this.load.spritesheet('player_walk_' + dir,
+                'assets/pixelart/spritesheets/player_walk_' + dir + '.png',
+                { frameWidth: 48, frameHeight: 48 });
+            this.load.spritesheet('stalker_walk_' + dir,
+                'assets/pixelart/spritesheets/stalker_walk_' + dir + '.png',
+                { frameWidth: 48, frameHeight: 48 });
         });
         this.load.image('dark_tree', 'assets/pixelart/dark-tree.png');
         this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
@@ -24,6 +31,27 @@ class MenuScene extends Phaser.Scene {
 
     create() {
         generateTextures(this);
+
+        // Create walk animations for pixel art characters
+        const directions = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        directions.forEach(dir => {
+            if (this.textures.exists('player_walk_' + dir)) {
+                this.anims.create({
+                    key: 'player_walk_' + dir,
+                    frames: this.anims.generateFrameNumbers('player_walk_' + dir, { start: 0, end: 5 }),
+                    frameRate: 10,
+                    repeat: -1,
+                });
+            }
+            if (this.textures.exists('stalker_walk_' + dir)) {
+                this.anims.create({
+                    key: 'stalker_walk_' + dir,
+                    frames: this.anims.generateFrameNumbers('stalker_walk_' + dir, { start: 0, end: 5 }),
+                    frameRate: 10,
+                    repeat: -1,
+                });
+            }
+        });
 
         const w = this.scale.width;
         const h = this.scale.height;
