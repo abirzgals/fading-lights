@@ -2,6 +2,7 @@ class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
 
     create() {
+        window._currentScene = 'GameScene';
         // Show HUD, restore all parts (maze may have hidden some)
         showFullHUD();
         document.getElementById('game-over-screen').style.display = 'none';
@@ -319,6 +320,7 @@ class GameScene extends Phaser.Scene {
             audioEngine.stopLoop('ambient', 400);
             audioEngine.stopLoop('fire_crackle', 300);
             audioEngine.stopFootsteps();
+            if (network.peerCount > 0) network.broadcastReliable({ t: 'lv', scene: 'MazeScene' });
             this.scene.start('MazeScene');
         });
         // --- Spawn Shadow Mind (Groq AI enemy) for testing ---
@@ -1675,6 +1677,10 @@ class GameScene extends Phaser.Scene {
                 audioEngine.stopLoop('ambient', 400);
                 audioEngine.stopLoop('fire_crackle', 300);
                 audioEngine.stopFootsteps();
+                // Broadcast level change to all peers
+                if (network.peerCount > 0) {
+                    network.broadcastReliable({ t: 'lv', scene: 'MazeScene' });
+                }
                 this.scene.start('MazeScene');
             }, 500);
         };
@@ -5726,6 +5732,20 @@ class GameScene extends Phaser.Scene {
         };
 
         // Periodic full-world sync from host
+        // Level sync — if another player changes level, follow them
+        network.onLevelChange = (sceneName) => {
+            if (sceneName === 'MazeScene' && window._currentScene !== 'MazeScene') {
+                gameState.hasTorch = true;
+                audioEngine.stopLoop('music', 400);
+                audioEngine.stopLoop('ambient', 400);
+                audioEngine.stopLoop('fire_crackle', 300);
+                audioEngine.stopFootsteps();
+                scene.scene.start('MazeScene');
+            } else if (sceneName === 'GameScene' && window._currentScene !== 'GameScene') {
+                scene.scene.start('GameScene');
+            }
+        };
+
         network.onFullSync = (msg) => {
             scene._handleFullSync(msg);
         };

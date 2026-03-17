@@ -11,6 +11,33 @@ class MazeScene extends Phaser.Scene {
     // ----------------------------------------------------------
     create() {
         this._done = false;
+        window._currentScene = 'MazeScene';
+
+        // Level sync handler for maze
+        if (typeof network !== 'undefined') {
+            network.onLevelChange = (sceneName) => {
+                if (sceneName === 'GameScene' && window._currentScene !== 'GameScene') {
+                    if (typeof audioEngine !== 'undefined') audioEngine.stopLoop?.('music_lvl2', 400);
+                    this.scene.start('GameScene');
+                }
+            };
+            // Boss death sync
+            network.onFullSync = (msg) => {
+                if (msg.bossDefeated && this._bossAlive && this._boss) {
+                    this._bossAlive = false;
+                    if (this._boss.active) this._boss.destroy();
+                    if (this._bossAura) { this._bossAura.destroy(); this._bossAura = null; }
+                    this.treasure.setAlpha(1);
+                    if (this._chestGlow) { this._chestGlow.setTint(0xFFAA00); this._chestGlow.setAlpha(0.55); }
+                    this._treasureHint.setText('[E] Open the Chest');
+                    this._treasureHint.setFill('#FFD700');
+                }
+                if (msg.treasureCollected && !this._done) {
+                    this._collectTreasure();
+                }
+            };
+        }
+
         // Start level 2 music
         if (typeof audioEngine !== 'undefined') {
             audioEngine.stopLoop?.('music', 400);
@@ -1056,6 +1083,11 @@ class MazeScene extends Phaser.Scene {
         this._bossAlive = false;
         if (this._bossAura) { this._bossAura.destroy(); this._bossAura = null; }
 
+        // Broadcast boss death to all peers
+        if (typeof network !== 'undefined' && network.peerCount > 0) {
+            network.broadcastReliable({ t: 'fs', bossDefeated: true });
+        }
+
         // Dramatic death effect
         this.cameras.main.flash(600, 100, 0, 200);
         this.cameras.main.shake(400, 0.02);
@@ -1441,9 +1473,15 @@ class MazeScene extends Phaser.Scene {
     }
 
     _collectTreasure() {
+        if (this._done) return;
         this._done = true;
         this.player.setVelocity(0, 0);
         if (typeof mobileControls !== 'undefined') mobileControls.hide();
+
+        // Broadcast treasure collection to all peers
+        if (typeof network !== 'undefined' && network.peerCount > 0) {
+            network.broadcastReliable({ t: 'fs', treasureCollected: true });
+        }
         this.treasure.destroy();
         this._treasureHint.destroy();
 

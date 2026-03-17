@@ -232,6 +232,7 @@ const network = {
                         seed: this.worldSeed,
                         hostName: this.playerName,
                         hostColor: this.playerColor,
+                        currentScene: window._currentScene || 'GameScene',
                         ...worldState,
                     });
                 }
@@ -291,6 +292,13 @@ const network = {
                     peer.name = msg.hostName;
                     peer.color = msg.hostColor || peer.color;
                     if (this.onPeerJoined) this.onPeerJoined(fromPeerId, peer.name, peer.color);
+                }
+                // If host is on a different level, switch to it
+                if (msg.currentScene && this.onLevelChange) {
+                    const activeScene = window._currentScene || 'GameScene';
+                    if (msg.currentScene !== activeScene) {
+                        this.onLevelChange(msg.currentScene);
+                    }
                 }
                 if (this.onWorldSync) this.onWorldSync(msg);
                 break;
@@ -377,6 +385,10 @@ const network = {
 
             case 'fs': // full state sync (periodic reconciliation)
                 if (this.onFullSync) this.onFullSync(msg);
+                break;
+
+            case 'lv': // level/scene change sync
+                if (this.onLevelChange) this.onLevelChange(msg.scene);
                 break;
 
             case 'fsr': // full sync request from client
