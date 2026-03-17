@@ -792,7 +792,7 @@ class GameScene extends Phaser.Scene {
             const dist = 70 + rng() * 50;
             const stx = Math.round(cx + Math.cos(angle) * (dist / T));
             const sty = Math.round(cy + Math.sin(angle) * (dist / T));
-            if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+            if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty)) continue;
             const sx = stx * T + 16;
             const sy = sty * T + 16;
             const stone = this.stones.create(sx, sy, this._stoneKey);
@@ -814,7 +814,7 @@ class GameScene extends Phaser.Scene {
             for (let s = 0; s < count; s++) {
                 const stx = scx + Math.floor(rng() * 3 - 1);
                 const sty = scy + Math.floor(rng() * 3 - 1);
-                if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+                if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty)) continue;
                 const sx = stx * T + 16;
                 const sy = sty * T + 16;
                 const stone = this.stones.create(sx, sy, this._stoneKey);
@@ -837,7 +837,7 @@ class GameScene extends Phaser.Scene {
             for (let m = 0; m < count; m++) {
                 const mtx = mx + Math.floor(rng() * 3 - 1);
                 const mty = my + Math.floor(rng() * 3 - 1);
-                if (this._occupiedTiles.has(`${mtx},${mty}`)) continue;
+                if (this._occupiedTiles.has(`${mtx},${mty}`) || isPath(mtx, mty)) continue;
                 const px = mtx * T + 16;
                 const py = mty * T + 16;
                 const ore = this.metals.create(px, py, this._metalKey);
