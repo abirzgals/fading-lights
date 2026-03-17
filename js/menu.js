@@ -22,6 +22,13 @@ class MenuScene extends Phaser.Scene {
             this.load.spritesheet('stalker_walk_' + dir,
                 'assets/pixelart/spritesheets/stalker_walk_' + dir + '.png',
                 { frameWidth: 48, frameHeight: 48 });
+            // Attack animation spritesheets
+            this.load.spritesheet('player_melee_' + dir,
+                'assets/pixelart/spritesheets/player_melee_' + dir + '.png',
+                { frameWidth: 48, frameHeight: 48 });
+            this.load.spritesheet('player_ranged_' + dir,
+                'assets/pixelart/spritesheets/player_ranged_' + dir + '.png',
+                { frameWidth: 48, frameHeight: 48 });
         });
         this.load.image('dark_tree', 'assets/pixelart/dark-tree.png');
         this.load.image('tree_pine', 'assets/pixelart/tree_pine.png');
@@ -57,6 +64,22 @@ class MenuScene extends Phaser.Scene {
                     frames: this.anims.generateFrameNumbers('stalker_walk_' + dir, { start: 0, end: 5 }),
                     frameRate: 10,
                     repeat: -1,
+                });
+            }
+            if (this.textures.exists('player_melee_' + dir)) {
+                this.anims.create({
+                    key: 'player_melee_' + dir,
+                    frames: this.anims.generateFrameNumbers('player_melee_' + dir, { start: 0, end: 2 }),
+                    frameRate: 12,
+                    repeat: 0,
+                });
+            }
+            if (this.textures.exists('player_ranged_' + dir)) {
+                this.anims.create({
+                    key: 'player_ranged_' + dir,
+                    frames: this.anims.generateFrameNumbers('player_ranged_' + dir, { start: 0, end: 6 }),
+                    frameRate: 14,
+                    repeat: 0,
                 });
             }
         });

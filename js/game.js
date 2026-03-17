@@ -2576,6 +2576,23 @@ class GameScene extends Phaser.Scene {
         p.attackCooldown = weapon.speed;
         audioEngine.playAttack();
 
+        // Play attack animation (melee jab or ranged throw)
+        if (this._hasPixelArtPlayer) {
+            const dir = facingToDirection(p.facing.x, p.facing.y);
+            const attackType = weapon.attackType || 'swing';
+            const atkAnimKey = attackType === 'shoot'
+                ? 'player_ranged_' + dir
+                : 'player_melee_' + dir;
+            if (this.anims.exists(atkAnimKey)) {
+                p.play(atkAnimKey);
+                // Return to idle after animation completes
+                p.once('animationcomplete', () => {
+                    p.setTexture('player_' + dir);
+                    p._lastDir = dir;
+                });
+            }
+        }
+
         // Hit radius — narrow weapons (e.g. bow) use hitRadius, others use range
         const hitR = weapon.hitRadius || weapon.range;
 

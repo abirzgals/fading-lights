@@ -516,6 +516,20 @@ class MazeScene extends Phaser.Scene {
         const weapon = WEAPONS[gameState.weapon] || { damage: 18, range: 52, speed: 500, arcDeg: 120 };
         p.attackCooldown = weapon.speed;
 
+        // Play attack animation
+        if (this._hasPixelArtPlayer) {
+            const dir = facingToDirection(p.facing.x, p.facing.y);
+            const atkType = weapon.attackType || 'swing';
+            const atkKey = atkType === 'shoot' ? 'player_ranged_' + dir : 'player_melee_' + dir;
+            if (this.anims.exists(atkKey)) {
+                p.play(atkKey);
+                p.once('animationcomplete', () => {
+                    p.setTexture('player_' + dir);
+                    p._lastDir = dir;
+                });
+            }
+        }
+
         const facingAngle = Math.atan2(p.facing.y, p.facing.x);
         const arcRad      = (weapon.arcDeg ?? 120) * Math.PI / 180;
         const ax = p.x + p.facing.x * weapon.range;
