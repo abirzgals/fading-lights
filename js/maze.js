@@ -905,36 +905,66 @@ class MazeScene extends Phaser.Scene {
         const p = this.player;
         const angle = Phaser.Math.Angle.Between(boss.x, boss.y, p.x, p.y);
 
-        // Spell 1: Dark orb projectile barrage (3 orbs in a spread)
-        const spread = 0.3;
+        // Dark orb barrage — 3 slow orbs with trailing sparks
+        const spread = 0.35;
         for (let i = -1; i <= 1; i++) {
             const a = angle + i * spread;
-            const orb = this.add.image(boss.x, boss.y, 'proj_magic').setDepth(10).setScale(1.5).setBlendMode('ADD');
-            const tx = boss.x + Math.cos(a) * 200;
-            const ty = boss.y + Math.sin(a) * 200;
+            const orb = this.add.image(boss.x, boss.y, 'proj_magic').setDepth(10).setScale(2).setBlendMode('ADD').setTint(0xAA44FF);
+            // Outer glow ring around orb
+            const orbGlow = this.add.image(boss.x, boss.y, 'glow')
+                .setDepth(9).setScale(1.8).setAlpha(0.4).setTint(0x8800FF).setBlendMode('ADD');
+            // Trailing spark particles
+            const trail = this.add.particles(boss.x, boss.y, 'particle', {
+                speed: { min: 10, max: 30 },
+                lifespan: { min: 200, max: 500 },
+                scale: { start: 0.5, end: 0 },
+                alpha: { start: 0.8, end: 0 },
+                tint: [0xAA44FF, 0xDD88FF, 0x6600CC, 0xFF66FF],
+                blendMode: 'ADD',
+                frequency: 30,
+                quantity: 2,
+            }).setDepth(9);
+
+            const tx = boss.x + Math.cos(a) * 220;
+            const ty = boss.y + Math.sin(a) * 220;
+            let hit = false;
             this.tweens.add({
-                targets: orb, x: tx, y: ty, alpha: 0.3, duration: 600,
+                targets: orb, x: tx, y: ty, alpha: 0.5, duration: 1200, // slow travel
                 onUpdate: () => {
-                    // Check hit
+                    if (hit) return;
+                    orbGlow.setPosition(orb.x, orb.y);
+                    trail.setPosition(orb.x, orb.y);
                     const d = Phaser.Math.Distance.Between(orb.x, orb.y, p.x, p.y);
-                    if (d < 16) {
+                    if (d < 18) {
+                        hit = true;
                         const dmg = damagePlayerShared(this, 15);
                         showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#BB44FF');
-                        this.cameras.main.flash(100, 60, 0, 80);
-                        orb.destroy();
+                        this.cameras.main.flash(120, 80, 0, 100);
+                        // Hit explosion
+                        this.add.particles(orb.x, orb.y, 'particle', {
+                            speed: { min: 30, max: 80 }, lifespan: 400,
+                            scale: { start: 0.6, end: 0 }, alpha: { start: 1, end: 0 },
+                            tint: [0xFF44FF, 0xAA00FF], blendMode: 'ADD',
+                            quantity: 12, emitting: false,
+                        }).explode(12);
+                        orb.destroy(); orbGlow.destroy(); trail.destroy();
                     }
                 },
                 onComplete: () => {
-                    // Impact effect
+                    if (hit) return;
+                    // Impact on ground
                     const imp = this.add.image(orb.x, orb.y, 'glow')
-                        .setDepth(10).setScale(1.5).setAlpha(0.6).setTint(0xAA44FF).setBlendMode('ADD');
-                    this.tweens.add({ targets: imp, scale: 3, alpha: 0, duration: 300, onComplete: () => imp.destroy() });
-                    orb.destroy();
+                        .setDepth(10).setScale(2).setAlpha(0.7).setTint(0xAA44FF).setBlendMode('ADD');
+                    this.tweens.add({ targets: imp, scale: 4, alpha: 0, duration: 400, onComplete: () => imp.destroy() });
+                    orb.destroy(); orbGlow.destroy(); trail.destroy();
                 },
             });
         }
 
-        // Visual: boss flashes during cast
+        // Boss cast visual — dark energy pulse
+        const castPulse = this.add.image(boss.x, boss.y, 'glow')
+            .setDepth(8).setScale(2).setAlpha(0.5).setTint(0x6600AA).setBlendMode('ADD');
+        this.tweens.add({ targets: castPulse, scale: 5, alpha: 0, duration: 500, onComplete: () => castPulse.destroy() });
         this.tweens.add({ targets: boss, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
     }
 

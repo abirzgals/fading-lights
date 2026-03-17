@@ -1040,21 +1040,29 @@ class GameScene extends Phaser.Scene {
                     roadWaypoints.push({ x: tpx * T + T / 2, y: tpy * T + T / 2 });
                     lastWpStep = s;
                 }
-                // Road width: 2 tiles
-                for (let ddx = -1; ddx <= 1; ddx++) {
-                    for (let ddy = -1; ddy <= 1; ddy++) {
-                        if (Math.abs(ddx) + Math.abs(ddy) <= 1) {
+                // Road width: 3 tiles (5x5 diamond = wide enough for enemies)
+                for (let ddx = -2; ddx <= 2; ddx++) {
+                    for (let ddy = -2; ddy <= 2; ddy++) {
+                        if (Math.abs(ddx) + Math.abs(ddy) <= 2) {
                             pathTiles.add(`${tpx + ddx},${tpy + ddy}`);
                         }
                     }
                 }
-                // Clear trees on the road
+                // Clear trees and stones on the wider road
                 for (const tree of [...this.trees.children.entries]) {
                     const ttx = Math.floor(tree.x / T);
                     const tty = Math.floor(tree.y / T);
-                    if (Math.abs(ttx - tpx) <= 1 && Math.abs(tty - tpy) <= 1) {
+                    if (Math.abs(ttx - tpx) <= 2 && Math.abs(tty - tpy) <= 2) {
                         this._occupiedTiles.delete(`${ttx},${tty}`);
                         tree.destroy();
+                    }
+                }
+                for (const stone of [...this.stones.children.entries]) {
+                    const stx = Math.floor(stone.x / T);
+                    const sty = Math.floor(stone.y / T);
+                    if (Math.abs(stx - tpx) <= 2 && Math.abs(sty - tpy) <= 2) {
+                        this._occupiedTiles.delete(`${stx},${sty}`);
+                        stone.destroy();
                     }
                 }
             }
@@ -4204,6 +4212,8 @@ class GameScene extends Phaser.Scene {
                 const buildings = [...this.buildingsGroup.children.entries];
                 for (const building of buildings) {
                     if (!building.active) continue;
+                    // Turrets are unbreakable
+                    if (building.getData('type') === 'TURRET') continue;
                     const d = Phaser.Math.Distance.Between(enemy.x, enemy.y, building.x, building.y);
                     if (d < 35) {
                         let bhp = building.getData('hp') - dmgVal;
@@ -4981,9 +4991,9 @@ class GameScene extends Phaser.Scene {
                 continue;
             }
 
-            // Hit buildings
+            // Hit buildings (turrets are unbreakable)
             for (const building of this.buildingsGroup.children.entries) {
-                if (!building.active) continue;
+                if (!building.active || building.getData('type') === 'TURRET') continue;
                 const d = Phaser.Math.Distance.Between(proj.x, proj.y, building.x, building.y);
                 if (d < 20) {
                     const dmg = proj.getData('damage');
@@ -6369,7 +6379,7 @@ class GameScene extends Phaser.Scene {
             }
 
             case 'DESTROY_BUILDING': {
-                const bList = [...this.buildingsGroup.children.entries].filter(b => b.active);
+                const bList = [...this.buildingsGroup.children.entries].filter(b => b.active && b.getData('type') !== 'TURRET');
                 const bldg = bList[step.idx];
                 if (!bldg || !bldg.active) return true; // already gone
 
