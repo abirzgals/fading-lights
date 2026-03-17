@@ -2452,18 +2452,22 @@ class GameScene extends Phaser.Scene {
         if (this._interactCooldown > 0) this._interactCooldown -= delta;
         const kbInteract = Phaser.Input.Keyboard.JustDown(this.cursors.interact);
         const mobileInteract = mobileControls.consumeInteract();
-        // Mobile auto-feed: when near a bonfire with wood, auto-interact
-        let mobileAutoFeed = false;
-        if (mobileControls.isMobile && gameState.resources.wood > 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
-            for (const b of this.bonfires) {
-                if (!b.getData('lit')) continue;
-                if (Phaser.Math.Distance.Between(p.x, p.y, b.x, b.y) < CONFIG.INTERACT_RADIUS) {
-                    mobileAutoFeed = true;
-                    break;
+        // Auto-feed bonfire: when near a lit bonfire with wood, feed automatically
+        if (gameState.resources.wood > 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
+            this._autoFeedTimer = (this._autoFeedTimer || 0) + dt;
+            if (this._autoFeedTimer >= 0.5) { // feed every 0.5s
+                this._autoFeedTimer = 0;
+                for (const b of this.bonfires) {
+                    if (!b.getData('lit') || b.getData('permanentlyLit')) continue;
+                    if (b.getData('fuel') >= b.getData('maxFuel')) continue;
+                    if (Phaser.Math.Distance.Between(p.x, p.y, b.x, b.y) < CONFIG.INTERACT_RADIUS) {
+                        this._feedBonfire(b);
+                        break;
+                    }
                 }
             }
         }
-        const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld || mobileAutoFeed;
+        const wantInteract = kbInteract || mobileInteract || this._mouseRightHeld;
         if (wantInteract && this._interactCooldown <= 0 && !gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
             if (this._mouseRightHeld) this.updateFacingToMouse(this.input.activePointer);
             this.playerInteract();
@@ -2878,92 +2882,6 @@ class GameScene extends Phaser.Scene {
         // Check build spots first
         if (this._tryBuildOnSpot()) return;
 
-        // Check bonfires to add fuel
-        for (const bonfire of this.bonfires) {
-            const dist = Phaser.Math.Distance.Between(p.x, p.y, bonfire.x, bonfire.y);
-            if (dist < CONFIG.INTERACT_RADIUS && gameState.resources.wood > 0) {
-                // Permanently lit lair cave cannot be fueled — it burns forever
-                if (bonfire.getData('permanentlyLit')) continue;
-                const fuel = bonfire.getData('fuel');
-                const maxFuel = bonfire.getData('maxFuel');
-                if (fuel < maxFuel) {
-                    const spend = Math.min(10, gameState.resources.wood, Math.ceil((maxFuel - fuel) / CONFIG.FUEL_PER_WOOD));
-                    gameState.resources.wood -= spend;
-                    bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD * spend));
-                    this.showFloatingText(bonfire.x, bonfire.y - 20, `+${spend} FUEL`, '#FF8800');
-                    audioEngine.playFireFuel();
-                    network.broadcastAction('fire_fuel', bonfire.x, bonfire.y);
-
-                    // Light up abandoned camp on first fuel
-                    if ((bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp')) && !bonfire.getData('lit')) {
-                        this._lightSecondCamp(bonfire);
-                    }
-
-                    // Track per-camp fuel added and level
-                    const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
-                    bonfire.setData('campFuelAdded', campFuelAdded);
-                    this._trackObjective('fuel_added', 1);
-
-                    // Also update global fuelAdded for main camp (backwards compat)
-                    if (bonfire.getData('isMain')) {
-                        gameState.fuelAdded = campFuelAdded;
-                    }
-
-                    // Check fire level up for this camp
-                    const levels = CONFIG.FIRE_LEVELS;
-                    const oldLevel = bonfire.getData('campFireLevel') || 1;
-                    let newLevel = 1;
-                    for (let lv = levels.length - 1; lv >= 0; lv--) {
-                        if (campFuelAdded >= levels[lv]) {
-                            newLevel = lv + 1;
-                            break;
-                        }
-                    }
-                    bonfire.setData('campFireLevel', newLevel);
-
-                    if (newLevel > oldLevel) {
-                        this.showFloatingText(bonfire.x, bonfire.y - 50,
-                            `CAMP LEVEL ${newLevel}!`, '#CC66FF');
-                        audioEngine.playWave();
-                        this._trackObjective('fire_level', Math.max(newLevel, this._objCounters?.fire_level || 0));
-                        // Create build spots for second camp on level up
-                        if (bonfire.getData('isSecondCamp')) {
-                            this._updateSecondCampBuildSpots(bonfire, newLevel);
-                        }
-                        // Level-up angers the darkness — burst scales with new level (none at lvl 1→2)
-                        const burst = Math.max(0, newLevel - 2) + 1; // lvl2: 1, lvl3: 2, lvl4: 3 …
-                        const maxSpawn = CONFIG.MAX_ENEMIES - this.enemies.countActive();
-                        const toSpawn = Math.min(burst, maxSpawn);
-                        for (let i = 0; i < toSpawn; i++) {
-                            this.time.delayedCall(i * 600, () => this.spawnEnemy());
-                        }
-                        if (toSpawn > 0) {
-                            this.showFloatingText(bonfire.x, bonfire.y - 40, 'THE DARKNESS STIRS...', '#FF2222');
-                        }
-                    }
-
-                    // Update active camp for dashboard
-                    this._activeCamp = bonfire;
-                    // Keep gameState.fireLevel as the max of all camps
-                    gameState.fireLevel = Math.max(
-                        this.bonfires[0]?.getData('campFireLevel') || 1,
-                        this._secondCampBonfire?.getData('campFireLevel') || 1,
-                        this._lairBonfire?.getData('campFireLevel') || 1
-                    );
-
-                    // Sync fuel addition to peers
-                    const bIdx = this.bonfires.indexOf(bonfire);
-                    if (network.peerCount > 0) {
-                        network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD * spend });
-                    }
-
-                    // Update build spots visibility
-                    this._updateBuildSpots();
-                    return;
-                }
-            }
-        }
-
         // Build mode placement
         if (gameState.buildMode && gameState.buildType) {
             this.placeBuilding();
@@ -3129,6 +3047,62 @@ class GameScene extends Phaser.Scene {
             if (d < nearestFireDist) nearestFireDist = d;
         }
         audioEngine.updateFireProximity(nearestFireDist);
+    }
+
+    _feedBonfire(bonfire) {
+        if (gameState.resources.wood <= 0) return;
+        const fuel = bonfire.getData('fuel');
+        const maxFuel = bonfire.getData('maxFuel');
+        if (fuel >= maxFuel) return;
+
+        const spend = Math.min(1, gameState.resources.wood);
+        gameState.resources.wood -= spend;
+        bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD * spend));
+        this.showFloatingText(bonfire.x, bonfire.y - 20, `+${spend} FUEL`, '#FF8800');
+        audioEngine.playFireFuel();
+        network.broadcastAction('fire_fuel', bonfire.x, bonfire.y);
+
+        // Light up abandoned camp on first fuel
+        if ((bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp')) && !bonfire.getData('lit')) {
+            this._lightSecondCamp(bonfire);
+        }
+
+        // Track per-camp fuel added and level
+        const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
+        bonfire.setData('campFuelAdded', campFuelAdded);
+        this._trackObjective('fuel_added', 1);
+        if (bonfire.getData('isMain')) gameState.fuelAdded = campFuelAdded;
+
+        // Check fire level up
+        const levels = CONFIG.FIRE_LEVELS;
+        const oldLevel = bonfire.getData('campFireLevel') || 1;
+        let newLevel = 1;
+        for (let lv = levels.length - 1; lv >= 0; lv--) {
+            if (campFuelAdded >= levels[lv]) { newLevel = lv + 1; break; }
+        }
+        bonfire.setData('campFireLevel', newLevel);
+        if (newLevel > oldLevel) {
+            this.showFloatingText(bonfire.x, bonfire.y - 50, `CAMP LEVEL ${newLevel}!`, '#CC66FF');
+            audioEngine.playWave();
+            this._trackObjective('fire_level', Math.max(newLevel, this._objCounters?.fire_level || 0));
+            if (bonfire.getData('isSecondCamp')) this._updateSecondCampBuildSpots(bonfire, newLevel);
+            const burst = Math.max(0, newLevel - 2) + 1;
+            const toSpawn = Math.min(burst, CONFIG.MAX_ENEMIES - this.enemies.countActive());
+            for (let i = 0; i < toSpawn; i++) this.time.delayedCall(i * 600, () => this.spawnEnemy());
+            if (toSpawn > 0) this.showFloatingText(bonfire.x, bonfire.y - 40, 'THE DARKNESS STIRS...', '#FF2222');
+        }
+
+        this._activeCamp = bonfire;
+        gameState.fireLevel = Math.max(
+            this.bonfires[0]?.getData('campFireLevel') || 1,
+            this._secondCampBonfire?.getData('campFireLevel') || 1,
+            this._lairBonfire?.getData('campFireLevel') || 1
+        );
+        const bIdx = this.bonfires.indexOf(bonfire);
+        if (network.peerCount > 0) {
+            network.broadcastReliable({ t: 'f', bonfireIdx: bIdx, amount: CONFIG.FUEL_PER_WOOD * spend });
+        }
+        this._updateBuildSpots();
     }
 
     getLightRadius(bonfire) {

@@ -51,6 +51,10 @@ class MenuScene extends Phaser.Scene {
         this.load.image('dungeon_chest', 'assets/dungeon/chest.png');
         this.load.image('dungeon_torch', 'assets/dungeon/torch.png');
         this.load.image('dungeon_bones', 'assets/dungeon/bones.png');
+        this.load.image('boss_south', 'assets/dungeon/boss/rotations/south.png');
+        this.load.image('boss_east', 'assets/dungeon/boss/rotations/east.png');
+        this.load.image('boss_north', 'assets/dungeon/boss/rotations/north.png');
+        this.load.image('boss_west', 'assets/dungeon/boss/rotations/west.png');
     }
 
     create() {

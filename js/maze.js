@@ -153,23 +153,47 @@ class MazeScene extends Phaser.Scene {
         // Debug overlay graphics
         this._debugGfx = this.add.graphics().setDepth(4999);
 
-        // --- Treasure (last room centre) ---
+        // --- Boss room (last room) + Treasure ---
         const er       = rooms[rooms.length - 1];
         const tresX    = (er.x + Math.floor(er.w / 2)) * TILE + 16;
         const tresY    = (er.y + Math.floor(er.h / 2)) * TILE + 16;
         const chestTex = this.textures.exists('dungeon_chest') ? 'dungeon_chest' : 'treasure_chest';
         this.treasure  = this.add.sprite(tresX, tresY, chestTex).setDepth(3).setScale(1.15);
-        this.tweens.add({
-            targets: this.treasure,
-            scaleX: 1.3, scaleY: 1.3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
-        });
-        const tGlow = this.add.image(tresX, tresY, 'glow')
-            .setDepth(2.8).setScale(2.8).setAlpha(0.55).setTint(0xFFAA00).setBlendMode('ADD');
-        this.tweens.add({ targets: tGlow, scale: 3.3, alpha: 0.28, duration: 850, yoyo: true, repeat: -1 });
+        this.treasure.setAlpha(0.4); // locked until boss is dead
 
-        this._treasureHint = this.add.text(tresX, tresY - 28, '[E] Open the Chest', {
-            fontSize: '9px', fill: '#FFD700', fontFamily: 'monospace',
+        // Boss — Darkness Lord
+        this._bossAlive = true;
+        const bossTex = this.textures.exists('boss_south') ? 'boss_south' : 'enemy_lord';
+        const bossX = tresX, bossY = tresY - 60;
+        this._boss = this.mazeEnemies.create(bossX, bossY, bossTex);
+        this._boss.setDepth(5);
+        this._boss.setData('hp', 300);
+        this._boss.setData('maxHp', 300);
+        this._boss.setData('dmg', 30);
+        this._boss.setData('spd', 45);
+        this._boss.setData('size', 40);
+        this._boss.setData('atkCd', 0);
+        this._boss.setData('type', 'BOSS');
+        this._boss.setData('aiState', 'IDLE');
+        this._boss.setData('spellCd', 0);
+        this._boss.setData('wanderAngle', 0);
+        this._boss.setData('wanderTimer', 0);
+        this._boss.body.setSize(50, 50);
+
+        // Boss dark aura
+        this._bossAura = this.add.image(bossX, bossY, 'glow')
+            .setDepth(4).setScale(4).setAlpha(0.3).setTint(0x6600AA).setBlendMode('ADD');
+        this.tweens.add({ targets: this._bossAura, scale: 5, alpha: 0.15, duration: 1200, yoyo: true, repeat: -1 });
+
+        // Chest locked hint
+        this._treasureHint = this.add.text(tresX, tresY - 28, 'Defeat the Darkness Lord', {
+            fontSize: '9px', fill: '#FF4444', fontFamily: 'monospace',
         }).setOrigin(0.5).setDepth(10).setAlpha(0);
+
+        // Chest glow (dim while locked)
+        this._chestGlow = this.add.image(tresX, tresY, 'glow')
+            .setDepth(2.8).setScale(2).setAlpha(0.15).setTint(0x6600AA).setBlendMode('ADD');
+        this.tweens.add({ targets: this._chestGlow, scale: 2.5, alpha: 0.08, duration: 850, yoyo: true, repeat: -1 });
 
         // --- Torch light ---
         this._torchRadius = 145;
@@ -614,9 +638,29 @@ class MazeScene extends Phaser.Scene {
         // --- Debug overlay (shared with overworld) ---
         drawEnemyDebug(this, this._debugGfx, this.mazeEnemies.children.entries, {});
 
+        // --- Boss aura follows boss ---
+        if (this._boss && this._boss.active && this._bossAura) {
+            this._bossAura.setPosition(this._boss.x, this._boss.y);
+        }
+
+        // --- Boss spell attacks ---
+        if (this._boss && this._boss.active) {
+            let scd = this._boss.getData('spellCd') - dt * 1000;
+            this._boss.setData('spellCd', scd);
+            const bDist = Phaser.Math.Distance.Between(this._boss.x, this._boss.y, p.x, p.y);
+            if (bDist < 200 && scd <= 0) {
+                this._boss.setData('spellCd', 2500);
+                this._bossSpellAttack();
+            }
+        }
+
         // --- Treasure hint ---
         const distT = Phaser.Math.Distance.Between(p.x, p.y, this.treasure.x, this.treasure.y);
-        this._treasureHint.setAlpha(distT < 58 ? 1 : 0);
+        if (this._bossAlive) {
+            this._treasureHint.setAlpha(distT < 80 ? 1 : 0);
+        } else {
+            this._treasureHint.setAlpha(distT < 58 ? 1 : 0);
+        }
 
         // --- HUD ---
         gameState.hp = Math.max(0, gameState.hp);
@@ -812,8 +856,86 @@ class MazeScene extends Phaser.Scene {
             const gold = 1 + Math.floor(Math.random() * 3);
             gameState.resources.gold = (gameState.resources.gold || 0) + gold;
             showFloatingText(this, e.x, e.y - 30, `+${gold} gold`, '#FFD700');
+
+            // Boss death — unlock treasure
+            if (e === this._boss) {
+                this._onBossDeath(e);
+            }
             e.destroy();
         }
+    }
+
+    _onBossDeath(boss) {
+        this._bossAlive = false;
+        if (this._bossAura) { this._bossAura.destroy(); this._bossAura = null; }
+
+        // Dramatic death effect
+        this.cameras.main.flash(600, 100, 0, 200);
+        this.cameras.main.shake(400, 0.02);
+        showFloatingText(this, boss.x, boss.y - 50, 'THE DARKNESS LORD IS SLAIN!', '#CC44FF');
+
+        // Death explosion particles
+        this.add.particles(boss.x, boss.y, 'particle', {
+            speed: { min: 40, max: 120 },
+            angle: { min: 0, max: 360 },
+            lifespan: { min: 600, max: 1200 },
+            scale: { start: 1.0, end: 0 },
+            alpha: { start: 0.9, end: 0 },
+            tint: [0x8800FF, 0xAA44FF, 0x6600CC, 0xFF00FF],
+            blendMode: 'ADD',
+            quantity: 30,
+            emitting: false,
+        }).explode(30);
+
+        // Unlock treasure — make it bright and golden
+        this.treasure.setAlpha(1);
+        this.tweens.add({ targets: this.treasure, scaleX: 1.3, scaleY: 1.3, duration: 900, yoyo: true, repeat: -1 });
+        if (this._chestGlow) {
+            this._chestGlow.setTint(0xFFAA00);
+            this._chestGlow.setAlpha(0.55);
+            this._chestGlow.setScale(2.8);
+        }
+        this._treasureHint.setText('[E] Open the Chest');
+        this._treasureHint.setFill('#FFD700');
+    }
+
+    _bossSpellAttack() {
+        const boss = this._boss;
+        if (!boss || !boss.active) return;
+        const p = this.player;
+        const angle = Phaser.Math.Angle.Between(boss.x, boss.y, p.x, p.y);
+
+        // Spell 1: Dark orb projectile barrage (3 orbs in a spread)
+        const spread = 0.3;
+        for (let i = -1; i <= 1; i++) {
+            const a = angle + i * spread;
+            const orb = this.add.image(boss.x, boss.y, 'proj_magic').setDepth(10).setScale(1.5).setBlendMode('ADD');
+            const tx = boss.x + Math.cos(a) * 200;
+            const ty = boss.y + Math.sin(a) * 200;
+            this.tweens.add({
+                targets: orb, x: tx, y: ty, alpha: 0.3, duration: 600,
+                onUpdate: () => {
+                    // Check hit
+                    const d = Phaser.Math.Distance.Between(orb.x, orb.y, p.x, p.y);
+                    if (d < 16) {
+                        const dmg = damagePlayerShared(this, 15);
+                        showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#BB44FF');
+                        this.cameras.main.flash(100, 60, 0, 80);
+                        orb.destroy();
+                    }
+                },
+                onComplete: () => {
+                    // Impact effect
+                    const imp = this.add.image(orb.x, orb.y, 'glow')
+                        .setDepth(10).setScale(1.5).setAlpha(0.6).setTint(0xAA44FF).setBlendMode('ADD');
+                    this.tweens.add({ targets: imp, scale: 3, alpha: 0, duration: 300, onComplete: () => imp.destroy() });
+                    orb.destroy();
+                },
+            });
+        }
+
+        // Visual: boss flashes during cast
+        this.tweens.add({ targets: boss, alpha: 0.4, duration: 100, yoyo: true, repeat: 2 });
     }
 
     // _floatText removed — use shared showFloatingText(scene, x, y, msg, color)
@@ -825,7 +947,13 @@ class MazeScene extends Phaser.Scene {
         if (this._done) return;
         const d = Phaser.Math.Distance.Between(
             this.player.x, this.player.y, this.treasure.x, this.treasure.y);
-        if (d < 58) this._collectTreasure();
+        if (d < 58) {
+            if (this._bossAlive) {
+                showFloatingText(this, this.treasure.x, this.treasure.y - 40, 'Defeat the Darkness Lord first!', '#FF4444');
+            } else {
+                this._collectTreasure();
+            }
+        }
     }
 
     // ----------------------------------------------------------
