@@ -339,7 +339,11 @@
     function faceTarget(p, tx, ty) {
         const a = Math.atan2(ty - p.y, tx - p.x);
         p.facing = { x: Math.cos(a), y: Math.sin(a) };
-        if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+        if (scene._hasPixelArtPlayer) {
+            scene._updatePlayerDir(p);
+        } else {
+            if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+        }
     }
 
     function checkStuck(p, dt) {

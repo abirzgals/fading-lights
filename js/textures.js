@@ -2,6 +2,15 @@
 // PROCEDURAL TEXTURE GENERATION
 // ============================================================
 
+// Map a facing vector {x, y} to one of 8 compass direction strings
+function facingToDirection(fx, fy) {
+    const angle = Math.atan2(fy, fx);
+    // Quantize to 8 sectors (each 45° = PI/4)
+    const sector = Math.round(angle / (Math.PI / 4));
+    const dirs = ['east', 'south-east', 'south', 'south-west', 'west', 'north-west', 'north', 'north-east'];
+    return dirs[((sector % 8) + 8) % 8];
+}
+
 function generatePlayerTexture(scene, g, key, tshirtColor) {
     g.clear();
     // Head (skin)
@@ -23,6 +32,26 @@ function getPlayerTextureKey(color) {
 
 function generateTextures(scene) {
     const g = scene.make.graphics({ add: false });
+
+    // Extract ground tiles from pixel art tileset spritesheet
+    if (scene.textures.exists('ground_tileset')) {
+        const tileset = scene.textures.get('ground_tileset');
+        // Frame 6 = pure grass (all-lower corners), Frame 12 = pure dirt (all-upper corners)
+        const extractFrame = (frameIdx, key) => {
+            const frame = tileset.get(frameIdx);
+            const canvas = scene.textures.createCanvas(key, 32, 32);
+            canvas.context.drawImage(frame.source.image,
+                frame.cutX, frame.cutY, 32, 32, 0, 0, 32, 32);
+            canvas.refresh();
+        };
+        extractFrame(6, 'ground_grass');
+        extractFrame(12, 'ground_dirt');
+        // Extract a few transition frames for road edges
+        extractFrame(3, 'ground_edge0');   // wang_12: upper top, lower bottom
+        extractFrame(9, 'ground_edge1');   // wang_3: lower top, upper bottom
+        extractFrame(5, 'ground_edge2');   // wang_5: upper-right, lower-left
+        extractFrame(1, 'ground_edge3');   // wang_10: upper-left, lower-right
+    }
 
     // Ground tiles
     for (let i = 0; i < 4; i++) {
@@ -87,16 +116,18 @@ function generateTextures(scene) {
         }
     }
 
-    // Tree
-    g.clear();
-    g.fillStyle(0x4A3520, 1);
-    g.fillRect(12, 28, 8, 20);
-    g.fillStyle(0x1B5E20, 1);
-    g.fillCircle(16, 18, 16);
-    g.fillStyle(0x2E7D32, 0.5);
-    g.fillCircle(12, 14, 10);
-    g.fillCircle(22, 16, 9);
-    g.generateTexture('tree', 32, 48);
+    // Tree (skip if pixel art loaded)
+    if (!scene.textures.exists('dark_tree')) {
+        g.clear();
+        g.fillStyle(0x4A3520, 1);
+        g.fillRect(12, 28, 8, 20);
+        g.fillStyle(0x1B5E20, 1);
+        g.fillCircle(16, 18, 16);
+        g.fillStyle(0x2E7D32, 0.5);
+        g.fillCircle(12, 14, 10);
+        g.fillCircle(22, 16, 9);
+        g.generateTexture('tree', 32, 48);
+    }
 
     // Tree stump
     g.clear();
@@ -312,16 +343,19 @@ function generateTextures(scene) {
     g.fillCircle(16, 10, 2);
     g.generateTexture('enemy_wisp', 24, 24);
 
-    g.clear();
-    g.fillStyle(0x220033, 0.7);
-    g.fillCircle(16, 10, 8);
-    g.fillRect(10, 18, 12, 16);
-    g.fillRect(8, 34, 6, 8);
-    g.fillRect(18, 34, 6, 8);
-    g.fillStyle(0xFF2200, 1);
-    g.fillCircle(12, 9, 2);
-    g.fillCircle(20, 9, 2);
-    g.generateTexture('enemy_stalker', 32, 44);
+    // Shadow Stalker (skip if pixel art loaded)
+    if (!scene.textures.exists('stalker_south')) {
+        g.clear();
+        g.fillStyle(0x220033, 0.7);
+        g.fillCircle(16, 10, 8);
+        g.fillRect(10, 18, 12, 16);
+        g.fillRect(8, 34, 6, 8);
+        g.fillRect(18, 34, 6, 8);
+        g.fillStyle(0xFF2200, 1);
+        g.fillCircle(12, 9, 2);
+        g.fillCircle(20, 9, 2);
+        g.generateTexture('enemy_stalker', 32, 44);
+    }
 
     g.clear();
     g.fillStyle(0x110022, 0.8);

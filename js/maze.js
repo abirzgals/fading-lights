@@ -51,13 +51,21 @@ class MazeScene extends Phaser.Scene {
         const sr  = rooms[0];
         const spx = (sr.x + Math.floor(sr.w / 2)) * TILE + 16;
         const spy = (sr.y + Math.floor(sr.h / 2)) * TILE + 16;
-        const texKey = (typeof getPlayerTextureKey !== 'undefined')
-            ? getPlayerTextureKey(network.playerColor) : 'player';
+        const hasPA = this.textures.exists('player_south');
+        const texKey = hasPA ? 'player_south'
+            : ((typeof getPlayerTextureKey !== 'undefined')
+                ? getPlayerTextureKey(network.playerColor) : 'player');
         this.player = this.physics.add.sprite(
             spx, spy, this.textures.exists(texKey) ? texKey : 'player');
         this.player.setDepth(5).setCollideWorldBounds(true);
-        this.player.body.setSize(14, 12).setOffset(9, 32);
+        if (hasPA) {
+            this.player.body.setSize(14, 12).setOffset(17, 32);
+        } else {
+            this.player.body.setSize(14, 12).setOffset(9, 32);
+        }
         this.player.facing = { x: 0, y: 1 };
+        this.player._lastDir = 'south';
+        this._hasPixelArtPlayer = hasPA;
         this.player.attackCooldown = 0;
         this.physics.add.collider(this.player, this.walls);
 
@@ -234,7 +242,8 @@ class MazeScene extends Phaser.Scene {
                 if (depth < 0.35) {
                     hp = 18; dmg = 5;  spd = 75; size = 10; texKey = 'enemy_wisp';
                 } else if (depth < 0.65) {
-                    hp = 40; dmg = 12; spd = 60; size = 14; texKey = 'enemy_stalker';
+                    hp = 40; dmg = 12; spd = 60; size = 14;
+                    texKey = this.textures.exists('stalker_south') ? 'stalker_south' : 'enemy_stalker';
                 } else {
                     hp = 75; dmg = 22; spd = 48; size = 20; texKey = 'enemy_beast';
                 }
@@ -338,8 +347,17 @@ class MazeScene extends Phaser.Scene {
         }
 
         p.setVelocity(vx, vy);
-        if (vx !== 0 || vy !== 0)
+        if (vx !== 0 || vy !== 0) {
             p.facing = { x: Math.sign(vx), y: Math.sign(vy) };
+            if (this._hasPixelArtPlayer) {
+                const dir = facingToDirection(p.facing.x, p.facing.y);
+                if (dir !== p._lastDir) {
+                    p.setTexture('player_' + dir);
+                    p._lastDir = dir;
+                    p.setFlipX(false);
+                }
+            }
+        }
 
         // Attack cooldown
         if (p.attackCooldown > 0) p.attackCooldown -= delta;
@@ -371,6 +389,10 @@ class MazeScene extends Phaser.Scene {
                     x: Math.abs(dx) > Math.abs(dy) * 0.5 ? Math.sign(dx) : 0,
                     y: Math.abs(dy) > Math.abs(dx) * 0.5 ? Math.sign(dy) : 0,
                 };
+                if (this._hasPixelArtPlayer) {
+                    const dir = facingToDirection(p.facing.x, p.facing.y);
+                    if (dir !== p._lastDir) { p.setTexture('player_' + dir); p._lastDir = dir; p.setFlipX(false); }
+                }
                 this._attack();
             }
         }

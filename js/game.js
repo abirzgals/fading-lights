@@ -19,9 +19,16 @@ class GameScene extends Phaser.Scene {
         // --- Ground (covers full world using tileSprite for performance) ---
         const centerTile = Math.floor(CONFIG.WORLD_TILES / 2);
         const worldPx = CONFIG.WORLD_TILES * CONFIG.TILE_SIZE;
-        this.groundTile = this.add.tileSprite(0, 0, worldPx, worldPx, 'ground0')
+        const groundKey = this.textures.exists('ground_grass') ? 'ground_grass' : 'ground0';
+        this.groundTile = this.add.tileSprite(0, 0, worldPx, worldPx, groundKey)
             .setOrigin(0, 0)
             .setDepth(-1);
+
+        // Cache whether pixel art is available for direction-based rendering
+        this._hasPixelArtPlayer = this.textures.exists('player_south');
+        this._hasPixelArtStalker = this.textures.exists('stalker_south');
+        this._hasPixelArtTree = this.textures.exists('dark_tree');
+        this._hasPixelArtGround = this.textures.exists('ground_dirt');
 
         // --- Resource Groups ---
         this.trees = this.physics.add.staticGroup();
@@ -62,9 +69,10 @@ class GameScene extends Phaser.Scene {
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
 
-        // --- Player (use own tshirt color) ---
+        // --- Player (use pixel art if available, else tshirt color) ---
         const playerTexKey = getPlayerTextureKey(network.playerColor);
-        const playerTex = this.textures.exists(playerTexKey) ? playerTexKey : 'player';
+        const playerTex = this._hasPixelArtPlayer ? 'player_south'
+            : (this.textures.exists(playerTexKey) ? playerTexKey : 'player');
         this.player = this.physics.add.sprite(cx, cy - 50, playerTex);
 
         // --- Wandering Merchant Shop (after player, needs collider) ---
@@ -73,9 +81,15 @@ class GameScene extends Phaser.Scene {
         }
         this.player.setCollideWorldBounds(true);
         this.player.setDepth(5);
-        this.player.body.setSize(16, 14);
-        this.player.body.setOffset(8, 30);
+        if (this._hasPixelArtPlayer) {
+            this.player.body.setSize(16, 14);
+            this.player.body.setOffset(16, 30);
+        } else {
+            this.player.body.setSize(16, 14);
+            this.player.body.setOffset(8, 30);
+        }
         this.player.facing = { x: 0, y: 1 };
+        this.player._lastDir = 'south';
         this.player.attackCooldown = 0;
         this.player.darknessTick = 0;
         this.player.invincible = 0;
@@ -650,11 +664,13 @@ class GameScene extends Phaser.Scene {
             if (neighbors >= 5) {
                 // Inner road tile
                 const variant = (tx * 7 + ty * 13) % 4;
-                this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+                const roadKey = this._hasPixelArtGround ? 'ground_dirt' : 'road' + variant;
+                this.add.image(wx + 16, wy + 16, roadKey).setDepth(0);
             } else {
                 // Edge road tile (grass-dirt transition)
                 const variant = (tx * 11 + ty * 3) % 4;
-                this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+                const edgeKey = this._hasPixelArtGround ? 'ground_edge' + variant : 'road_edge' + variant;
+                this.add.image(wx + 16, wy + 16, edgeKey).setDepth(0);
             }
         }
 
@@ -693,10 +709,16 @@ class GameScene extends Phaser.Scene {
 
                 const wx = tx * T + 16;
                 const wy = ty * T + 16;
-                const tree = this.trees.create(wx, wy, 'tree');
+                const treeKey = this._hasPixelArtTree ? 'dark_tree' : 'tree';
+                const tree = this.trees.create(wx, wy, treeKey);
                 tree.setDepth(3);
-                tree.body.setSize(22, 28);
-                tree.body.setOffset(5, 22);
+                if (this._hasPixelArtTree) {
+                    tree.body.setSize(22, 28);
+                    tree.body.setOffset(13, 20);
+                } else {
+                    tree.body.setSize(22, 28);
+                    tree.body.setOffset(5, 22);
+                }
 
                 tree.setData('hits', 0);
                 tree.setData('type', 'tree');
@@ -1011,10 +1033,12 @@ class GameScene extends Phaser.Scene {
             }
             if (neighbors >= 5) {
                 const variant = (ptx * 7 + pty * 13) % 4;
-                this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
+                const roadKey2 = this._hasPixelArtGround ? 'ground_dirt' : 'road' + variant;
+                this.add.image(wx + 16, wy + 16, roadKey2).setDepth(0);
             } else if (neighbors >= 2) {
                 const variant = (ptx * 11 + pty * 3) % 4;
-                this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
+                const edgeKey2 = this._hasPixelArtGround ? 'ground_edge' + variant : 'road_edge' + variant;
+                this.add.image(wx + 16, wy + 16, edgeKey2).setDepth(0);
             }
         }
 
@@ -1635,7 +1659,8 @@ class GameScene extends Phaser.Scene {
         const sy = ly + Math.sin(angle) * 40;
 
         const textureKey = {
-            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_WISP: 'enemy_wisp',
+            SHADOW_STALKER: this._hasPixelArtStalker ? 'stalker_south' : 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler', SHADOW_ARCHER: 'enemy_archer',
             VOID_MAGE: 'enemy_mage',
@@ -2340,8 +2365,8 @@ class GameScene extends Phaser.Scene {
             this.updateFacingToMouse(this.input.activePointer);
         }
 
-        // Flip sprite based on facing
-        if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+        // Update sprite direction
+        this._updatePlayerDir(p);
 
         // Attack cooldown
         if (p.attackCooldown > 0) p.attackCooldown -= delta;
@@ -2372,7 +2397,7 @@ class GameScene extends Phaser.Scene {
                 if (nearRes) {
                     const a = Phaser.Math.Angle.Between(p.x, p.y, nearRes.x, nearRes.y);
                     p.facing = { x: Math.cos(a), y: Math.sin(a) };
-                    if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+                    this._updatePlayerDir(p);
                 }
             }
             this.playerAttack();
@@ -2393,7 +2418,7 @@ class GameScene extends Phaser.Scene {
             if (nearest) {
                 const angle = Phaser.Math.Angle.Between(p.x, p.y, nearest.x, nearest.y);
                 p.facing = { x: Math.cos(angle), y: Math.sin(angle) };
-                if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
+                this._updatePlayerDir(p);
                 this.playerAttack();
             }
         }
@@ -3345,7 +3370,7 @@ class GameScene extends Phaser.Scene {
 
         const textureKey = {
             SHADOW_WISP: 'enemy_wisp',
-            SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_STALKER: this._hasPixelArtStalker ? 'stalker_south' : 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast',
             SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
@@ -3440,7 +3465,8 @@ class GameScene extends Phaser.Scene {
         if (!path) return null;
 
         const textureKey = {
-            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_WISP: 'enemy_wisp',
+            SHADOW_STALKER: this._hasPixelArtStalker ? 'stalker_south' : 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
             SHADOW_ARCHER: 'enemy_archer', VOID_MAGE: 'enemy_mage',
@@ -3608,7 +3634,8 @@ class GameScene extends Phaser.Scene {
         const stats = ENEMIES[type];
         if (!stats) return null;
         const textureKey = {
-            SHADOW_WISP: 'enemy_wisp', SHADOW_STALKER: 'enemy_stalker',
+            SHADOW_WISP: 'enemy_wisp',
+            SHADOW_STALKER: this._hasPixelArtStalker ? 'stalker_south' : 'enemy_stalker',
             SHADOW_BEAST: 'enemy_beast', SHADOW_LORD: 'enemy_lord',
             FOG_CRAWLER: 'enemy_crawler',
             SHADOW_ARCHER: 'enemy_archer', VOID_MAGE: 'enemy_mage',
@@ -4171,6 +4198,30 @@ class GameScene extends Phaser.Scene {
                     }
                 }
             }
+
+            // Update directional texture for pixel art stalker enemies
+            if (this._hasPixelArtStalker && enemy.getData('type') === 'SHADOW_STALKER') {
+                const vx = enemy.body ? enemy.body.velocity.x : 0;
+                const vy = enemy.body ? enemy.body.velocity.y : 0;
+                if (vx !== 0 || vy !== 0) {
+                    const dir = facingToDirection(vx, vy);
+                    enemy.setTexture('stalker_' + dir);
+                    enemy.setFlipX(false);
+                }
+            }
+        }
+    }
+
+    _updatePlayerDir(p) {
+        if (this._hasPixelArtPlayer) {
+            const dir = facingToDirection(p.facing.x, p.facing.y);
+            if (dir !== p._lastDir) {
+                p.setTexture('player_' + dir);
+                p._lastDir = dir;
+                p.setFlipX(false);
+            }
+        } else {
+            if (p.facing.x !== 0) p.setFlipX(p.facing.x < 0);
         }
     }
 

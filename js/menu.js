@@ -9,6 +9,17 @@ class MenuScene extends Phaser.Scene {
         this.load.spritesheet('weapons_sheet', 'assets/weapons.png', {
             frameWidth: 32, frameHeight: 32,
         });
+
+        // Pixel art assets
+        const directions = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        directions.forEach(dir => {
+            this.load.image('player_' + dir, 'assets/pixelart/survivor-player/rotations/' + dir + '.png');
+            this.load.image('stalker_' + dir, 'assets/pixelart/shadow-stalker/rotations/' + dir + '.png');
+        });
+        this.load.image('dark_tree', 'assets/pixelart/dark-tree.png');
+        this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
+            frameWidth: 32, frameHeight: 32,
+        });
     }
 
     create() {
