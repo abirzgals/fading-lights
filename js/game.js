@@ -574,6 +574,11 @@ class GameScene extends Phaser.Scene {
         const header = document.getElementById('groq-panel-header');
         const body = document.getElementById('groq-log-body');
         const arrow = document.getElementById('groq-collapse-arrow');
+        // Start collapsed by default
+        body.style.display = 'none';
+        arrow.textContent = '▶';
+        panel.style.width = '160px';
+
         header.addEventListener('click', () => {
             const collapsed = body.style.display === 'none';
             body.style.display = collapsed ? '' : 'none';
