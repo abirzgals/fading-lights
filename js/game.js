@@ -336,12 +336,13 @@ class GameScene extends Phaser.Scene {
 
         this.input.on('pointerdown', (pointer) => {
             if (gameState.gameOver || gameState.craftingOpen) return;
-            if (mobileControls.isMobile) return; // mobile uses joystick + buttons, not canvas taps
+            // Only process mouse clicks (button >= 0), not pure touch (button === -1)
+            if (pointer.button < 0) return;
             if (pointer.leftButtonDown()) this._mouseLeftHeld = true;
             if (pointer.rightButtonDown()) this._mouseRightHeld = true;
         });
         this.input.on('pointerup', (pointer) => {
-            if (mobileControls.isMobile) return;
+            if (pointer.button < 0) return;
             if (!pointer.leftButtonDown()) this._mouseLeftHeld = false;
             if (!pointer.rightButtonDown()) this._mouseRightHeld = false;
         });

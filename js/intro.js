@@ -88,6 +88,8 @@ class IntroScene extends Phaser.Scene {
             skipBtn.style.opacity = '0';
             setTimeout(() => {
                 document.querySelectorAll('[data-intro]').forEach(el => el.remove());
+                // Remove all keyboard listeners from this scene
+                this.input.keyboard.removeAllListeners();
                 this.scene.start('MenuScene');
             }, 500);
         };
