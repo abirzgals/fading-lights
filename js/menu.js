@@ -244,39 +244,7 @@ class MenuScene extends Phaser.Scene {
             this.scene.restart();
         }, this);
 
-        // --- Start button ---
-        const btnY = h * 0.78;
-        const btnBg = this.add.graphics().setDepth(20);
-        btnBg.fillStyle(0xFF6600, 0.15);
-        btnBg.fillRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-        btnBg.lineStyle(1, 0xFF6600, 0.3);
-        btnBg.strokeRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-
-        const btnText = this.add.text(w / 2, btnY, 'START GAME', {
-            fontFamily: "'Segoe UI', sans-serif",
-            fontSize: '16px',
-            color: '#FF9944',
-            letterSpacing: 4,
-        }).setOrigin(0.5).setDepth(21);
-
-        // Make button interactive
-        const btnZone = this.add.zone(w / 2, btnY, 200, 44).setInteractive({ useHandCursor: true }).setDepth(22);
-        btnZone.on('pointerover', () => {
-            btnBg.clear();
-            btnBg.fillStyle(0xFF6600, 0.3);
-            btnBg.fillRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-            btnBg.lineStyle(1, 0xFF8800, 0.6);
-            btnBg.strokeRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-            btnText.setColor('#FFBB66');
-        });
-        btnZone.on('pointerout', () => {
-            btnBg.clear();
-            btnBg.fillStyle(0xFF6600, 0.15);
-            btnBg.fillRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-            btnBg.lineStyle(1, 0xFF6600, 0.3);
-            btnBg.strokeRoundedRect(w / 2 - 100, btnY - 22, 200, 44, 12);
-            btnText.setColor('#FF9944');
-        });
+        // Start button is now HTML-based (in name-input overlay) for cross-platform compatibility
 
         // Wakeup progress callback — shows timer when server is sleeping
         this._setupWakeProgress = () => {
@@ -422,17 +390,10 @@ class MenuScene extends Phaser.Scene {
             }
         };
 
-        btnZone.on('pointerdown', () => this._startGame());
-
         // ENTER starts solo
         this.input.keyboard.on('keydown-ENTER', () => {
             this._startGame();
         });
-
-        // Fade in button
-        btnBg.setAlpha(0);
-        btnText.setAlpha(0);
-        this.tweens.add({ targets: [btnBg, btnText], alpha: 1, duration: 1000, delay: 1500 });
 
         // Controls hint at bottom
         this.add.text(w / 2, h * 0.92, 'WASD move  |  SPACE / LMB attack  |  E / RMB interact  |  TAB craft  |  B build', {
