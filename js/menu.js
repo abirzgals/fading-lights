@@ -43,6 +43,7 @@ class MenuScene extends Phaser.Scene {
         this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
             frameWidth: 32, frameHeight: 32,
         });
+        this.load.image('menu_bg', 'assets/menu_bg.png');
         // Dungeon assets
         this.load.spritesheet('dungeon_tileset', 'assets/dungeon/dungeon-tileset.png', {
             frameWidth: 32, frameHeight: 32,
@@ -104,86 +105,77 @@ class MenuScene extends Phaser.Scene {
         const w = this.scale.width;
         const h = this.scale.height;
 
-        // --- Dark forest background ---
+        // --- Pixel art forest background ---
         this.cameras.main.setBackgroundColor('#020105');
 
         // Start menu music with slow fade-in
         audioEngine.startLoop('menu_music', 3000);
 
-        // Distant fog layer
-        this.fogParticles = this.add.particles(w / 2, h / 2, 'glow', {
-            x: { min: -w * 0.6, max: w * 0.6 },
-            y: { min: -h * 0.4, max: h * 0.4 },
-            lifespan: { min: 6000, max: 10000 },
-            speed: { min: 3, max: 12 },
-            angle: { min: 170, max: 190 },
-            scale: { start: 0.8, end: 0.1 },
-            alpha: { start: 0.04, end: 0 },
-            tint: [0x222244, 0x1a1a33, 0x110022],
-            frequency: 200,
-            blendMode: 'ADD',
-        });
-
-        // Tree silhouettes in background
-        const treePositions = [];
-        for (let i = 0; i < 18; i++) {
-            const tx = Phaser.Math.Between(0, w);
-            const ty = Phaser.Math.Between(h * 0.3, h * 0.85);
-            const scale = 0.8 + Math.random() * 1.5;
-            const tree = this.add.image(tx, ty, 'menu_tree')
-                .setScale(scale)
-                .setAlpha(0.15 + Math.random() * 0.15)
-                .setDepth(1)
-                .setTint(0x0a0a12);
-            treePositions.push(tree);
+        // Background image scaled to fill screen
+        if (this.textures.exists('menu_bg')) {
+            const bg = this.add.image(w / 2, h / 2, 'menu_bg').setDepth(0);
+            const scaleX = w / bg.width;
+            const scaleY = h / bg.height;
+            const scale = Math.max(scaleX, scaleY);
+            bg.setScale(scale);
         }
 
-        // --- Central bonfire ---
-        const bonfireX = w / 2;
-        const bonfireY = h * 0.62;
-        this.add.image(bonfireX, bonfireY, 'bonfire').setScale(3).setDepth(3).setAlpha(0.8);
+        // Fire particle emitter on the campfire location (center-bottom of bg image)
+        const fireX = w * 0.5;
+        const fireY = h * 0.72;
 
-        // Fire particles
-        this.fireEmitter = this.add.particles(bonfireX, bonfireY - 20, 'particle', {
-            speed: { min: 15, max: 50 },
+        // Main fire
+        this.fireEmitter = this.add.particles(fireX, fireY, 'particle', {
+            speed: { min: 12, max: 40 },
             angle: { min: 250, max: 290 },
-            lifespan: { min: 600, max: 1200 },
-            scale: { start: 1.2, end: 0.1 },
-            alpha: { start: 0.95, end: 0 },
+            lifespan: { min: 500, max: 1000 },
+            scale: { start: 1.0, end: 0.1 },
+            alpha: { start: 0.9, end: 0 },
             tint: [0xFF3300, 0xFF5500, 0xFF7700, 0xFFAA00, 0xFFCC44],
             blendMode: 'ADD',
-            frequency: 30,
-            quantity: 3,
-        });
-        this.fireEmitter.setDepth(5);
+            frequency: 35,
+            quantity: 2,
+        }).setDepth(5);
 
-        // Sparks flying up
-        this.sparkEmitter = this.add.particles(bonfireX, bonfireY - 10, 'particle', {
-            speed: { min: 40, max: 100 },
-            angle: { min: 240, max: 300 },
-            lifespan: { min: 1500, max: 3000 },
-            scale: { start: 0.3, end: 0 },
+        // Sparks flying up from campfire
+        this.sparkEmitter = this.add.particles(fireX, fireY - 5, 'particle', {
+            speed: { min: 30, max: 80 },
+            angle: { min: 245, max: 295 },
+            lifespan: { min: 1200, max: 2500 },
+            scale: { start: 0.25, end: 0 },
             alpha: { start: 0.8, end: 0 },
             tint: [0xFF8800, 0xFFAA00, 0xFFDD00],
             blendMode: 'ADD',
-            frequency: 150,
+            frequency: 120,
             quantity: 1,
-        });
-        this.sparkEmitter.setDepth(5);
+        }).setDepth(5);
 
-        // Warm ground glow
-        const groundGlow = this.add.graphics();
-        groundGlow.setDepth(2);
-        const glowGradient = groundGlow.createGeometryMask();
-        groundGlow.fillStyle(0xFF6600, 0.06);
-        groundGlow.fillEllipse(bonfireX, bonfireY + 20, 500, 120);
-        groundGlow.fillStyle(0xFF4400, 0.04);
-        groundGlow.fillEllipse(bonfireX, bonfireY + 10, 350, 80);
+        // Fireflies / floating embers across the scene
+        this.add.particles(w / 2, h * 0.5, 'particle', {
+            x: { min: -w * 0.45, max: w * 0.45 },
+            y: { min: -h * 0.3, max: h * 0.3 },
+            speed: { min: 2, max: 8 },
+            angle: { min: 0, max: 360 },
+            lifespan: { min: 3000, max: 6000 },
+            scale: { start: 0.2, end: 0.05 },
+            alpha: { start: 0.6, end: 0 },
+            tint: [0xFFDD44, 0xAAFF44, 0xFFAA00],
+            blendMode: 'ADD',
+            frequency: 300,
+            quantity: 1,
+        }).setDepth(3);
+
+        // Warm campfire glow
+        const groundGlow = this.add.graphics().setDepth(2);
+        groundGlow.fillStyle(0xFF6600, 0.05);
+        groundGlow.fillEllipse(fireX, fireY + 15, 400, 100);
+        groundGlow.fillStyle(0xFF4400, 0.03);
+        groundGlow.fillEllipse(fireX, fireY + 8, 280, 60);
 
         // --- Light glow overlay (pulsating) ---
         this.glowGraphics = this.add.graphics().setDepth(4);
-        this.bonfireX = bonfireX;
-        this.bonfireY = bonfireY;
+        this.bonfireX = fireX;
+        this.bonfireY = fireY;
 
         // --- Fog of war darkness ---
         this.fogCanvas = document.createElement('canvas');
