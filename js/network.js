@@ -374,6 +374,14 @@ const network = {
             case 'heal': // proximity healing visual
                 if (this.onHeal) this.onHeal(fromPeerId, msg.amt);
                 break;
+
+            case 'fs': // full state sync (periodic reconciliation)
+                if (this.onFullSync) this.onFullSync(msg);
+                break;
+
+            case 'fsr': // full sync request from client
+                if (this.onFullSyncRequest) this.onFullSyncRequest(fromPeerId);
+                break;
         }
     },
 

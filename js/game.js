@@ -5671,6 +5671,15 @@ class GameScene extends Phaser.Scene {
             }
         };
 
+        // Periodic full-world sync from host
+        network.onFullSync = (msg) => {
+            scene._handleFullSync(msg);
+        };
+        // Host responds to client sync requests
+        network.onFullSyncRequest = (peerId) => {
+            if (network.isHost) scene._broadcastFullSync();
+        };
+
         network.onSecondCampLit = (x, y) => {
             if (scene._secondCampBonfire && !scene._secondCampBonfire.getData('lit')) {
                 scene._lightSecondCamp(scene._secondCampBonfire);
@@ -5882,6 +5891,162 @@ class GameScene extends Phaser.Scene {
         }).setDepth(5100).setScrollFactor(0);
     }
 
+    // Build full world state for periodic sync
+    _broadcastFullSync() {
+        const scene = this;
+        const state = {
+            t: 'fs',
+            // Destroyed resources
+            destroyed: scene._destroyedResources ? [...scene._destroyedResources] : [],
+            // Buildings
+            buildings: [],
+            // Drops on ground
+            drops: [],
+            // Bonfires
+            bonfires: scene.bonfires.map(b => ({
+                fuel: Math.round(b.getData('fuel') * 10) / 10,
+                campFuelAdded: b.getData('campFuelAdded') || 0,
+                campFireLevel: b.getData('campFireLevel') || 1,
+                lit: b.getData('lit') !== false,
+            })),
+            // Game state
+            time: gameState.time,
+            wave: gameState.waveNumber,
+            fireLevel: gameState.fireLevel,
+        };
+
+        // Buildings
+        for (const b of scene.buildingsGroup.children.entries) {
+            if (!b.active) continue;
+            state.buildings.push({
+                type: b.getData('type'),
+                x: Math.round(b.x),
+                y: Math.round(b.y),
+                hp: b.getData('hp'),
+            });
+        }
+
+        // Drops
+        for (const d of scene.drops.children.entries) {
+            if (!d.active) continue;
+            const res = d.getData('resourceType');
+            if (res === 'weapon') continue; // weapon drops are complex, skip
+            state.drops.push({
+                x: Math.round(d.x),
+                y: Math.round(d.y),
+                res: res,
+            });
+        }
+
+        // Metal mines
+        if (scene.metalMines) {
+            state.mines = [];
+            for (const m of scene.metalMines.children.entries) {
+                if (!m.active) continue;
+                state.mines.push({
+                    x: Math.round(m.x),
+                    y: Math.round(m.y),
+                    remaining: m.getData('remaining'),
+                });
+            }
+        }
+
+        network.broadcastReliable(state);
+    }
+
+    // Reconcile world state from host full sync
+    _handleFullSync(msg) {
+        if (network.isHost) return; // host is authoritative
+        const scene = this;
+
+        // Reconcile destroyed resources
+        if (msg.destroyed) {
+            for (const key of msg.destroyed) {
+                if (!scene._destroyedResources) scene._destroyedResources = new Set();
+                if (scene._destroyedResources.has(key)) continue;
+                scene._destroyedResources.add(key);
+                // Destroy the resource sprite
+                const [rx, ry] = key.split(',').map(Number);
+                for (const group of [scene.trees, scene.stones, scene.metals]) {
+                    for (const obj of [...group.children.entries]) {
+                        if (!obj.active) continue;
+                        if (Math.abs(obj.x - rx) < 5 && Math.abs(obj.y - ry) < 5) {
+                            obj.destroy();
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Reconcile buildings — remove extras, add missing
+        if (msg.buildings) {
+            for (const b of [...scene.buildingsGroup.children.entries]) {
+                if (!b.active) continue;
+                const hostHas = msg.buildings.some(
+                    hb => Math.abs(hb.x - b.x) < 8 && Math.abs(hb.y - b.y) < 8
+                );
+                if (!hostHas) scene.destroyBuilding(b, false);
+            }
+            for (const hb of msg.buildings) {
+                const exists = scene.buildingsGroup.children.entries.some(
+                    b => b.active && Math.abs(b.x - hb.x) < 8 && Math.abs(b.y - hb.y) < 8
+                );
+                if (!exists) scene._placeBuilding(hb.type, hb.x, hb.y);
+            }
+        }
+
+        // Reconcile drops — clear and recreate (simple, safe)
+        if (msg.drops) {
+            for (const d of [...scene.drops.children.entries]) {
+                if (!d.active) continue;
+                if (d.getData('resourceType') === 'weapon') continue; // keep weapon drops
+                d.destroy();
+            }
+            for (const d of msg.drops) {
+                const texKey = d.res + '_drop';
+                if (scene.textures.exists(texKey)) {
+                    const drop = scene.drops.create(d.x, d.y, texKey);
+                    drop.setDepth(3);
+                    drop.setData('resourceType', d.res);
+                    drop.body.setAllowGravity(false);
+                }
+            }
+        }
+
+        // Reconcile bonfires
+        if (msg.bonfires) {
+            for (let i = 0; i < msg.bonfires.length && i < scene.bonfires.length; i++) {
+                const b = scene.bonfires[i];
+                const hb = msg.bonfires[i];
+                b.setData('fuel', hb.fuel);
+                b.setData('campFuelAdded', hb.campFuelAdded);
+                b.setData('campFireLevel', hb.campFireLevel);
+                if (hb.lit && !b.getData('lit') && (b.getData('isSecondCamp') || b.getData('isLairCamp'))) {
+                    scene._lightSecondCamp(b);
+                }
+            }
+        }
+
+        // Reconcile metal mines
+        if (msg.mines && scene.metalMines) {
+            for (const md of msg.mines) {
+                for (const mine of scene.metalMines.children.entries) {
+                    if (!mine.active) continue;
+                    if (Math.abs(mine.x - md.x) < 20 && Math.abs(mine.y - md.y) < 20) {
+                        mine.setData('remaining', md.remaining);
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Sync game time and wave
+        if (msg.time !== undefined) gameState.time = msg.time;
+        if (msg.wave !== undefined) gameState.waveNumber = msg.wave;
+        if (msg.fireLevel !== undefined) gameState.fireLevel = msg.fireLevel;
+    }
+
     updateNetwork(dt) {
         // Broadcast own state at SYNC_RATE
         this._syncTimer += dt * 1000;
@@ -5938,6 +6103,15 @@ class GameScene extends Phaser.Scene {
                         lit: b.getData('lit') !== false,
                     })));
                 }
+            }
+        }
+
+        // Host: periodic full-world sync every 10s for guaranteed consistency
+        if (network.isHost && network.peerCount > 0) {
+            this._fullSyncTimer = (this._fullSyncTimer || 0) + dt * 1000;
+            if (this._fullSyncTimer >= 10000) {
+                this._fullSyncTimer = 0;
+                this._broadcastFullSync();
             }
         }
 
