@@ -36,22 +36,40 @@ class MazeScene extends Phaser.Scene {
         const hasDungeonTileset = this.textures.exists('dungeon_tileset');
 
         if (hasDungeonTileset) {
-            // Wang tiling: wall=upper(1), floor=lower(0)
+            // Simple tile rendering: floor tile for walkable, wall tile for walls
+            // Wang transitions only on border tiles for clean edges aligned with colliders
             const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
+            const FLOOR_FRAME = 6;  // all-lower = pure floor
+            const WALL_FRAME = 12;  // all-upper = pure wall
             const isWall = (gx, gy) => gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H || grid[gy][gx] === 0;
 
-            // Bake all tiles into a RenderTexture
             const rt = this.add.renderTexture(0, 0, worldW, worldH).setOrigin(0, 0).setDepth(0);
             for (let gy = 0; gy < GRID_H; gy++) {
                 for (let gx = 0; gx < GRID_W; gx++) {
-                    // Only render tiles near floor (walls + floor + 1-tile border)
                     if (grid[gy][gx] === 0 && !this._bordersFloor(grid, gx, gy, GRID_W, GRID_H)) continue;
-                    const nw = isWall(gx, gy) ? 1 : 0;
-                    const ne = isWall(gx + 1, gy) ? 1 : 0;
-                    const sw = isWall(gx, gy + 1) ? 1 : 0;
-                    const se = isWall(gx + 1, gy + 1) ? 1 : 0;
-                    const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
-                    rt.drawFrame('dungeon_tileset', WANG_TO_FRAME[wangIdx], gx * TILE, gy * TILE);
+
+                    if (grid[gy][gx] === 1) {
+                        // Floor tile — check if near a wall for transition
+                        const touchesWall = isWall(gx-1,gy) || isWall(gx+1,gy) || isWall(gx,gy-1) || isWall(gx,gy+1);
+                        if (touchesWall) {
+                            // Use Wang transition: sample neighboring tiles as corners
+                            const nw = isWall(gx-1, gy-1) || isWall(gx-1, gy) || isWall(gx, gy-1) ? 1 : 0;
+                            const ne = isWall(gx+1, gy-1) || isWall(gx+1, gy) || isWall(gx, gy-1) ? 1 : 0;
+                            const sw = isWall(gx-1, gy+1) || isWall(gx-1, gy) || isWall(gx, gy+1) ? 1 : 0;
+                            const se = isWall(gx+1, gy+1) || isWall(gx+1, gy) || isWall(gx, gy+1) ? 1 : 0;
+                            const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
+                            if (wangIdx === 15) {
+                                rt.drawFrame('dungeon_tileset', FLOOR_FRAME, gx * TILE, gy * TILE);
+                            } else {
+                                rt.drawFrame('dungeon_tileset', WANG_TO_FRAME[wangIdx], gx * TILE, gy * TILE);
+                            }
+                        } else {
+                            rt.drawFrame('dungeon_tileset', FLOOR_FRAME, gx * TILE, gy * TILE);
+                        }
+                    } else {
+                        // Wall tile (only visible ones near floor)
+                        rt.drawFrame('dungeon_tileset', WALL_FRAME, gx * TILE, gy * TILE);
+                    }
                 }
             }
         } else {
