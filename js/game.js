@@ -1619,18 +1619,29 @@ class GameScene extends Phaser.Scene {
                 You descend, torch in hand, into stone corridors that have not known<br>
                 light since before your world was born. Something still moves down there.
             </div>
-            <div style="color:#88CCFF;font-size:1.5em;letter-spacing:3px;">⚡  DESCEND INTO THE LAIR  ⚡</div>
+            <div style="color:#88CCFF;font-size:1.5em;letter-spacing:3px;margin-top:10px;
+                        animation: pulse 2s ease-in-out infinite; cursor:pointer;">
+                ⚡  Click to descend  ⚡
+            </div>
+            <style>@keyframes pulse { 0%,100% { opacity: 0.6; } 50% { opacity: 1; } }</style>
         `;
         document.body.appendChild(overlay);
 
-        this.time.delayedCall(3200, () => {
-            overlay.remove();
-            audioEngine.stopLoop('music', 400);
-            audioEngine.stopLoop('ambient', 400);
-            audioEngine.stopLoop('fire_crackle', 300);
-            audioEngine.stopFootsteps();
-            this.scene.start('MazeScene');
-        });
+        const descend = () => {
+            overlay.style.transition = 'opacity 0.5s';
+            overlay.style.opacity = '0';
+            overlay.style.pointerEvents = 'none';
+            setTimeout(() => {
+                overlay.remove();
+                audioEngine.stopLoop('music', 400);
+                audioEngine.stopLoop('ambient', 400);
+                audioEngine.stopLoop('fire_crackle', 300);
+                audioEngine.stopFootsteps();
+                this.scene.start('MazeScene');
+            }, 500);
+        };
+        overlay.addEventListener('click', descend);
+        overlay.addEventListener('touchend', (e) => { e.preventDefault(); descend(); });
     }
 
     _doVictory() {
