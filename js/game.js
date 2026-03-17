@@ -55,31 +55,29 @@ class GameScene extends Phaser.Scene {
         // --- World Generation ---
         this.generateWorld(centerTile);
 
-        // --- Wind sway on trees (gentle oscillating rotation) ---
+        // --- Wind sway on trees (store params, animate only visible ones in update) ---
         if (this._hasPixelArtTree) {
             for (const tree of this.trees.children.entries) {
                 if (!tree.active) continue;
-                // Set pivot to base of trunk so sway rotates from bottom
                 tree.setOrigin(0.5, 1);
                 tree.y += tree.height * 0.5;
-                // Depth based on trunk base Y for proper Y-sorting
-                tree.setDepth(tree.y * 0.01);
+                tree.setDepth(tree.y); // set once, never recalculated
                 tree.refreshBody();
-                // Stagger start so trees don't sway in unison
-                const delay = Math.random() * 3000;
-                const duration = 2000 + Math.random() * 2000;
-                const angle = 1.2 + Math.random() * 1.5;
-                this.tweens.add({
-                    targets: tree,
-                    angle: { from: -angle, to: angle },
-                    duration: duration,
-                    ease: 'Sine.easeInOut',
-                    yoyo: true,
-                    repeat: -1,
-                    delay: delay,
-                });
+                // Store sway params — NO tweens (massive perf win)
+                tree.setData('swayOff', Math.random() * Math.PI * 2);
+                tree.setData('swaySpd', 0.0008 + Math.random() * 0.0005);
+                tree.setData('swayAng', 1.2 + Math.random() * 1.5);
             }
         }
+        // Set depth once for all static resources (never changes)
+        for (const s of this.stones.children.entries) if (s.active) s.setDepth(s.y);
+        for (const m of this.metals.children.entries) if (m.active) m.setDepth(m.y);
+        if (this.rockWalls) for (const r of this.rockWalls.children.entries) if (r.active) r.setDepth(r.y);
+        if (this.metalMines) for (const m of this.metalMines.children.entries) if (m.active) m.setDepth(m.y);
+
+        // Throttle timers for expensive per-frame operations
+        this._fogTimer = 0;
+        this._hpDrawTimer = 0;
 
         // --- Central Bonfire ---
         const cx = centerTile * CONFIG.TILE_SIZE + 16;
@@ -2044,7 +2042,9 @@ class GameScene extends Phaser.Scene {
         this.updateBonfires(dt);
         this.updateEnemies(dt);
         this.updateProjectiles(dt);
-        this.drawEnemyHealth();
+        // Throttle HP drawing to ~10fps
+        this._hpDrawTimer += delta;
+        if (this._hpDrawTimer > 100) { this._hpDrawTimer = 0; this.drawEnemyHealth(); }
         this.updateAllies(dt);
         this._updateMonsterLair(dt);
         this.updateTurrets(dt);
@@ -2052,12 +2052,15 @@ class GameScene extends Phaser.Scene {
         this.updateDarknessDamage(dt);
         this.updateSpawning(dt);
         this.updateRain(dt);
-        this.updateFogOfWar();
+        // Throttle fog to ~20fps
+        this._fogTimer += delta;
+        if (this._fogTimer > 50) { this._fogTimer = 0; this.updateFogOfWar(); }
         this.updateBuildGhost();
         this._updateBuildSpots();
         this.updateHUD();
         this._updateChatBubbles();
         this.updateNetwork(dt);
+        this._updateTreeSway(time);
         this.updateDepthSort();
         this._drawDebug();
     }
@@ -2065,75 +2068,40 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     // Y-based depth sorting — sprites lower on screen drawn in front
     // --------------------------------------------------------
+    _updateTreeSway(time) {
+        if (!this._hasPixelArtTree) return;
+        const cam = this.cameras.main;
+        const m = 80; // margin outside camera
+        const l = cam.scrollX - m, r = cam.scrollX + cam.width + m;
+        const t = cam.scrollY - m, b = cam.scrollY + cam.height + m;
+        for (const tree of this.trees.children.entries) {
+            if (!tree.active || tree.x < l || tree.x > r || tree.y < t || tree.y > b) continue;
+            tree.angle = Math.sin(time * tree.getData('swaySpd') + tree.getData('swayOff')) * tree.getData('swayAng');
+        }
+    }
+
     updateDepthSort() {
-        // Base depth offset so game objects don't clash with UI layers
-        // World is 4800px tall, use y directly as depth (0-4800 range)
-        // UI elements stay at depth 50+ (fog, labels, etc.) — offset game objects below that
-        const BASE = 0;
+        // Only sort DYNAMIC objects each frame.
+        // Static objects (trees, stones, metals, rocks, mines) get depth set once at creation.
+        this.player.setDepth(this.player.y);
+        if (this.playerNameLabel) this.playerNameLabel.setDepth(this.player.y + 0.1);
 
-        // Player
-        this.player.setDepth(BASE + this.player.y);
-        if (this.playerNameLabel) {
-            this.playerNameLabel.setDepth(BASE + this.player.y + 0.1);
-        }
-
-        // Enemies
-        for (const enemy of this.enemies.children.entries) {
-            if (enemy.active) enemy.setDepth(BASE + enemy.y);
-        }
-
-        // Allies
-        for (const ally of this.allies.children.entries) {
-            if (ally.active) ally.setDepth(BASE + ally.y);
-        }
-
-        // Remote players
+        for (const enemy of this.enemies.children.entries)
+            if (enemy.active) enemy.setDepth(enemy.y);
+        for (const ally of this.allies.children.entries)
+            if (ally.active) ally.setDepth(ally.y);
         for (const [, rp] of this.remotePlayers) {
             if (rp.sprite && rp.sprite.active) {
-                rp.sprite.setDepth(BASE + rp.sprite.y);
-                if (rp.nameLabel) rp.nameLabel.setDepth(BASE + rp.sprite.y + 0.1);
+                rp.sprite.setDepth(rp.sprite.y);
+                if (rp.nameLabel) rp.nameLabel.setDepth(rp.sprite.y + 0.1);
             }
         }
-
-        // Trees — player walks behind crowns, in front of trunks lower on screen
-        for (const tree of this.trees.children.entries) {
-            if (tree.active) tree.setDepth(BASE + tree.y);
-        }
-
-        // Stones, metals
-        for (const stone of this.stones.children.entries) {
-            if (stone.active) stone.setDepth(BASE + stone.y);
-        }
-        for (const metal of this.metals.children.entries) {
-            if (metal.active) metal.setDepth(BASE + metal.y);
-        }
-
-        // Rock walls, metal mines
-        if (this.rockWalls) {
-            for (const rock of this.rockWalls.children.entries) {
-                if (rock.active) rock.setDepth(BASE + rock.y);
-            }
-        }
-        if (this.metalMines) {
-            for (const mine of this.metalMines.children.entries) {
-                if (mine.active) mine.setDepth(BASE + mine.y);
-            }
-        }
-
-        // Buildings
-        for (const b of this.buildingsGroup.children.entries) {
-            if (b.active) b.setDepth(BASE + b.y);
-        }
-
-        // Projectiles (arrows, magic orbs) — sort by Y so they go behind/in front of trees
-        for (const proj of this.projectiles.children.entries) {
-            if (proj.active) proj.setDepth(BASE + proj.y);
-        }
-
-        // Resource drops
-        for (const drop of this.drops.children.entries) {
-            if (drop.active) drop.setDepth(BASE + drop.y);
-        }
+        for (const b of this.buildingsGroup.children.entries)
+            if (b.active) b.setDepth(b.y);
+        for (const proj of this.projectiles.children.entries)
+            if (proj.active) proj.setDepth(proj.y);
+        for (const drop of this.drops.children.entries)
+            if (drop.active) drop.setDepth(drop.y);
     }
 
     // --------------------------------------------------------
@@ -4245,46 +4213,51 @@ class GameScene extends Phaser.Scene {
         }
     }
 
-    // Wang tile road rendering — smooth grass↔dirt transitions
-    // Wang index = NW*8 + NE*4 + SW*2 + SE*1 (upper=1, lower=0)
-    // Maps wang index → spritesheet frame in ground_tileset
+    // Wang tile road rendering — baked into RenderTexture for performance
     _drawRoadTiles(pathTiles, T) {
+        // Compute bounding box of all path tiles to create minimal RenderTexture
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        for (const key of pathTiles) {
+            const [tx, ty] = key.split(',').map(Number);
+            if (tx < minX) minX = tx; if (ty < minY) minY = ty;
+            if (tx > maxX) maxX = tx; if (ty > maxY) maxY = ty;
+        }
+        // Expand by 1 tile for Wang transition border
+        minX--; minY--; maxX += 2; maxY += 2;
+        const rtW = (maxX - minX) * T;
+        const rtH = (maxY - minY) * T;
+
         if (!this._hasPixelArtGround) {
-            // Fallback: procedural road tiles (no Wang tiling)
+            const rt = this.add.renderTexture(minX * T, minY * T, rtW, rtH).setOrigin(0, 0).setDepth(0);
             for (const key of pathTiles) {
                 const [tx, ty] = key.split(',').map(Number);
-                const wx = tx * T, wy = ty * T;
+                const lx = (tx - minX) * T, ly = (ty - minY) * T;
                 let neighbors = 0;
                 for (let dx = -1; dx <= 1; dx++)
                     for (let dy = -1; dy <= 1; dy++) {
                         if (dx === 0 && dy === 0) continue;
                         if (pathTiles.has(`${tx + dx},${ty + dy}`)) neighbors++;
                     }
-                if (neighbors >= 5) {
-                    this.add.image(wx + 16, wy + 16, 'road' + ((tx * 7 + ty * 13) % 4)).setDepth(0);
-                } else {
-                    this.add.image(wx + 16, wy + 16, 'road_edge' + ((tx * 11 + ty * 3) % 4)).setDepth(0);
-                }
+                const texKey = neighbors >= 5
+                    ? 'road' + ((tx * 7 + ty * 13) % 4)
+                    : 'road_edge' + ((tx * 11 + ty * 3) % 4);
+                rt.drawFrame(texKey, undefined, lx, ly);
             }
             return;
         }
 
-        // Wang index → spritesheet frame lookup
+        // Wang tiles baked into RenderTexture
         const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
+        const rt = this.add.renderTexture(minX * T, minY * T, rtW, rtH).setOrigin(0, 0).setDepth(0);
 
-        // Collect all tiles that need rendering (path tiles + 1-tile border)
         const renderSet = new Set();
         for (const key of pathTiles) {
             const [tx, ty] = key.split(',').map(Number);
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++)
+                for (let dy = -1; dy <= 1; dy++)
                     renderSet.add(`${tx + dx},${ty + dy}`);
-                }
-            }
         }
 
-        // For each tile in the render set, compute Wang index from 4 corner vertices
-        // A vertex at tile position is "upper" (1) if that tile is a path tile
         for (const key of renderSet) {
             const [tx, ty] = key.split(',').map(Number);
             const nw = pathTiles.has(`${tx},${ty}`) ? 1 : 0;
@@ -4292,9 +4265,8 @@ class GameScene extends Phaser.Scene {
             const sw = pathTiles.has(`${tx},${ty + 1}`) ? 1 : 0;
             const se = pathTiles.has(`${tx + 1},${ty + 1}`) ? 1 : 0;
             const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
-            if (wangIdx === 0) continue; // all grass — base layer handles it
-            const frame = WANG_TO_FRAME[wangIdx];
-            this.add.image(tx * T + 16, ty * T + 16, 'ground_tileset', frame).setDepth(0);
+            if (wangIdx === 0) continue;
+            rt.drawFrame('ground_tileset', WANG_TO_FRAME[wangIdx], (tx - minX) * T, (ty - minY) * T);
         }
     }
 
