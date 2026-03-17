@@ -647,38 +647,8 @@ class GameScene extends Phaser.Scene {
 
         const isPath = (tx, ty) => pathTiles.has(`${tx},${ty}`);
 
-        // --- Draw road tiles on paths ---
-        for (const key of pathTiles) {
-            const [tx, ty] = key.split(',').map(Number);
-            const wx = tx * T;
-            const wy = ty * T;
-            // Check if this tile is surrounded by path tiles (inner) or on edge
-            let neighbors = 0;
-            for (let dx = -1; dx <= 1; dx++) {
-                for (let dy = -1; dy <= 1; dy++) {
-                    if (dx === 0 && dy === 0) continue;
-                    if (pathTiles.has(`${tx + dx},${ty + dy}`)) neighbors++;
-                }
-            }
-            if (neighbors >= 5) {
-                // Inner road tile — use tileset frame 12 (pure dirt) or procedural
-                const variant = (tx * 7 + ty * 13) % 4;
-                if (this._hasPixelArtGround) {
-                    this.add.image(wx + 16, wy + 16, 'ground_tileset', 12).setDepth(0);
-                } else {
-                    this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
-                }
-            } else {
-                // Edge road tile — use tileset transition frames or procedural
-                const variant = (tx * 11 + ty * 3) % 4;
-                if (this._hasPixelArtGround) {
-                    const edgeFrames = [3, 9, 5, 1];
-                    this.add.image(wx + 16, wy + 16, 'ground_tileset', edgeFrames[variant]).setDepth(0);
-                } else {
-                    this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
-                }
-            }
-        }
+        // --- Draw road tiles with Wang tile transitions ---
+        this._drawRoadTiles(pathTiles, T);
 
         // --- Place trees using noise-driven density ---
         // Store occupied tile coords for collision grid
@@ -1026,34 +996,8 @@ class GameScene extends Phaser.Scene {
         roadWaypoints.reverse();
         this._lairMarchPath = roadWaypoints;
 
-        // Draw the new road tiles (same logic as above, re-render all path tiles)
-        for (const key of pathTiles) {
-            const [ptx, pty] = key.split(',').map(Number);
-            const wx = ptx * T, wy = pty * T;
-            let neighbors = 0;
-            for (let ddx = -1; ddx <= 1; ddx++) {
-                for (let ddy = -1; ddy <= 1; ddy++) {
-                    if (ddx === 0 && ddy === 0) continue;
-                    if (pathTiles.has(`${ptx + ddx},${pty + ddy}`)) neighbors++;
-                }
-            }
-            if (neighbors >= 5) {
-                const variant = (ptx * 7 + pty * 13) % 4;
-                if (this._hasPixelArtGround) {
-                    this.add.image(wx + 16, wy + 16, 'ground_tileset', 12).setDepth(0);
-                } else {
-                    this.add.image(wx + 16, wy + 16, 'road' + variant).setDepth(0);
-                }
-            } else if (neighbors >= 2) {
-                const variant = (ptx * 11 + pty * 3) % 4;
-                if (this._hasPixelArtGround) {
-                    const edgeFrames = [3, 9, 5, 1];
-                    this.add.image(wx + 16, wy + 16, 'ground_tileset', edgeFrames[variant]).setDepth(0);
-                } else {
-                    this.add.image(wx + 16, wy + 16, 'road_edge' + variant).setDepth(0);
-                }
-            }
-        }
+        // Draw the new road tiles with Wang tile transitions
+        this._drawRoadTiles(pathTiles, T);
 
         // --- Wandering Merchant Shop ---
         // Place on opposite side of center from second camp, at ~lvl3 light range
@@ -4231,6 +4175,59 @@ class GameScene extends Phaser.Scene {
                     if (enemy.anims && enemy.anims.isPlaying) enemy.anims.stop();
                 }
             }
+        }
+    }
+
+    // Wang tile road rendering — smooth grass↔dirt transitions
+    // Wang index = NW*8 + NE*4 + SW*2 + SE*1 (upper=1, lower=0)
+    // Maps wang index → spritesheet frame in ground_tileset
+    _drawRoadTiles(pathTiles, T) {
+        if (!this._hasPixelArtGround) {
+            // Fallback: procedural road tiles (no Wang tiling)
+            for (const key of pathTiles) {
+                const [tx, ty] = key.split(',').map(Number);
+                const wx = tx * T, wy = ty * T;
+                let neighbors = 0;
+                for (let dx = -1; dx <= 1; dx++)
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+                        if (pathTiles.has(`${tx + dx},${ty + dy}`)) neighbors++;
+                    }
+                if (neighbors >= 5) {
+                    this.add.image(wx + 16, wy + 16, 'road' + ((tx * 7 + ty * 13) % 4)).setDepth(0);
+                } else {
+                    this.add.image(wx + 16, wy + 16, 'road_edge' + ((tx * 11 + ty * 3) % 4)).setDepth(0);
+                }
+            }
+            return;
+        }
+
+        // Wang index → spritesheet frame lookup
+        const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
+
+        // Collect all tiles that need rendering (path tiles + 1-tile border)
+        const renderSet = new Set();
+        for (const key of pathTiles) {
+            const [tx, ty] = key.split(',').map(Number);
+            for (let dx = -1; dx <= 1; dx++) {
+                for (let dy = -1; dy <= 1; dy++) {
+                    renderSet.add(`${tx + dx},${ty + dy}`);
+                }
+            }
+        }
+
+        // For each tile in the render set, compute Wang index from 4 corner vertices
+        // A vertex at tile position is "upper" (1) if that tile is a path tile
+        for (const key of renderSet) {
+            const [tx, ty] = key.split(',').map(Number);
+            const nw = pathTiles.has(`${tx},${ty}`) ? 1 : 0;
+            const ne = pathTiles.has(`${tx + 1},${ty}`) ? 1 : 0;
+            const sw = pathTiles.has(`${tx},${ty + 1}`) ? 1 : 0;
+            const se = pathTiles.has(`${tx + 1},${ty + 1}`) ? 1 : 0;
+            const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
+            if (wangIdx === 0) continue; // all grass — base layer handles it
+            const frame = WANG_TO_FRAME[wangIdx];
+            this.add.image(tx * T + 16, ty * T + 16, 'ground_tileset', frame).setDepth(0);
         }
     }
 
