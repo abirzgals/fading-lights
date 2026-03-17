@@ -117,20 +117,25 @@ class MazeScene extends Phaser.Scene {
             }
         }
 
-        // --- Collectible torches (increase light radius) ---
+        // --- Collectible torches (increase light radius significantly) ---
         this._torchPickups = [];
+        this._torchCount = 0;
         const torchTex = this.textures.exists('dungeon_torch') ? 'dungeon_torch' : 'torch_item';
-        for (let i = 2; i < rooms.length - 1; i++) { // skip spawn and boss room
-            if (Math.random() < 0.3) { // ~30% of rooms
+        for (let i = 1; i < rooms.length - 1; i++) { // skip boss room only
+            if (Math.random() < 0.6) { // ~60% of rooms have a torch
                 const rm = rooms[i];
                 const tx = (rm.x + 1 + Math.floor(Math.random() * (rm.w - 2))) * TILE + 16;
                 const ty = (rm.y + 1 + Math.floor(Math.random() * (rm.h - 2))) * TILE + 16;
                 const pickup = this.add.image(tx, ty, torchTex).setDepth(3);
-                // Pulsing glow
                 const glow = this.add.image(tx, ty, 'glow')
-                    .setDepth(2).setScale(1.5).setAlpha(0.3).setTint(0xFFAA00).setBlendMode('ADD');
-                this.tweens.add({ targets: glow, scale: 2, alpha: 0.15, duration: 800, yoyo: true, repeat: -1 });
-                this._torchPickups.push({ sprite: pickup, glow, x: tx, y: ty, collected: false });
+                    .setDepth(2).setScale(2).setAlpha(0.35).setTint(0xFFAA00).setBlendMode('ADD');
+                this.tweens.add({ targets: glow, scale: 2.5, alpha: 0.15, duration: 800, yoyo: true, repeat: -1 });
+                // Hint text
+                const hint = this.add.text(tx, ty - 18, 'TORCH', {
+                    fontSize: '7px', fill: '#FFAA00', fontFamily: 'monospace',
+                    stroke: '#000', strokeThickness: 1,
+                }).setOrigin(0.5).setDepth(3).setAlpha(0.7);
+                this._torchPickups.push({ sprite: pickup, glow, hint, x: tx, y: ty, collected: false });
             }
         }
 
@@ -651,13 +656,16 @@ class MazeScene extends Phaser.Scene {
         for (const tp of this._torchPickups) {
             if (tp.collected) continue;
             const d = Phaser.Math.Distance.Between(p.x, p.y, tp.x, tp.y);
-            if (d < 30) {
+            if (d < 45) {
                 tp.collected = true;
                 tp.sprite.destroy();
                 tp.glow.destroy();
-                this._torchRadius += 20; // increase light radius
-                showFloatingText(this, tp.x, tp.y - 20, 'TORCH +20 LIGHT', '#FFAA00');
-                this.cameras.main.flash(200, 80, 60, 0);
+                if (tp.hint) tp.hint.destroy();
+                this._torchCount++;
+                this._torchRadius += 40; // significant light boost per torch
+                showFloatingText(this, tp.x, tp.y - 20,
+                    `TORCH #${this._torchCount}  Light +40`, '#FFAA00');
+                this.cameras.main.flash(250, 100, 70, 0);
             }
         }
 
