@@ -24,6 +24,10 @@ class MenuScene extends Phaser.Scene {
                 { frameWidth: 48, frameHeight: 48 });
         });
         this.load.image('dark_tree', 'assets/pixelart/dark-tree.png');
+        this.load.image('tree_pine', 'assets/pixelart/tree_pine.png');
+        this.load.image('tree_oak', 'assets/pixelart/tree_oak.png');
+        this.load.image('tree_dead', 'assets/pixelart/tree_dead.png');
+        this.load.image('tree_birch', 'assets/pixelart/tree_birch.png');
         this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
             frameWidth: 32, frameHeight: 32,
         });

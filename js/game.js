@@ -27,6 +27,14 @@ class GameScene extends Phaser.Scene {
         this._hasPixelArtPlayer = this.textures.exists('player_south');
         this._hasPixelArtStalker = this.textures.exists('stalker_south');
         this._hasPixelArtTree = this.textures.exists('dark_tree');
+        // Build array of available tree texture keys
+        this._treeVariants = [];
+        if (this._hasPixelArtTree) {
+            this._treeVariants.push('dark_tree');
+            for (const k of ['tree_pine', 'tree_oak', 'tree_dead', 'tree_birch']) {
+                if (this.textures.exists(k)) this._treeVariants.push(k);
+            }
+        }
         this._hasPixelArtGround = this.textures.exists('ground_tileset');
 
         // --- Resource Groups ---
@@ -42,6 +50,30 @@ class GameScene extends Phaser.Scene {
 
         // --- World Generation ---
         this.generateWorld(centerTile);
+
+        // --- Wind sway on trees (gentle oscillating rotation) ---
+        if (this._hasPixelArtTree) {
+            for (const tree of this.trees.children.entries) {
+                if (!tree.active) continue;
+                // Set pivot to base of trunk so sway rotates from bottom
+                tree.setOrigin(0.5, 1);
+                tree.y += tree.height * 0.5; // adjust position for new origin
+                tree.refreshBody();
+                // Stagger start so trees don't sway in unison
+                const delay = Math.random() * 3000;
+                const duration = 2000 + Math.random() * 2000;
+                const angle = 1.2 + Math.random() * 1.5;
+                this.tweens.add({
+                    targets: tree,
+                    angle: { from: -angle, to: angle },
+                    duration: duration,
+                    ease: 'Sine.easeInOut',
+                    yoyo: true,
+                    repeat: -1,
+                    delay: delay,
+                });
+            }
+        }
 
         // --- Central Bonfire ---
         const cx = centerTile * CONFIG.TILE_SIZE + 16;
@@ -685,12 +717,22 @@ class GameScene extends Phaser.Scene {
 
                 const wx = tx * T + 16;
                 const wy = ty * T + 16;
-                const treeKey = this._hasPixelArtTree ? 'dark_tree' : 'tree';
+                let treeKey;
+                if (this._treeVariants.length > 0) {
+                    // Seeded random variant selection for consistency
+                    const vi = Math.floor(rng() * this._treeVariants.length);
+                    treeKey = this._treeVariants[vi];
+                } else {
+                    treeKey = 'tree';
+                }
                 const tree = this.trees.create(wx, wy, treeKey);
                 tree.setDepth(3);
                 if (this._hasPixelArtTree) {
+                    // Adjust body offset based on tree texture height
+                    const th = tree.height || 48;
+                    const tw = tree.width || 48;
                     tree.body.setSize(22, 28);
-                    tree.body.setOffset(13, 36);
+                    tree.body.setOffset(Math.floor((tw - 22) / 2), th - 28);
                 } else {
                     tree.body.setSize(22, 28);
                     tree.body.setOffset(5, 22);
