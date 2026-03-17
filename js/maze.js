@@ -117,6 +117,23 @@ class MazeScene extends Phaser.Scene {
             }
         }
 
+        // --- Collectible torches (increase light radius) ---
+        this._torchPickups = [];
+        const torchTex = this.textures.exists('dungeon_torch') ? 'dungeon_torch' : 'torch_item';
+        for (let i = 2; i < rooms.length - 1; i++) { // skip spawn and boss room
+            if (Math.random() < 0.3) { // ~30% of rooms
+                const rm = rooms[i];
+                const tx = (rm.x + 1 + Math.floor(Math.random() * (rm.w - 2))) * TILE + 16;
+                const ty = (rm.y + 1 + Math.floor(Math.random() * (rm.h - 2))) * TILE + 16;
+                const pickup = this.add.image(tx, ty, torchTex).setDepth(3);
+                // Pulsing glow
+                const glow = this.add.image(tx, ty, 'glow')
+                    .setDepth(2).setScale(1.5).setAlpha(0.3).setTint(0xFFAA00).setBlendMode('ADD');
+                this.tweens.add({ targets: glow, scale: 2, alpha: 0.15, duration: 800, yoyo: true, repeat: -1 });
+                this._torchPickups.push({ sprite: pickup, glow, x: tx, y: ty, collected: false });
+            }
+        }
+
         // --- Player ---
         const sr  = rooms[0];
         const spx = (sr.x + Math.floor(sr.w / 2)) * TILE + 16;
@@ -629,6 +646,20 @@ class MazeScene extends Phaser.Scene {
         // --- Shadows (player is light source) ---
         this._shadowTimer += delta;
         if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateMazeShadows(); }
+
+        // --- Torch pickups (auto-collect when near) ---
+        for (const tp of this._torchPickups) {
+            if (tp.collected) continue;
+            const d = Phaser.Math.Distance.Between(p.x, p.y, tp.x, tp.y);
+            if (d < 30) {
+                tp.collected = true;
+                tp.sprite.destroy();
+                tp.glow.destroy();
+                this._torchRadius += 20; // increase light radius
+                showFloatingText(this, tp.x, tp.y - 20, 'TORCH +20 LIGHT', '#FFAA00');
+                this.cameras.main.flash(200, 80, 60, 0);
+            }
+        }
 
         // --- Visuals ---
         this._updateTorchLight();

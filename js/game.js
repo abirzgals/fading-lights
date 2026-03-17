@@ -787,7 +787,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // --- Starter stones near bonfire (snapped to tile grid) ---
-        for (let s = 0; s < 8; s++) {
+        for (let s = 0; s < 14; s++) {
             const angle = rng() * Math.PI * 2;
             const dist = 70 + rng() * 50;
             const stx = Math.round(cx + Math.cos(angle) * (dist / T));
@@ -805,7 +805,7 @@ class GameScene extends Phaser.Scene {
         }
 
         // --- Stone clusters in clearings and along paths ---
-        for (let c = 0; c < 40; c++) {
+        for (let c = 0; c < 80; c++) {
             const scx = Math.floor(rng() * (worldSize - 20)) + 10;
             const scy = Math.floor(rng() * (worldSize - 20)) + 10;
             const sdx = scx - cx, sdy = scy - cy;
@@ -1004,7 +1004,7 @@ class GameScene extends Phaser.Scene {
         // --- Monster Lair (win condition) ---
         // Place so the lair is visible at the edge of second camp's max light (level 5)
         // Second camp max radius ≈ 540px → lair ~500px from camp = ~16 tiles further
-        const lairDist = 35; // tiles from center — reachable from second camp light
+        const lairDist = 45; // tiles from center — far but reachable from upgraded second camp
         const lairAngle = secondCampAngle + (rng() - 0.5) * 0.15; // small offset to stay in range
         const lair_tx = Math.round(cx + Math.cos(lairAngle) * lairDist);
         const lair_ty = Math.round(cy + Math.sin(lairAngle) * lairDist);
@@ -2955,12 +2955,22 @@ class GameScene extends Phaser.Scene {
             this.time.delayedCall(30000, () => stump.destroy());
         }
         if (resType === 'stone') this._trackObjective('stones_mined', 1);
-        // Update walkability grid — destroyed resource opens path
-        // Clear both the visual position and the original tile position
-        this._setGridWalkable(ox, oy);
+        // Update walkability grid — clear ALL tiles the object could have blocked
+        const T = CONFIG.TILE_SIZE;
+        const bodyW = obj.body ? obj.body.width : T;
+        const bodyH = obj.body ? obj.body.height : T;
+        // Clear a generous area around the object (2x2 tiles minimum)
+        for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+                this._setGridWalkable(ox + dx * T, oy + dy * T);
+            }
+        }
+        // For trees shifted up, also clear below
         if (resType === 'tree' && this._hasPixelArtTree) {
-            // Tree was shifted up by 1 tile — also clear the original grid tile below
-            this._setGridWalkable(ox, oy + CONFIG.TILE_SIZE);
+            for (let dx = -1; dx <= 1; dx++) {
+                this._setGridWalkable(ox + dx * T, oy + T);
+                this._setGridWalkable(ox + dx * T, oy + T * 2);
+            }
         }
         obj.destroy();
 
