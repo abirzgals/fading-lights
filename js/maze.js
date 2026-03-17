@@ -700,9 +700,20 @@ class MazeScene extends Phaser.Scene {
             let scd = this._boss.getData('spellCd') - dt * 1000;
             this._boss.setData('spellCd', scd);
             const bDist = Phaser.Math.Distance.Between(this._boss.x, this._boss.y, p.x, p.y);
-            if (bDist < 200 && scd <= 0) {
-                this._boss.setData('spellCd', 2500);
-                this._bossSpellAttack();
+
+            // Boss is charging ultimate — don't do normal attacks
+            if (this._bossCharging) {
+                // handled by the timed callback
+            } else if (bDist < 200 && scd <= 0) {
+                this._bossSpellCount = (this._bossSpellCount || 0) + 1;
+                if (this._bossSpellCount % 4 === 0) {
+                    // Every 4th attack: ULTIMATE — charge then nova
+                    this._boss.setData('spellCd', 8000);
+                    this._bossUltimate();
+                } else {
+                    this._boss.setData('spellCd', 2500);
+                    this._bossSpellAttack();
+                }
             }
         }
 
@@ -949,6 +960,114 @@ class MazeScene extends Phaser.Scene {
         }
         this._treasureHint.setText('[E] Open the Chest');
         this._treasureHint.setFill('#FFD700');
+    }
+
+    _bossUltimate() {
+        const boss = this._boss;
+        if (!boss || !boss.active) return;
+        this._bossCharging = true;
+        boss.setVelocity(0, 0); // stop moving during charge
+
+        // Warning text
+        const warn = this.add.text(boss.x, boss.y - 60, '⚡ CHARGING ⚡', {
+            fontSize: '12px', fill: '#FF2222', fontFamily: 'monospace',
+            stroke: '#000', strokeThickness: 3,
+        }).setOrigin(0.5).setDepth(100);
+        this.tweens.add({ targets: warn, alpha: 0.3, duration: 300, yoyo: true, repeat: 8 });
+
+        // Phase 1: Red particles fly INTO the boss for 3 seconds
+        const chargeEmitter = this.add.particles(boss.x, boss.y, 'particle', {
+            speed: { min: 80, max: 160 },
+            lifespan: { min: 600, max: 1000 },
+            scale: { start: 0, end: 1.0 },
+            alpha: { start: 0, end: 0.9 },
+            tint: [0xFF0000, 0xFF2200, 0xCC0000, 0xFF4400],
+            blendMode: 'ADD',
+            frequency: 25,
+            quantity: 3,
+            // Particles move INWARD — use moveToX/Y
+            moveToX: boss.x,
+            moveToY: boss.y,
+            emitZone: {
+                source: new Phaser.Geom.Circle(0, 0, 120),
+                type: 'random',
+            },
+        }).setDepth(8);
+
+        // Growing dark aura during charge
+        const chargeAura = this.add.image(boss.x, boss.y, 'glow')
+            .setDepth(7).setScale(2).setAlpha(0.2).setTint(0xFF0000).setBlendMode('ADD');
+        this.tweens.add({
+            targets: chargeAura, scale: 8, alpha: 0.5,
+            duration: 3000, ease: 'Quad.easeIn',
+        });
+
+        // Boss pulses red during charge
+        this.tweens.add({
+            targets: boss, alpha: 0.3, duration: 200,
+            yoyo: true, repeat: 14,
+        });
+
+        // Screen shake during charge
+        this.cameras.main.shake(3000, 0.005);
+
+        // Phase 2: After 3 seconds — EXPLODE
+        this.time.delayedCall(3000, () => {
+            if (!boss.active) { this._bossCharging = false; return; }
+            this._bossCharging = false;
+            warn.destroy();
+            chargeEmitter.destroy();
+            chargeAura.destroy();
+
+            // Nova explosion — damage everything within radius
+            const novaRadius = 130;
+            const p = this.player;
+            const dist = Phaser.Math.Distance.Between(boss.x, boss.y, p.x, p.y);
+
+            // Massive screen flash
+            this.cameras.main.flash(400, 200, 30, 30);
+            this.cameras.main.shake(300, 0.03);
+
+            // Visual: expanding ring of destruction
+            for (let ring = 0; ring < 3; ring++) {
+                const delay = ring * 100;
+                this.time.delayedCall(delay, () => {
+                    const circle = this.add.graphics().setDepth(10);
+                    const r0 = 10 + ring * 20;
+                    circle.lineStyle(4, 0xFF0000, 0.8);
+                    circle.strokeCircle(boss.x, boss.y, r0);
+                    this.tweens.add({
+                        targets: circle, alpha: 0, duration: 500,
+                        onUpdate: () => {
+                            circle.clear();
+                            const expand = r0 + (novaRadius - r0) * (1 - circle.alpha);
+                            circle.lineStyle(3 - ring, 0xFF2200, circle.alpha);
+                            circle.strokeCircle(boss.x, boss.y, expand);
+                        },
+                        onComplete: () => circle.destroy(),
+                    });
+                });
+            }
+
+            // Explosion particles outward
+            this.add.particles(boss.x, boss.y, 'particle', {
+                speed: { min: 80, max: 200 },
+                angle: { min: 0, max: 360 },
+                lifespan: { min: 400, max: 800 },
+                scale: { start: 1.5, end: 0 },
+                alpha: { start: 1, end: 0 },
+                tint: [0xFF0000, 0xFF4400, 0xFF2200, 0xCC0000],
+                blendMode: 'ADD',
+                quantity: 40,
+                emitting: false,
+            }).explode(40);
+
+            // Damage player if in range
+            if (dist < novaRadius) {
+                const dmg = damagePlayerShared(this, 40);
+                showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#FF0000');
+            }
+        });
     }
 
     _bossSpellAttack() {
