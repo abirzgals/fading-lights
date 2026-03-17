@@ -312,24 +312,84 @@ class MazeScene extends Phaser.Scene {
     // TORCH LIGHT
     // ----------------------------------------------------------
     _initTorchLight(worldW, worldH) {
-        this._lightW   = worldW;
-        this._lightH   = worldH;
-        this._lightGfx = this.make.graphics({ add: false });
-        this._lightRT  = this.add.renderTexture(0, 0, worldW, worldH)
-            .setDepth(80).setScrollFactor(1).setOrigin(0, 0);
+        this._lightW = worldW;
+        this._lightH = worldH;
+        // Canvas-based fog of war (same approach as overworld)
+        this._fogCanvas = document.createElement('canvas');
+        this._fogCanvas.width = this.scale.width;
+        this._fogCanvas.height = this.scale.height;
+        this._fogCtx = this._fogCanvas.getContext('2d');
+        if (this.textures.exists('maze_fog')) this.textures.remove('maze_fog');
+        this._fogTexture = this.textures.createCanvas('maze_fog', this.scale.width, this.scale.height);
+        this._fogImage = this.add.image(0, 0, 'maze_fog').setDepth(80).setScrollFactor(0).setOrigin(0, 0);
+        this._fogTimer = 0;
+
+        this.scale.on('resize', (gameSize) => {
+            this._fogCanvas.width = gameSize.width;
+            this._fogCanvas.height = gameSize.height;
+            if (this.textures.exists('maze_fog')) this.textures.remove('maze_fog');
+            this._fogTexture = this.textures.createCanvas('maze_fog', gameSize.width, gameSize.height);
+            this._fogImage.setTexture('maze_fog');
+        });
+    }
+
+    _worldToScreen(wx, wy) {
+        const cam = this.cameras.main;
+        return { x: (wx - cam.scrollX) * cam.zoom, y: (wy - cam.scrollY) * cam.zoom };
     }
 
     _updateTorchLight() {
-        const p = this.player, rt = this._lightRT, g = this._lightGfx, r = this._torchRadius;
-        rt.clear();
-        g.clear(); g.fillStyle(0x000000, 0.95); g.fillRect(0, 0, this._lightW, this._lightH);
-        rt.draw(g, 0, 0);
-        g.clear(); g.fillStyle(0xFFFFFF, 1); g.fillCircle(p.x, p.y, r);
-        rt.erase(g, 0, 0);
-        g.clear();
-        g.fillStyle(0xFF7700, 0.12); g.fillCircle(p.x, p.y, r * 0.65);
-        g.fillStyle(0xFFAA00, 0.07); g.fillCircle(p.x, p.y, r * 0.38);
-        rt.draw(g, 0, 0);
+        // Throttle to ~20fps
+        this._fogTimer += this.game.loop.delta;
+        if (this._fogTimer < 50) return;
+        this._fogTimer = 0;
+
+        const ctx = this._fogCtx;
+        const gameW = this.scale.width;
+        const gameH = this.scale.height;
+        if (this._fogCanvas.width !== gameW || this._fogCanvas.height !== gameH) {
+            this._fogCanvas.width = gameW;
+            this._fogCanvas.height = gameH;
+        }
+
+        const p = this.player;
+        const r = this._torchRadius;
+        const { x: px, y: py } = this._worldToScreen(p.x, p.y);
+
+        // Fill with darkness
+        ctx.globalCompositeOperation = 'source-over';
+        ctx.fillStyle = 'rgba(2, 1, 5, 0.97)';
+        ctx.fillRect(0, 0, gameW, gameH);
+
+        // Punch light hole with gradient (player is torch)
+        ctx.globalCompositeOperation = 'destination-out';
+        const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
+        const fr = r * flicker;
+        const gradient = ctx.createRadialGradient(px, py, 0, px, py, fr);
+        gradient.addColorStop(0, 'rgba(0,0,0,1)');
+        gradient.addColorStop(0.4, 'rgba(0,0,0,0.9)');
+        gradient.addColorStop(0.7, 'rgba(0,0,0,0.4)');
+        gradient.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(px, py, fr, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Warm color tint in lit area
+        ctx.globalCompositeOperation = 'source-atop';
+        const tg = ctx.createRadialGradient(px, py, 0, px, py, fr);
+        tg.addColorStop(0, 'rgba(255, 140, 50, 0.15)');
+        tg.addColorStop(0.5, 'rgba(255, 100, 30, 0.08)');
+        tg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = tg;
+        ctx.beginPath();
+        ctx.arc(px, py, fr, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Copy to Phaser texture
+        this._fogTexture.context.clearRect(0, 0, gameW, gameH);
+        this._fogTexture.context.drawImage(this._fogCanvas, 0, 0);
+        this._fogTexture.refresh();
     }
 
     // ----------------------------------------------------------
