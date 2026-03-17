@@ -240,6 +240,63 @@ class MazeScene extends Phaser.Scene {
         // Debug overlay graphics
         this._debugGfx = this.add.graphics().setDepth(4999);
 
+        // --- Multiplayer: remote players in maze ---
+        this.remotePlayers = new Map();
+        this._syncTimer = 0;
+        if (typeof network !== 'undefined') {
+            const mazeScene = this;
+            network.onPeerJoined = (peerId, name, color) => {
+                if (mazeScene.remotePlayers.has(peerId)) return;
+                const variants = ['male', 'female'];
+                const rv = variants[Math.floor(Math.random() * variants.length)];
+                const tex = mazeScene.textures.exists(rv + '_south') ? (rv + '_south') : 'player';
+                const sprite = mazeScene.add.sprite(mazeScene.player.x, mazeScene.player.y, tex);
+                sprite.setDepth(5);
+                sprite._charVariant = rv;
+                sprite._lastDir = 'south';
+                const label = mazeScene.add.text(0, 0, name || 'Player', {
+                    fontSize: '11px', fontFamily: 'monospace', color: '#AAFFAA',
+                    stroke: '#000000', strokeThickness: 2,
+                }).setOrigin(0.5).setDepth(5100);
+                mazeScene.remotePlayers.set(peerId, {
+                    sprite, nameLabel: label, targetX: mazeScene.player.x, targetY: mazeScene.player.y,
+                });
+                showFloatingText(mazeScene, mazeScene.player.x, mazeScene.player.y - 40, `${name} joined!`, '#44FF44');
+            };
+            network.onPeerLeft = (peerId) => {
+                const r = mazeScene.remotePlayers.get(peerId);
+                if (r) { r.sprite.destroy(); r.nameLabel.destroy(); mazeScene.remotePlayers.delete(peerId); }
+            };
+            network.onPeerState = (peerId, state) => {
+                const r = mazeScene.remotePlayers.get(peerId);
+                if (!r) return;
+                r.targetX = state.x; r.targetY = state.y;
+                const s = r.sprite, cv = s._charVariant;
+                if (cv && mazeScene.textures.exists(cv + '_south')) {
+                    const isMoving = Math.abs(state.x - r.targetX) > 1 || Math.abs(state.y - r.targetY) > 1;
+                    if (state.fx !== 0 || state.fy !== 0) {
+                        const dir = facingToDirection(state.fx || 0, state.fy || 0);
+                        const wk = 'player_walk_' + dir;
+                        if (isMoving && mazeScene.anims.exists(wk)) {
+                            if (s.anims.currentAnim?.key !== wk) s.play(wk);
+                        } else {
+                            if (s.anims.isPlaying) s.anims.stop();
+                            if (dir !== s._lastDir) s.setTexture(cv + '_' + dir);
+                        }
+                        s._lastDir = dir; s.setFlipX(false);
+                    }
+                } else if (state.fx !== undefined) {
+                    s.setFlipX(state.fx < 0);
+                }
+            };
+            // Create sprites for already-connected peers
+            for (const [peerId, peer] of network.peers) {
+                if (peer.name && !mazeScene.remotePlayers.has(peerId)) {
+                    network.onPeerJoined(peerId, peer.name, peer.color);
+                }
+            }
+        }
+
         // --- Boss room (last room) + Treasure ---
         const er       = rooms[rooms.length - 1];
         const tresX    = (er.x + Math.floor(er.w / 2)) * TILE + 16;
@@ -818,6 +875,24 @@ class MazeScene extends Phaser.Scene {
             this._treasureHint.setAlpha(distT < 80 ? 1 : 0);
         } else {
             this._treasureHint.setAlpha(distT < 58 ? 1 : 0);
+        }
+
+        // --- Network sync: broadcast own state + interpolate remote players ---
+        if (typeof network !== 'undefined' && network.peerCount > 0) {
+            this._syncTimer += delta;
+            if (this._syncTimer >= (network.SYNC_RATE || 100)) {
+                this._syncTimer = 0;
+                network.broadcastState({
+                    x: Math.round(p.x), y: Math.round(p.y),
+                    fx: p.facing.x, fy: p.facing.y, hp: gameState.hp,
+                });
+            }
+        }
+        for (const [, remote] of this.remotePlayers) {
+            remote.sprite.x += (remote.targetX - remote.sprite.x) * 0.2;
+            remote.sprite.y += (remote.targetY - remote.sprite.y) * 0.2;
+            remote.nameLabel.setPosition(remote.sprite.x, remote.sprite.y - 30);
+            remote.sprite.setDepth(remote.sprite.y);
         }
 
         // --- HUD ---

@@ -49,6 +49,7 @@ const bossAI = {
             treasure: { tx, ty },
             aliveMinions,
             torchRadius: scene._torchRadius,
+            playerName: (typeof network !== 'undefined' ? network.playerName : null) || 'Wanderer',
         };
     },
 
@@ -62,7 +63,7 @@ You are cunning, deceptive, and deadly. You have special abilities no regular en
 
 === CURRENT SITUATION ===
 YOU       : tile(${ws.self.tx},${ws.self.ty}), HP:${ws.self.hpPct}%, dmg:${ws.self.damage}
-PLAYER    : tile(${ws.player.tx},${ws.player.ty}), HP:${ws.player.hpPct}%, dist:${ws.player.dist}t
+PLAYER    : name:"${ws.playerName}", tile(${ws.player.tx},${ws.player.ty}), HP:${ws.player.hpPct}%, dist:${ws.player.dist}t
 TREASURE  : tile(${ws.treasure.tx},${ws.treasure.ty}), player is ${ws.player.distToTreasure}t from it
 MINIONS ALIVE: ${ws.aliveMinions}
 PLAYER TORCH RADIUS: ${ws.torchRadius}px (bigger = player sees more)
@@ -81,14 +82,17 @@ TERTIARY  — SURVIVE: if HP < 30%, summon minions and use ultimate attack
 {"action":"GUARD_TREASURE"}                   — position yourself between player and treasure
 {"action":"AMBUSH","tx":25,"ty":35}           — move to position silently, wait for player to come close, then strike
 {"action":"FLEE","tx":20,"ty":20}             — retreat to recover
-{"action":"TAUNT","message":"Come closer..."}  — display message to lure player
+{"action":"TAUNT","message":"Come closer..."}  — display message to lure/mock player. USE PLAYER'S NAME! Be personal and menacing.
 
 === TACTICAL ADVICE ===
 - If player is far from treasure (>8t), GUARD_TREASURE or set up an AMBUSH between them and the chest
 - If player is close to treasure (<5t), be aggressive — ATTACK or ULTIMATE
 - If your HP < 30% and minions < 2, SUMMON_MINIONS to buy time
 - If player HP < 25%, chase aggressively — finish them off
-- Use TAUNT to psychological warfare — lure them into traps
+- Use TAUNT frequently for psychological warfare — call the player BY NAME, mock their low HP,
+  comment on their tactics, threaten them. Examples: "${ws.playerName}, your light grows dim...",
+  "I see you hiding, ${ws.playerName}!", "You cannot escape the darkness, little ${ws.playerName}!"
+  Be creative, personal, and menacing. Taunts make the fight memorable.
 - ULTIMATE is devastating but has 3s charge time — use when player is committed to fighting
 - Alternate between ranged attacks, melee, and special abilities. Be unpredictable.
 - Max 4 steps per plan. You will be re-queried after execution.
