@@ -40,20 +40,36 @@ class IntroScene extends Phaser.Scene {
         document.body.appendChild(skipBtn);
         this._skipBtn = skipBtn;
 
+        // Cleanup helper — remove ALL intro overlay elements
+        const cleanupAll = () => {
+            document.querySelectorAll('[data-intro]').forEach(el => el.remove());
+        };
+
         const goToMenu = () => {
             if (this._done) return;
             this._done = true;
             video.pause();
+            // Immediately stop blocking clicks
+            video.style.pointerEvents = 'none';
+            skipBtn.style.pointerEvents = 'none';
             video.style.transition = 'opacity 0.5s';
             video.style.opacity = '0';
             skipBtn.style.transition = 'opacity 0.3s';
             skipBtn.style.opacity = '0';
             setTimeout(() => {
-                video.remove();
-                skipBtn.remove();
+                cleanupAll();
                 this.scene.start('MenuScene');
             }, 500);
         };
+
+        // Tag all intro elements for cleanup
+        video.setAttribute('data-intro', '1');
+        skipBtn.setAttribute('data-intro', '1');
+
+        // Safety: if video fails to load, skip to menu
+        video.addEventListener('error', goToMenu);
+        // Safety timeout: if nothing happens in 60s, skip
+        setTimeout(() => { if (!this._done) goToMenu(); }, 60000);
 
         // Skip on click/tap/key
         skipBtn.onclick = goToMenu;
@@ -77,6 +93,7 @@ class IntroScene extends Phaser.Scene {
                 font-size: 12px; padding: 6px 14px; background: rgba(0,0,0,0.5);
                 border-radius: 4px; transition: opacity 0.3s;
             `;
+            muteHint.setAttribute('data-intro', '1');
             document.body.appendChild(muteHint);
 
             const unmute = () => {
