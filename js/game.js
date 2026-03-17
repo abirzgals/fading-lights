@@ -2681,15 +2681,26 @@ class GameScene extends Phaser.Scene {
         // Hit radius — narrow weapons (e.g. bow) use hitRadius, others use range
         const hitR = weapon.hitRadius || weapon.range;
 
-        // Attack position (for resource hits and projectile target)
-        const ax = p.x + p.facing.x * weapon.range;
-        const ay = p.y + p.facing.y * weapon.range;
+        // Attack position (recalculated with precise angle for ranged below)
+        let ax = p.x + p.facing.x * weapon.range;
+        let ay = p.y + p.facing.y * weapon.range;
 
         // Attack visual — depends on weapon type
         const attackType = weapon.attackType || 'swing';
-        const facingAngle = Math.atan2(p.facing.y, p.facing.x);
+        // For ranged weapons: use precise mouse angle, not quantized facing
+        let facingAngle;
+        if (attackType === 'shoot' && this.useMouseFacing && this.mouseWorldX !== undefined) {
+            facingAngle = Math.atan2(this.mouseWorldY - p.y, this.mouseWorldX - p.x);
+            p.facing = { x: Math.cos(facingAngle), y: Math.sin(facingAngle) };
+        } else {
+            facingAngle = Math.atan2(p.facing.y, p.facing.x);
+        }
         const arcRad = (weapon.arcDeg ?? 360) * Math.PI / 180;
         const splashR = weapon.splashRadius || 0;
+
+        // Recalculate attack position with precise angle
+        ax = p.x + Math.cos(facingAngle) * weapon.range;
+        ay = p.y + Math.sin(facingAngle) * weapon.range;
 
         // Helper: is a world position within the weapon's attack arc?
         const inArc = (tx, ty) => {
@@ -2704,10 +2715,33 @@ class GameScene extends Phaser.Scene {
             const proj = this.add.image(p.x, p.y, texKey).setDepth(4910).setAlpha(0.9);
             proj.setRotation(facingAngle);
             const travelMs = splashR > 0 ? 380 : 240;
+            let projHit = false;
             this.tweens.add({
                 targets: proj, x: ax, y: ay, alpha: 0.3,
                 duration: travelMs,
+                onUpdate: () => {
+                    if (projHit) return;
+                    // Check hit during flight (pierce through check)
+                    for (const e of this.enemies.children.entries) {
+                        if (!e.active) continue;
+                        const d = Phaser.Math.Distance.Between(proj.x, proj.y, e.x, e.y);
+                        if (d < (hitR * 0.5) + e.getData('size')) {
+                            projHit = true;
+                            let dmg = weapon.damage;
+                            if (weapon.shadowBonus) dmg = Math.floor(dmg * weapon.shadowBonus);
+                            this.damageEnemy(e, dmg);
+                            audioEngine.playHit();
+                            network.broadcastAction('hit', e.x, e.y);
+                            if (splashR <= 0) {
+                                // Arrow stops on hit
+                                proj.destroy();
+                            }
+                            break;
+                        }
+                    }
+                },
                 onComplete: () => {
+                    if (projHit && splashR <= 0) return; // arrow already hit
                     proj.destroy();
                     if (splashR > 0) {
                         // AOE splash for magic staff — bigger area, lower damage
