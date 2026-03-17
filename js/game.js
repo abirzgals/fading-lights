@@ -786,14 +786,15 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // --- Guaranteed starter stones near bonfire (12 stones, close range) ---
+        // --- Guaranteed starter stones near bonfire (12 stones, ring around camp) ---
         let placedStarter = 0;
-        for (let s = 0; placedStarter < 12 && s < 40; s++) {
-            const angle = (s / 12) * Math.PI * 2 + rng() * 0.3;
-            const dist = 50 + rng() * 60;
-            const stx = Math.round(cx + Math.cos(angle) * (dist / T));
-            const sty = Math.round(cy + Math.sin(angle) * (dist / T));
-            if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty)) continue;
+        for (let s = 0; placedStarter < 12 && s < 50; s++) {
+            const angle = (s / 12) * Math.PI * 2;
+            const tileDist = 3 + Math.floor(rng() * 3); // 3-5 tiles from center
+            const stx = Math.round(cx + Math.cos(angle) * tileDist);
+            const sty = Math.round(cy + Math.sin(angle) * tileDist);
+            // Only skip if a tree/building is there — allow placement on paths near camp
+            if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
             const sx = stx * T + 16;
             const sy = sty * T + 16;
             const stone = this.stones.create(sx, sy, this._stoneKey);
