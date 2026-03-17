@@ -2956,9 +2956,12 @@ class GameScene extends Phaser.Scene {
         }
         if (resType === 'stone') this._trackObjective('stones_mined', 1);
         // Update walkability grid — destroyed resource opens path
-        // Pixel art trees were shifted up by 1 tile, so grid position is oy + T
-        const gridY = (resType === 'tree' && this._hasPixelArtTree) ? oy + CONFIG.TILE_SIZE : oy;
-        this._setGridWalkable(ox, gridY);
+        // Clear both the visual position and the original tile position
+        this._setGridWalkable(ox, oy);
+        if (resType === 'tree' && this._hasPixelArtTree) {
+            // Tree was shifted up by 1 tile — also clear the original grid tile below
+            this._setGridWalkable(ox, oy + CONFIG.TILE_SIZE);
+        }
         obj.destroy();
 
         // Track destroyed resources so rejoining players get the right map state
