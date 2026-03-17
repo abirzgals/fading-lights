@@ -3030,6 +3030,10 @@ class GameScene extends Phaser.Scene {
             this.showFloatingText(p.x, p.y - 30, '+' + healAmount, '#00FF66');
             // Also show a + near the other player
             this.showFloatingText(nearbyPlayer.sprite.x, nearbyPlayer.sprite.y - 30, '+', '#00FF66');
+            // Broadcast so the other player sees our healing visual too
+            if (network.peerCount > 0) {
+                network.broadcastReliable({ t: 'heal', amt: healAmount });
+            }
         }
     }
 
@@ -5545,6 +5549,13 @@ class GameScene extends Phaser.Scene {
         };
 
         // Second camp lit by peer
+        network.onHeal = (peerId, amt) => {
+            const remote = scene.remotePlayers.get(peerId);
+            if (remote && remote.sprite) {
+                scene.showFloatingText(remote.sprite.x, remote.sprite.y - 30, '+' + (amt || 3), '#00FF66');
+            }
+        };
+
         network.onSecondCampLit = (x, y) => {
             if (scene._secondCampBonfire && !scene._secondCampBonfire.getData('lit')) {
                 scene._lightSecondCamp(scene._secondCampBonfire);

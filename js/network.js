@@ -370,6 +370,10 @@ const network = {
             case 'c': // chat message
                 if (this.onChat) this.onChat(fromPeerId, msg.text);
                 break;
+
+            case 'heal': // proximity healing visual
+                if (this.onHeal) this.onHeal(fromPeerId, msg.amt);
+                break;
         }
     },
 
