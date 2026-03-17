@@ -93,9 +93,14 @@ class MazeScene extends Phaser.Scene {
                     const w = hasDungeonTileset
                         ? this.walls.create(gx * TILE + 16, gy * TILE + 16, wallTex, 12)
                         : this.walls.create(gx * TILE + 16, gy * TILE + 16, wallTex);
-                    w.setDepth(2).refreshBody();
-                    // Make wall invisible if using RenderTexture (already rendered)
-                    if (hasDungeonTileset) w.setAlpha(0);
+                    w.setDepth(2);
+                    if (hasDungeonTileset) {
+                        // Expand wall body to cover transition tiles — prevents player overlapping walls
+                        w.body.setSize(TILE + 8, TILE + 8);
+                        w.body.setOffset(-4, -4);
+                        w.setAlpha(0);
+                    }
+                    w.refreshBody();
                 }
             }
         }
