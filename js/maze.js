@@ -709,24 +709,33 @@ class MazeScene extends Phaser.Scene {
             this._bossAura.setPosition(this._boss.x, this._boss.y);
         }
 
-        // --- Boss spell attacks ---
-        if (this._boss && this._boss.active) {
+        // --- Boss AI (Groq-driven decisions) ---
+        if (this._boss && this._boss.active && !this._bossCharging) {
+            this._bossAITimer = (this._bossAITimer || 0) + dt * 1000;
             let scd = this._boss.getData('spellCd') - dt * 1000;
             this._boss.setData('spellCd', scd);
-            const bDist = Phaser.Math.Distance.Between(this._boss.x, this._boss.y, p.x, p.y);
 
-            // Boss is charging ultimate — don't do normal attacks
-            if (this._bossCharging) {
-                // handled by the timed callback
-            } else if (bDist < 200 && scd <= 0) {
-                this._bossSpellCount = (this._bossSpellCount || 0) + 1;
-                if (this._bossSpellCount % 4 === 0) {
-                    // Every 4th attack: ULTIMATE — charge then nova
-                    this._boss.setData('spellCd', 8000);
-                    this._bossUltimate();
-                } else {
-                    this._boss.setData('spellCd', 2500);
-                    this._bossSpellAttack();
+            // Query Groq every 5 seconds for strategic decisions
+            if (this._bossAITimer >= 5000 && typeof bossAI !== 'undefined') {
+                this._bossAITimer = 0;
+                bossAI.query(this._boss, this).then(plan => {
+                    if (!plan || !this._boss?.active) return;
+                    this._executeBossPlan(plan.steps);
+                });
+            }
+
+            // Fallback: if no Groq plan active, use simple AI
+            if (!this._bossCurrentStep && scd <= 0) {
+                const bDist = Phaser.Math.Distance.Between(this._boss.x, this._boss.y, p.x, p.y);
+                if (bDist < 200) {
+                    this._bossSpellCount = (this._bossSpellCount || 0) + 1;
+                    if (this._bossSpellCount % 4 === 0) {
+                        this._boss.setData('spellCd', 8000);
+                        this._bossUltimate();
+                    } else {
+                        this._boss.setData('spellCd', 2500);
+                        this._bossSpellAttack();
+                    }
                 }
             }
         }
@@ -1017,6 +1026,101 @@ class MazeScene extends Phaser.Scene {
         }
         this._treasureHint.setText('[E] Open the Chest');
         this._treasureHint.setFill('#FFD700');
+    }
+
+    _executeBossPlan(steps) {
+        if (!steps || !steps.length || !this._boss?.active) return;
+        const boss = this._boss;
+        const T = this._TILE;
+        let delay = 0;
+
+        for (const step of steps.slice(0, 4)) {
+            this.time.delayedCall(delay, () => {
+                if (!boss.active || this._bossCharging) return;
+                const action = step.action;
+
+                if (action === 'MOVE_TO' || action === 'AMBUSH' || action === 'FLEE') {
+                    const tx = (step.tx || 0) * T + T / 2;
+                    const ty = (step.ty || 0) * T + T / 2;
+                    this._mazePathTo(boss, tx, ty, boss.getData('spd'));
+                    boss.setData('aiState', action);
+                    if (action === 'AMBUSH') {
+                        boss.setAlpha(0.4); // semi-invisible
+                        this.time.delayedCall(3000, () => { if (boss.active) boss.setAlpha(1); });
+                    }
+                } else if (action === 'ATTACK_PLAYER') {
+                    boss.setData('aiState', 'ATK PLAYER');
+                    if (boss.getData('spellCd') <= 0) {
+                        boss.setData('spellCd', 2500);
+                        this._bossSpellAttack();
+                    }
+                } else if (action === 'ULTIMATE') {
+                    boss.setData('aiState', 'ULTIMATE');
+                    if (boss.getData('spellCd') <= 0) {
+                        boss.setData('spellCd', 8000);
+                        this._bossUltimate();
+                    }
+                } else if (action === 'SUMMON_MINIONS') {
+                    boss.setData('aiState', 'SUMMON');
+                    const count = Math.min(step.count || 2, 4);
+                    this._bossSummonMinions(count);
+                } else if (action === 'GUARD_TREASURE') {
+                    boss.setData('aiState', 'GUARD');
+                    this._mazePathTo(boss, this.treasure.x, this.treasure.y - 40, boss.getData('spd'));
+                } else if (action === 'TAUNT' && step.message) {
+                    boss.setData('aiState', 'TAUNT');
+                    showFloatingText(this, boss.x, boss.y - 50, step.message, '#CC44FF');
+                } else if (action === 'WAIT') {
+                    boss.setData('aiState', 'WAIT');
+                    boss.setVelocity(0, 0);
+                }
+            });
+            delay += 1500; // space out actions
+        }
+    }
+
+    _bossSummonMinions(count) {
+        const boss = this._boss;
+        if (!boss || !boss.active) return;
+
+        // Costs HP
+        const hpCost = count * 10;
+        let hp = boss.getData('hp');
+        if (hp <= hpCost + 10) return; // don't suicide
+        boss.setData('hp', hp - hpCost);
+        showFloatingText(this, boss.x, boss.y - 40, `SUMMONING ${count} SHADOWS`, '#AA00FF');
+
+        // Summoning visual
+        this.cameras.main.shake(200, 0.01);
+        const summonPulse = this.add.image(boss.x, boss.y, 'glow')
+            .setDepth(8).setScale(3).setAlpha(0.4).setTint(0x8800FF).setBlendMode('ADD');
+        this.tweens.add({ targets: summonPulse, scale: 6, alpha: 0, duration: 800, onComplete: () => summonPulse.destroy() });
+
+        // Spawn minions around boss
+        const TILE = this._TILE;
+        for (let i = 0; i < count; i++) {
+            const angle = (i / count) * Math.PI * 2;
+            const sx = boss.x + Math.cos(angle) * 50;
+            const sy = boss.y + Math.sin(angle) * 50;
+            const texKey = this.textures.exists('stalker_south') ? 'stalker_south' : 'enemy_stalker';
+            const e = this.mazeEnemies.create(sx, sy, texKey);
+            e.setDepth(4).setAlpha(0);
+            e.setData('hp', 30); e.setData('maxHp', 30);
+            e.setData('dmg', 8); e.setData('spd', 70);
+            e.setData('size', 14); e.setData('atkCd', 0);
+            e.setData('type', 'SUMMONED');
+            e.setData('aiState', 'CHASE');
+            e.setData('wanderAngle', 0); e.setData('wanderTimer', 0);
+            e.body.setSize(20, 20);
+            // Fade in
+            this.tweens.add({ targets: e, alpha: 0.92, duration: 500, delay: i * 200 });
+            // Spawn particles
+            this.add.particles(sx, sy, 'particle', {
+                speed: { min: 20, max: 50 }, lifespan: 400,
+                scale: { start: 0.5, end: 0 }, tint: [0x8800FF, 0xAA44FF],
+                blendMode: 'ADD', quantity: 8, emitting: false,
+            }).explode(8);
+        }
     }
 
     _bossUltimate() {
