@@ -9,6 +9,12 @@ class IntroScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#000000');
         this._done = false;
 
+        // Always clean up any leftover intro elements from previous sessions
+        document.querySelectorAll('[data-intro]').forEach(el => el.remove());
+
+        const isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
         // --- Phase 1: "Tap to start" splash screen ---
         const splash = document.createElement('div');
         splash.setAttribute('data-intro', '1');
@@ -23,18 +29,38 @@ class IntroScene extends Phaser.Scene {
                         letter-spacing: 4px; text-shadow: 0 0 20px rgba(255,100,0,0.5);
                         margin-bottom: 30px;">THE FADING LIGHT</div>
             <div style="color: rgba(255,255,255,0.5); font-family: monospace; font-size: 14px;
-                        animation: pulse 2s ease-in-out infinite;">Click or tap to begin</div>
-            <style>@keyframes pulse { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }</style>
+                        animation: introP 2s ease-in-out infinite;">Click or tap to begin</div>
+            <style>@keyframes introP { 0%,100% { opacity: 0.5; } 50% { opacity: 1; } }</style>
         `;
         document.body.appendChild(splash);
+
+        const goToMenu = () => {
+            if (this._done) return;
+            this._done = true;
+            document.querySelectorAll('[data-intro]').forEach(el => {
+                el.style.pointerEvents = 'none';
+            });
+            setTimeout(() => {
+                document.querySelectorAll('[data-intro]').forEach(el => el.remove());
+                this.input.keyboard.removeAllListeners();
+                this.scene.start('MenuScene');
+            }, 300);
+        };
 
         const startIntro = () => {
             splash.style.transition = 'opacity 0.4s';
             splash.style.opacity = '0';
             splash.style.pointerEvents = 'none';
+
+            // iOS Safari: skip video entirely — it crashes/reloads the page
+            if (isIOS) {
+                setTimeout(goToMenu, 400);
+                return;
+            }
+
             setTimeout(() => {
                 splash.remove();
-                this._playVideo();
+                this._playVideo(isMobile, goToMenu);
             }, 400);
         };
 
@@ -44,9 +70,8 @@ class IntroScene extends Phaser.Scene {
         this.input.keyboard.on('keydown-ENTER', startIntro);
     }
 
-    _playVideo() {
+    _playVideo(isMobile, goToMenu) {
         if (this._done) return;
-        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
 
         const video = document.createElement('video');
         video.src = isMobile ? 'assets/intro_mobile.mp4' : 'assets/intro.mp4';
@@ -73,26 +98,7 @@ class IntroScene extends Phaser.Scene {
             background: rgba(0,0,0,0.5); transition: all 0.2s;
             -webkit-tap-highlight-color: transparent;
         `;
-        skipBtn.onmouseenter = () => { skipBtn.style.color = '#fff'; skipBtn.style.borderColor = '#fff'; };
-        skipBtn.onmouseleave = () => { skipBtn.style.color = 'rgba(255,255,255,0.6)'; skipBtn.style.borderColor = 'rgba(255,255,255,0.3)'; };
         document.body.appendChild(skipBtn);
-
-        const goToMenu = () => {
-            if (this._done) return;
-            this._done = true;
-            video.pause();
-            video.style.pointerEvents = 'none';
-            skipBtn.style.pointerEvents = 'none';
-            video.style.transition = 'opacity 0.5s';
-            video.style.opacity = '0';
-            skipBtn.style.opacity = '0';
-            setTimeout(() => {
-                document.querySelectorAll('[data-intro]').forEach(el => el.remove());
-                // Remove all keyboard listeners from this scene
-                this.input.keyboard.removeAllListeners();
-                this.scene.start('MenuScene');
-            }, 500);
-        };
 
         // Skip controls
         skipBtn.onclick = goToMenu;
@@ -107,7 +113,7 @@ class IntroScene extends Phaser.Scene {
         // Safety timeout
         setTimeout(() => { if (!this._done) goToMenu(); }, 60000);
 
-        // Play with sound — user already interacted so autoplay is allowed
+        // Play with sound
         video.muted = false;
         video.play().catch(() => {
             video.muted = true;
