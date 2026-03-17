@@ -2095,36 +2095,42 @@ class GameScene extends Phaser.Scene {
             if (d < lightDist) { lightDist = d; lightX = bf.x; lightY = bf.y; }
         }
 
-        const MAX_SHADOW = 600; // max distance where shadows are visible
-        const drawShadow = (obj, w, h) => {
-            if (obj.x < cl || obj.x > cr || obj.y < ct || obj.y > cb) return;
-            const dx = obj.x - lightX;
-            const dy = obj.y - lightY;
+        const MAX_SHADOW = 600;
+        // baseX/baseY = foot/base position of the object
+        const drawShadow = (baseX, baseY, w) => {
+            if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
+            const dx = baseX - lightX;
+            const dy = baseY - lightY;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < 2 || dist > MAX_SHADOW) return;
-            // Shadow direction: away from light
             const angle = Math.atan2(dy, dx);
-            // Shadow length: longer when closer to light, shorter when far
-            const len = Math.min(30, 800 / dist);
-            const sx = obj.x + Math.cos(angle) * len;
-            const sy = obj.y + Math.sin(angle) * len + h * 0.2;
-            // Shadow opacity: stronger near light
-            const alpha = Math.max(0.05, 0.35 - dist / MAX_SHADOW * 0.3);
+            // Shadow stretches away from light; longer when closer
+            const len = Math.min(24, 500 / dist);
+            const sx = baseX + Math.cos(angle) * len * 0.5;
+            const sy = baseY + Math.sin(angle) * len * 0.3;
+            const alpha = Math.max(0.06, 0.3 - dist / MAX_SHADOW * 0.25);
             g.fillStyle(0x000000, alpha);
-            g.fillEllipse(sx, sy, w * 0.7 + len * 0.3, h * 0.25);
+            g.fillEllipse(sx, sy, w * 0.6 + len * 0.4, 6 + len * 0.15);
         };
 
-        // Trees
+        // Trees — base is at (tree.x, tree.y) since origin is (0.5, 1)
         for (const tree of this.trees.children.entries) {
             if (!tree.active) continue;
-            drawShadow(tree, tree.width || 48, tree.height || 64);
+            drawShadow(tree.x, tree.y, tree.width || 48);
         }
-        // Player
-        drawShadow(this.player, 32, 48);
+        // Player — base at feet
+        const p = this.player;
+        drawShadow(p.x, p.y + (p.height || 48) * 0.3, 28);
         // Enemies
         for (const e of this.enemies.children.entries) {
             if (!e.active) continue;
-            drawShadow(e, e.getData('size') * 2 || 32, e.getData('size') * 2 || 32);
+            const sz = e.getData('size') || 14;
+            drawShadow(e.x, e.y + sz * 0.3, sz * 1.5);
+        }
+        // Allies
+        for (const a of this.allies.children.entries) {
+            if (!a.active) continue;
+            drawShadow(a.x, a.y + 10, 24);
         }
     }
 
