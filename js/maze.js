@@ -32,22 +32,73 @@ class MazeScene extends Phaser.Scene {
         // Background void
         this.add.rectangle(worldW / 2, worldH / 2, worldW, worldH, 0x05050A).setDepth(-1);
 
-        // Floor tiles
-        for (let gy = 0; gy < GRID_H; gy++) {
-            for (let gx = 0; gx < GRID_W; gx++) {
-                if (grid[gy][gx] === 1) {
-                    this.add.image(gx * TILE + 16, gy * TILE + 16, 'maze_floor').setDepth(0);
+        // Use pixel art dungeon tileset if available
+        const hasDungeonTileset = this.textures.exists('dungeon_tileset');
+
+        if (hasDungeonTileset) {
+            // Wang tiling: wall=upper(1), floor=lower(0)
+            const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
+            const isWall = (gx, gy) => gx < 0 || gy < 0 || gx >= GRID_W || gy >= GRID_H || grid[gy][gx] === 0;
+
+            // Bake all tiles into a RenderTexture
+            const rt = this.add.renderTexture(0, 0, worldW, worldH).setOrigin(0, 0).setDepth(0);
+            for (let gy = 0; gy < GRID_H; gy++) {
+                for (let gx = 0; gx < GRID_W; gx++) {
+                    // Only render tiles near floor (walls + floor + 1-tile border)
+                    if (grid[gy][gx] === 0 && !this._bordersFloor(grid, gx, gy, GRID_W, GRID_H)) continue;
+                    const nw = isWall(gx, gy) ? 1 : 0;
+                    const ne = isWall(gx + 1, gy) ? 1 : 0;
+                    const sw = isWall(gx, gy + 1) ? 1 : 0;
+                    const se = isWall(gx + 1, gy + 1) ? 1 : 0;
+                    const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
+                    rt.drawFrame('dungeon_tileset', WANG_TO_FRAME[wangIdx], gx * TILE, gy * TILE);
+                }
+            }
+        } else {
+            // Fallback: procedural tiles
+            for (let gy = 0; gy < GRID_H; gy++) {
+                for (let gx = 0; gx < GRID_W; gx++) {
+                    if (grid[gy][gx] === 1) {
+                        this.add.image(gx * TILE + 16, gy * TILE + 16, 'maze_floor').setDepth(0);
+                    }
                 }
             }
         }
 
-        // Walls — only tiles adjacent to a floor tile (performance)
+        // Walls (physics bodies) — only tiles adjacent to a floor tile
         this.walls = this.physics.add.staticGroup();
         for (let gy = 0; gy < GRID_H; gy++) {
             for (let gx = 0; gx < GRID_W; gx++) {
                 if (grid[gy][gx] === 0 && this._bordersFloor(grid, gx, gy, GRID_W, GRID_H)) {
-                    const w = this.walls.create(gx * TILE + 16, gy * TILE + 16, 'maze_stone');
+                    // Use dungeon tileset wall or fallback procedural
+                    const wallTex = hasDungeonTileset ? 'dungeon_tileset' : 'maze_stone';
+                    const w = hasDungeonTileset
+                        ? this.walls.create(gx * TILE + 16, gy * TILE + 16, wallTex, 12)
+                        : this.walls.create(gx * TILE + 16, gy * TILE + 16, wallTex);
                     w.setDepth(2).refreshBody();
+                    // Make wall invisible if using RenderTexture (already rendered)
+                    if (hasDungeonTileset) w.setAlpha(0);
+                }
+            }
+        }
+
+        // --- Dungeon decorations (bones, torches scattered in rooms) ---
+        if (hasDungeonTileset) {
+            const hasBones = this.textures.exists('dungeon_bones');
+            const hasTorch = this.textures.exists('dungeon_torch');
+            for (let i = 1; i < rooms.length; i++) { // skip first room (spawn)
+                const rm = rooms[i];
+                // Scatter bones in ~30% of rooms
+                if (hasBones && Math.random() < 0.3) {
+                    const bx = (rm.x + 1 + Math.floor(Math.random() * (rm.w - 2))) * TILE + 16;
+                    const by = (rm.y + 1 + Math.floor(Math.random() * (rm.h - 2))) * TILE + 16;
+                    this.add.image(bx, by, 'dungeon_bones').setDepth(1).setAlpha(0.7);
+                }
+                // Place torches near room entrances/walls (~40% of rooms)
+                if (hasTorch && Math.random() < 0.4) {
+                    const tx = rm.x * TILE + 16;
+                    const ty = rm.y * TILE + 16;
+                    this.add.image(tx, ty, 'dungeon_torch').setDepth(3);
                 }
             }
         }
@@ -92,7 +143,8 @@ class MazeScene extends Phaser.Scene {
         const er       = rooms[rooms.length - 1];
         const tresX    = (er.x + Math.floor(er.w / 2)) * TILE + 16;
         const tresY    = (er.y + Math.floor(er.h / 2)) * TILE + 16;
-        this.treasure  = this.add.sprite(tresX, tresY, 'treasure_chest').setDepth(3).setScale(1.15);
+        const chestTex = this.textures.exists('dungeon_chest') ? 'dungeon_chest' : 'treasure_chest';
+        this.treasure  = this.add.sprite(tresX, tresY, chestTex).setDepth(3).setScale(1.15);
         this.tweens.add({
             targets: this.treasure,
             scaleX: 1.3, scaleY: 1.3, duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',

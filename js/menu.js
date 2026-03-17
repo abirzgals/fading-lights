@@ -43,6 +43,14 @@ class MenuScene extends Phaser.Scene {
         this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
             frameWidth: 32, frameHeight: 32,
         });
+        // Dungeon assets
+        this.load.spritesheet('dungeon_tileset', 'assets/dungeon/dungeon-tileset.png', {
+            frameWidth: 32, frameHeight: 32,
+        });
+        this.load.image('dungeon_pillar', 'assets/dungeon/pillar.png');
+        this.load.image('dungeon_chest', 'assets/dungeon/chest.png');
+        this.load.image('dungeon_torch', 'assets/dungeon/torch.png');
+        this.load.image('dungeon_bones', 'assets/dungeon/bones.png');
     }
 
     create() {
@@ -485,10 +493,11 @@ class MenuScene extends Phaser.Scene {
             </label>
         `;
 
-        // Focus input after a short delay (so scene loads first)
+        // Focus input after a short delay — skip on mobile to avoid keyboard popup
         setTimeout(() => {
             const input = document.getElementById('player-name-input');
-            if (input) input.focus();
+            const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+            if (input && !isMobile) input.focus();
 
             // Wire up multiplayer buttons (must wait for DOM)
             const createBtn = document.getElementById('btn-create-room');
