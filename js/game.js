@@ -3728,7 +3728,7 @@ class GameScene extends Phaser.Scene {
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
                 let cd = enemy.getData('attackCooldown') - dt * 1000;
                 enemy.setData('attackCooldown', cd);
-                if (dist < 10 && cd <= 0) {
+                if (dist < CONFIG.ENEMY_MELEE_RANGE && cd <= 0) {
                     enemy.setData('attackCooldown', 1000);
                     this._enemyAttackVisual(enemy, this.player.x, this.player.y);
                     this.damagePlayer(enemy.getData('damage'));
@@ -3807,7 +3807,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         // Melee lair enemy: stop at attack range
-                        if (distToPlayer < 14) {
+                        if (distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                             enemy.setData('aiState', 'ATK PLAYER');
                             enemy.setVelocity(0, 0);
                             enemy.setFlipX(this.player.x < enemy.x);
@@ -4024,7 +4024,7 @@ class GameScene extends Phaser.Scene {
 
                 if (raidMode === 'chase') {
                     // Chase player — stop at melee range
-                    if (distToPlayer < 24) {
+                    if (distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                         enemy.setVelocity(0, 0);
                         enemy.setFlipX(this.player.x < enemy.x);
                         enemy.setData('aiState', 'ATK PLAYER');
@@ -4122,7 +4122,7 @@ class GameScene extends Phaser.Scene {
                 }
 
                 // Priority: player in melee > at bonfire = attack fire > chase player > move to bonfire > wander
-                if (aggro && distToPlayer < 14) {
+                if (aggro && distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                     // Player in melee range — stop and attack
                     enemy.setVelocity(0, 0);
                     enemy.setFlipX(this.player.x < enemy.x);
@@ -6262,7 +6262,7 @@ class GameScene extends Phaser.Scene {
             case 'ATTACK_PLAYER': {
                 const px = this.player.x, py = this.player.y;
                 const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, px, py);
-                if (dist < 14) {
+                if (dist < CONFIG.ENEMY_MELEE_RANGE) {
                     enemy.setVelocity(0, 0);
                     enemy.setFlipX(px < enemy.x);
                     enemy.setData('aiState', 'ATK PLAYER');

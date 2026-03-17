@@ -44,6 +44,7 @@ const CONFIG = {
 
     // Raider system (camp level 2+)
     RAID_SPAWN_INTERVAL: 8000,   // ms between raid spawns (tower-defense pace)
+    ENEMY_MELEE_RANGE: 8,        // px — melee hit distance (touching)
     RAID_SIGHT_RANGE: 160,       // px — raider notices player
     RAID_LEASH_RANGE: 280,       // px — raider gives up chasing player
     RAID_ATTACK_RANGE: 35,       // px — raider attacks camp bonfire/buildings
