@@ -345,6 +345,12 @@ class MazeScene extends Phaser.Scene {
     // the next, guaranteeing a path to the treasure room.
     // ----------------------------------------------------------
     _generateDungeon(gridW, gridH) {
+        // Use shared seed so all players get the same dungeon layout
+        const rng = (typeof network !== 'undefined' && network.worldSeed)
+            ? network.seededRandom(network.worldSeed + 7777)
+            : Math.random;
+        this._rng = rng; // store for _connectRooms
+
         const grid = Array.from({ length: gridH }, () => new Array(gridW).fill(0));
         const rooms = [];
 
@@ -352,10 +358,10 @@ class MazeScene extends Phaser.Scene {
         const NUM_ROOMS = 16, PAD = 2;
 
         for (let attempt = 0; attempt < 400 && rooms.length < NUM_ROOMS; attempt++) {
-            const w = MIN_ROOM + Math.floor(Math.random() * (MAX_ROOM - MIN_ROOM + 1));
-            const h = MIN_ROOM + Math.floor(Math.random() * (MAX_ROOM - MIN_ROOM + 1));
-            const x = 1 + PAD + Math.floor(Math.random() * (gridW - w - PAD * 2 - 2));
-            const y = 1 + PAD + Math.floor(Math.random() * (gridH - h - PAD * 2 - 2));
+            const w = MIN_ROOM + Math.floor(rng() * (MAX_ROOM - MIN_ROOM + 1));
+            const h = MIN_ROOM + Math.floor(rng() * (MAX_ROOM - MIN_ROOM + 1));
+            const x = 1 + PAD + Math.floor(rng() * (gridW - w - PAD * 2 - 2));
+            const y = 1 + PAD + Math.floor(rng() * (gridH - h - PAD * 2 - 2));
 
             if (rooms.some(r =>
                 x < r.x + r.w + PAD && x + w + PAD > r.x &&
@@ -377,8 +383,8 @@ class MazeScene extends Phaser.Scene {
         // A few extra cross-connections for loops
         const extras = Math.min(4, rooms.length - 2);
         for (let i = 0; i < extras; i++) {
-            const a = rooms[1 + Math.floor(Math.random() * (rooms.length - 2))];
-            const b = rooms[1 + Math.floor(Math.random() * (rooms.length - 2))];
+            const a = rooms[1 + Math.floor(rng() * (rooms.length - 2))];
+            const b = rooms[1 + Math.floor(rng() * (rooms.length - 2))];
             if (a !== b) this._connectRooms(grid, a, b, gridW, gridH);
         }
 
@@ -386,11 +392,11 @@ class MazeScene extends Phaser.Scene {
     }
 
     _connectRooms(grid, ra, rb, gridW, gridH) {
+        const rng = this._rng || Math.random;
         const ax = Math.floor(ra.x + ra.w / 2), ay = Math.floor(ra.y + ra.h / 2);
         const bx = Math.floor(rb.x + rb.w / 2), by = Math.floor(rb.y + rb.h / 2);
-        // Corridor half-width: 1 (narrow) or 2 (wide hall, 30% chance)
-        const hw = Math.random() < 0.3 ? 2 : 1;
-        if (Math.random() < 0.5) {
+        const hw = rng() < 0.3 ? 2 : 1;
+        if (rng() < 0.5) {
             this._hLine(grid, Math.min(ax, bx), Math.max(ax, bx), ay, hw, gridW, gridH);
             this._vLine(grid, Math.min(ay, by), Math.max(ay, by), bx, hw, gridW, gridH);
         } else {
@@ -427,6 +433,7 @@ class MazeScene extends Phaser.Scene {
     // ENEMY SPAWNING
     // ----------------------------------------------------------
     _spawnEnemies(rooms, TILE) {
+        const rng = this._rng || Math.random;
         for (let i = 1; i < rooms.length - 1; i++) {
             const room   = rooms[i];
             const area   = room.w * room.h;
@@ -434,8 +441,8 @@ class MazeScene extends Phaser.Scene {
             const depth  = i / rooms.length; // 0..1 → harder deeper
 
             for (let j = 0; j < count; j++) {
-                const ex = (room.x + 1 + Math.floor(Math.random() * (room.w - 2))) * TILE + 16;
-                const ey = (room.y + 1 + Math.floor(Math.random() * (room.h - 2))) * TILE + 16;
+                const ex = (room.x + 1 + Math.floor(rng() * (room.w - 2))) * TILE + 16;
+                const ey = (room.y + 1 + Math.floor(rng() * (room.h - 2))) * TILE + 16;
 
                 // Type scales with depth
                 let hp, dmg, spd, size, texKey;
