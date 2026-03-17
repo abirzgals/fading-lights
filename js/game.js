@@ -2096,41 +2096,62 @@ class GameScene extends Phaser.Scene {
         }
 
         const MAX_SHADOW = 600;
-        // baseX/baseY = foot/base position of the object
-        const drawShadow = (baseX, baseY, w) => {
+        // Draw a rotated ellipse shadow stretched away from the light source
+        const drawShadow = (baseX, baseY, objW, objH) => {
             if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
             const dx = baseX - lightX;
             const dy = baseY - lightY;
             const dist = Math.sqrt(dx * dx + dy * dy);
             if (dist < 2 || dist > MAX_SHADOW) return;
+
+            // Direction away from light
             const angle = Math.atan2(dy, dx);
-            // Shadow stretches away from light; longer when closer
-            const len = Math.min(24, 500 / dist);
-            const sx = baseX + Math.cos(angle) * len * 0.5;
-            const sy = baseY + Math.sin(angle) * len * 0.3;
-            const alpha = Math.max(0.06, 0.3 - dist / MAX_SHADOW * 0.25);
+            // Shadow length scales with object height and inversely with distance
+            const shadowLen = Math.min(objH * 1.2, objH * 400 / dist);
+            // Shadow center is offset from base along the light direction
+            const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
+            const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
+            const alpha = Math.max(0.05, 0.3 - dist / MAX_SHADOW * 0.25);
+
+            // Draw rotated ellipse as a polygon (16 segments)
+            const halfW = objW * 0.3; // narrow width
+            const halfH = shadowLen * 0.5; // long stretch
+            const cos = Math.cos(angle);
+            const sin = Math.sin(angle);
+            const pts = [];
+            for (let i = 0; i < 16; i++) {
+                const t = (i / 16) * Math.PI * 2;
+                const ex = Math.cos(t) * halfW;
+                const ey = Math.sin(t) * halfH;
+                // Rotate by shadow angle
+                pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
+            }
             g.fillStyle(0x000000, alpha);
-            g.fillEllipse(sx, sy, w * 0.6 + len * 0.4, 6 + len * 0.15);
+            g.beginPath();
+            g.moveTo(pts[0], pts[1]);
+            for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
+            g.closePath();
+            g.fillPath();
         };
 
         // Trees — base is at (tree.x, tree.y) since origin is (0.5, 1)
         for (const tree of this.trees.children.entries) {
             if (!tree.active) continue;
-            drawShadow(tree.x, tree.y, tree.width || 48);
+            drawShadow(tree.x, tree.y, tree.width || 48, tree.height || 64);
         }
         // Player — base at feet
         const p = this.player;
-        drawShadow(p.x, p.y + (p.height || 48) * 0.3, 28);
+        drawShadow(p.x, p.y + (p.height || 48) * 0.3, 20, 32);
         // Enemies
         for (const e of this.enemies.children.entries) {
             if (!e.active) continue;
             const sz = e.getData('size') || 14;
-            drawShadow(e.x, e.y + sz * 0.3, sz * 1.5);
+            drawShadow(e.x, e.y + sz * 0.3, sz * 1.2, sz * 1.5);
         }
         // Allies
         for (const a of this.allies.children.entries) {
             if (!a.active) continue;
-            drawShadow(a.x, a.y + 10, 24);
+            drawShadow(a.x, a.y + 10, 18, 28);
         }
     }
 
