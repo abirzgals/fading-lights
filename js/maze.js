@@ -82,6 +82,17 @@ class MazeScene extends Phaser.Scene {
             }
         }
 
+        // --- Build walk grid for A* pathfinding ---
+        this._walkGrid = new Uint8Array(GRID_W * GRID_H);
+        for (let gy = 0; gy < GRID_H; gy++) {
+            for (let gx = 0; gx < GRID_W; gx++) {
+                this._walkGrid[gy * GRID_W + gx] = grid[gy][gx]; // 1=floor, 0=wall
+            }
+        }
+        this._gridW = GRID_W;
+        this._gridH = GRID_H;
+        this._TILE = TILE;
+
         // --- Dungeon decorations (bones, torches scattered in rooms) ---
         this._wallTorches = []; // stored as light sources
         if (hasDungeonTileset) {
@@ -688,7 +699,10 @@ class MazeScene extends Phaser.Scene {
         this._drawEnemyHpBars();
 
         // --- Debug overlay (shared with overworld) ---
-        drawEnemyDebug(this, this._debugGfx, this.mazeEnemies.children.entries, {});
+        drawEnemyDebug(this, this._debugGfx, this.mazeEnemies.children.entries, {
+            walkGrid: this._walkGrid,
+            gridSize: this._gridW,
+        });
 
         // --- Boss aura follows boss ---
         if (this._boss && this._boss.active && this._bossAura) {
@@ -743,46 +757,89 @@ class MazeScene extends Phaser.Scene {
     // ----------------------------------------------------------
     // ENEMY AI
     // ----------------------------------------------------------
+    // A* pathfinding for maze enemies
+    _mazePathTo(enemy, tx, ty, speed) {
+        let path = enemy.getData('_aiPath');
+        let pathIdx = enemy.getData('_aiPathIdx') || 0;
+        let repathTimer = (enemy.getData('_aiRepathTimer') || 0) - 0.2;
+
+        if (!path || pathIdx >= path.length || repathTimer <= 0) {
+            path = findPathAStar(this._walkGrid, this._gridW, this._TILE, enemy.x, enemy.y, tx, ty);
+            if (path && path.length > 0) {
+                enemy.setData('_aiPath', path);
+                enemy.setData('_aiPathIdx', 0);
+                pathIdx = 0;
+            } else {
+                // Fallback: direct
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, tx, ty);
+                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+                return;
+            }
+            repathTimer = 0.8 + Math.random() * 0.4;
+        }
+        enemy.setData('_aiRepathTimer', repathTimer);
+
+        if (path && pathIdx < path.length) {
+            const wp = path[pathIdx];
+            const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
+            if (dist < 16) {
+                pathIdx++;
+                enemy.setData('_aiPathIdx', pathIdx);
+            }
+            if (pathIdx < path.length) {
+                const wp2 = path[pathIdx];
+                const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, wp2.x, wp2.y);
+                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+            }
+        }
+    }
+
     _updateEnemies(dt) {
         const p   = this.player;
-        const sig = this._torchRadius * 1.05; // sight = torch radius
+        const sig = this._torchRadius * 1.2; // sight slightly beyond torch
 
         for (const e of this.mazeEnemies.children.entries) {
             if (!e.active) continue;
+            // Skip boss during charging
+            if (e === this._boss && this._bossCharging) continue;
 
             let ecd = e.getData('atkCd') - dt * 1000;
             e.setData('atkCd', ecd);
 
             const dist = Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y);
+            const spd = e.getData('spd');
 
             if (dist < sig) {
-                // Chase player
                 e.setData('wanderTimer', 0);
-                const angle = Phaser.Math.Angle.Between(e.x, e.y, p.x, p.y);
-                const spd   = e.getData('spd');
-                e.setVelocity(Math.cos(angle) * spd, Math.sin(angle) * spd);
                 e.setFlipX(p.x < e.x);
-                e.setData('aiState', dist < 16 ? 'ATK PLAYER' : 'CHASE');
 
-                // Melee attack
-                if (dist < CONFIG.ENEMY_MELEE_RANGE && ecd <= 0) {
-                    e.setData('atkCd', 1100);
-                    const dmg = damagePlayerShared(this, e.getData('dmg'));
-                    this.cameras.main.flash(120, 80, 0, 0);
-                    showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#FF4444');
+                if (dist < CONFIG.ENEMY_MELEE_RANGE) {
+                    // In melee range — stop and attack
+                    e.setVelocity(0, 0);
+                    e.setData('aiState', 'ATK PLAYER');
+                    if (ecd <= 0) {
+                        e.setData('atkCd', 1100);
+                        const dmg = damagePlayerShared(this, e.getData('dmg'));
+                        this.cameras.main.flash(120, 80, 0, 0);
+                        showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#FF4444');
+                    }
+                } else {
+                    // Chase with A* pathfinding
+                    e.setData('aiState', 'CHASE');
+                    this._mazePathTo(e, p.x, p.y, spd);
                 }
             } else {
-                // Wander inside room
+                // Wander
                 e.setData('aiState', 'WANDER');
+                e.setData('_aiPath', null);
                 let wt = (e.getData('wanderTimer') || 0) - dt;
                 if (wt <= 0) {
                     e.setData('wanderAngle', Math.random() * Math.PI * 2);
                     wt = 1.5 + Math.random() * 2;
                 }
                 e.setData('wanderTimer', wt);
-                const wa  = e.getData('wanderAngle');
-                const spd = e.getData('spd') * 0.35;
-                e.setVelocity(Math.cos(wa) * spd, Math.sin(wa) * spd);
+                const wa = e.getData('wanderAngle');
+                e.setVelocity(Math.cos(wa) * spd * 0.35, Math.sin(wa) * spd * 0.35);
             }
         }
     }

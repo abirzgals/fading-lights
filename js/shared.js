@@ -328,6 +328,80 @@ function showFullHUD() {
     if (levelBar) levelBar.parentElement.parentElement.style.display = '';
 }
 
+// --------------------------------------------------------
+// A* Pathfinding (shared across scenes)
+// walkGrid: Uint8Array where 1=walkable, 0=blocked
+// gridSize: width/height of the grid
+// Returns array of {x, y} world positions, or null
+// --------------------------------------------------------
+function findPathAStar(walkGrid, gridSize, tileSize, fromWX, fromWY, toWX, toWY) {
+    const T = tileSize;
+    const gs = gridSize;
+    const sx = Math.floor(fromWX / T), sy = Math.floor(fromWY / T);
+    let ex = Math.floor(toWX / T), ey = Math.floor(toWY / T);
+
+    if (sx < 0 || sy < 0 || ex < 0 || ey < 0 || sx >= gs || sy >= gs || ex >= gs || ey >= gs) return null;
+    if (!walkGrid[sy * gs + sx]) return null;
+
+    if (!walkGrid[ey * gs + ex]) {
+        let snapped = false;
+        for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]]) {
+            const nx = ex + dx, ny = ey + dy;
+            if (nx >= 0 && ny >= 0 && nx < gs && ny < gs && walkGrid[ny * gs + nx]) {
+                ex = nx; ey = ny; snapped = true; break;
+            }
+        }
+        if (!snapped) return null;
+    }
+
+    const key = (x, y) => y * gs + x;
+    const heuristic = (x, y) => Math.abs(x - ex) + Math.abs(y - ey);
+    const open = [{ x: sx, y: sy, g: 0, f: heuristic(sx, sy) }];
+    const cameFrom = new Map();
+    const gScore = new Map();
+    gScore.set(key(sx, sy), 0);
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1],[1,1],[-1,1],[1,-1],[-1,-1]];
+    let iterations = 0;
+
+    while (open.length > 0 && iterations++ < 10000) {
+        let bestIdx = 0;
+        for (let i = 1; i < open.length; i++) {
+            if (open[i].f < open[bestIdx].f) bestIdx = i;
+        }
+        const curr = open.splice(bestIdx, 1)[0];
+        if (curr.x === ex && curr.y === ey) {
+            const path = [];
+            let k = key(curr.x, curr.y);
+            while (cameFrom.has(k)) {
+                const tx = k % gs, ty = Math.floor(k / gs);
+                path.push({ x: tx * T + T / 2, y: ty * T + T / 2 });
+                k = cameFrom.get(k);
+            }
+            path.reverse();
+            const simplified = [];
+            for (let i = 0; i < path.length; i += 2) simplified.push(path[i]);
+            simplified.push({ x: toWX, y: toWY });
+            return simplified;
+        }
+        for (const [dx, dy] of dirs) {
+            const nx = curr.x + dx, ny = curr.y + dy;
+            if (nx < 0 || ny < 0 || nx >= gs || ny >= gs) continue;
+            if (!walkGrid[ny * gs + nx]) continue;
+            if (dx !== 0 && dy !== 0) {
+                if (!walkGrid[curr.y * gs + nx] || !walkGrid[ny * gs + curr.x]) continue;
+            }
+            const moveCost = (dx !== 0 && dy !== 0) ? 1.41 : 1;
+            const ng = curr.g + moveCost;
+            const nk = key(nx, ny);
+            if (gScore.has(nk) && ng >= gScore.get(nk)) continue;
+            gScore.set(nk, ng);
+            cameFrom.set(nk, key(curr.x, curr.y));
+            open.push({ x: nx, y: ny, g: ng, f: ng + heuristic(nx, ny) });
+        }
+    }
+    return null;
+}
+
 function showMazeHUD() {
     const hud = document.getElementById('hud');
     if (hud) hud.style.display = 'flex';
