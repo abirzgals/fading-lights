@@ -78,6 +78,9 @@ class GameScene extends Phaser.Scene {
         // Throttle timers for expensive per-frame operations
         this._fogTimer = 0;
         this._hpDrawTimer = 0;
+        this._shadowTimer = 0;
+        // Shadow graphics layer — drawn below all game objects
+        this._shadowGfx = this.add.graphics().setDepth(0.5);
 
         // --- Central Bonfire ---
         const cx = centerTile * CONFIG.TILE_SIZE + 16;
@@ -2061,6 +2064,9 @@ class GameScene extends Phaser.Scene {
         this._updateChatBubbles();
         this.updateNetwork(dt);
         this._updateTreeSway(time);
+        // Throttle shadows to ~15fps
+        this._shadowTimer += delta;
+        if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateShadows(); }
         this.updateDepthSort();
         this._drawDebug();
     }
@@ -2068,6 +2074,60 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     // Y-based depth sorting — sprites lower on screen drawn in front
     // --------------------------------------------------------
+    _updateShadows() {
+        const g = this._shadowGfx;
+        if (!g) return;
+        g.clear();
+
+        const cam = this.cameras.main;
+        const m = 100;
+        const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+        const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+
+        // Find nearest lit bonfire to camera center for shadow direction
+        const camCX = cam.scrollX + cam.width * 0.5;
+        const camCY = cam.scrollY + cam.height * 0.5;
+        let lightX = camCX, lightY = camCY;
+        let lightDist = Infinity;
+        for (const bf of this.bonfires) {
+            if (!bf.getData('lit')) continue;
+            const d = Phaser.Math.Distance.Between(camCX, camCY, bf.x, bf.y);
+            if (d < lightDist) { lightDist = d; lightX = bf.x; lightY = bf.y; }
+        }
+
+        const MAX_SHADOW = 600; // max distance where shadows are visible
+        const drawShadow = (obj, w, h) => {
+            if (obj.x < cl || obj.x > cr || obj.y < ct || obj.y > cb) return;
+            const dx = obj.x - lightX;
+            const dy = obj.y - lightY;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+            if (dist < 2 || dist > MAX_SHADOW) return;
+            // Shadow direction: away from light
+            const angle = Math.atan2(dy, dx);
+            // Shadow length: longer when closer to light, shorter when far
+            const len = Math.min(30, 800 / dist);
+            const sx = obj.x + Math.cos(angle) * len;
+            const sy = obj.y + Math.sin(angle) * len + h * 0.2;
+            // Shadow opacity: stronger near light
+            const alpha = Math.max(0.05, 0.35 - dist / MAX_SHADOW * 0.3);
+            g.fillStyle(0x000000, alpha);
+            g.fillEllipse(sx, sy, w * 0.7 + len * 0.3, h * 0.25);
+        };
+
+        // Trees
+        for (const tree of this.trees.children.entries) {
+            if (!tree.active) continue;
+            drawShadow(tree, tree.width || 48, tree.height || 64);
+        }
+        // Player
+        drawShadow(this.player, 32, 48);
+        // Enemies
+        for (const e of this.enemies.children.entries) {
+            if (!e.active) continue;
+            drawShadow(e, e.getData('size') * 2 || 32, e.getData('size') * 2 || 32);
+        }
+    }
+
     _updateTreeSway(time) {
         if (!this._hasPixelArtTree) return;
         const cam = this.cameras.main;
