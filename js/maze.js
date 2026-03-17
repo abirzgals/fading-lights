@@ -120,21 +120,25 @@ class MazeScene extends Phaser.Scene {
         // --- Collectible torches (increase light radius significantly) ---
         this._torchPickups = [];
         this._torchCount = 0;
-        const torchTex = this.textures.exists('dungeon_torch') ? 'dungeon_torch' : 'torch_item';
+        // Use torch_item texture (not dungeon_torch which is wall-mounted)
+        const pickupTex = this.textures.exists('torch_item') ? 'torch_item' : 'dungeon_torch';
         for (let i = 1; i < rooms.length - 1; i++) { // skip boss room only
             if (Math.random() < 0.6) { // ~60% of rooms have a torch
                 const rm = rooms[i];
-                const tx = (rm.x + 1 + Math.floor(Math.random() * (rm.w - 2))) * TILE + 16;
-                const ty = (rm.y + 1 + Math.floor(Math.random() * (rm.h - 2))) * TILE + 16;
-                const pickup = this.add.image(tx, ty, torchTex).setDepth(3);
+                // Place in center area of room (avoid walls)
+                const tx = (rm.x + 2 + Math.floor(Math.random() * Math.max(1, rm.w - 4))) * TILE + 16;
+                const ty = (rm.y + 2 + Math.floor(Math.random() * Math.max(1, rm.h - 4))) * TILE + 16;
+                const pickup = this.add.image(tx, ty, pickupTex).setDepth(3).setScale(1.2);
+                // Bright pulsing glow — clearly different from wall torches
                 const glow = this.add.image(tx, ty, 'glow')
-                    .setDepth(2).setScale(2).setAlpha(0.35).setTint(0xFFAA00).setBlendMode('ADD');
-                this.tweens.add({ targets: glow, scale: 2.5, alpha: 0.15, duration: 800, yoyo: true, repeat: -1 });
-                // Hint text
-                const hint = this.add.text(tx, ty - 18, 'TORCH', {
-                    fontSize: '7px', fill: '#FFAA00', fontFamily: 'monospace',
-                    stroke: '#000', strokeThickness: 1,
-                }).setOrigin(0.5).setDepth(3).setAlpha(0.7);
+                    .setDepth(2).setScale(2.5).setAlpha(0.4).setTint(0xFFDD00).setBlendMode('ADD');
+                this.tweens.add({ targets: glow, scale: 3, alpha: 0.2, duration: 700, yoyo: true, repeat: -1 });
+                // Bobbing animation to show it's collectible
+                this.tweens.add({ targets: pickup, y: ty - 4, duration: 600, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+                const hint = this.add.text(tx, ty - 22, '[ PICK UP ]', {
+                    fontSize: '7px', fill: '#FFDD00', fontFamily: 'monospace',
+                    stroke: '#000', strokeThickness: 2,
+                }).setOrigin(0.5).setDepth(3).setAlpha(0);
                 this._torchPickups.push({ sprite: pickup, glow, hint, x: tx, y: ty, collected: false });
             }
         }
@@ -656,16 +660,25 @@ class MazeScene extends Phaser.Scene {
         for (const tp of this._torchPickups) {
             if (tp.collected) continue;
             const d = Phaser.Math.Distance.Between(p.x, p.y, tp.x, tp.y);
-            if (d < 45) {
+            // Show hint when close
+            if (tp.hint) tp.hint.setAlpha(d < 60 ? 0.9 : 0);
+            if (d < 40) {
                 tp.collected = true;
                 tp.sprite.destroy();
                 tp.glow.destroy();
                 if (tp.hint) tp.hint.destroy();
                 this._torchCount++;
-                this._torchRadius += 40; // significant light boost per torch
-                showFloatingText(this, tp.x, tp.y - 20,
-                    `TORCH #${this._torchCount}  Light +40`, '#FFAA00');
+                this._torchRadius += 40;
+                showFloatingText(this, p.x, p.y - 30,
+                    `TORCH #${this._torchCount}  Light +40`, '#FFDD00');
                 this.cameras.main.flash(250, 100, 70, 0);
+                // Pickup burst
+                this.add.particles(tp.x, tp.y, 'particle', {
+                    speed: { min: 20, max: 60 }, lifespan: 500,
+                    scale: { start: 0.5, end: 0 }, alpha: { start: 1, end: 0 },
+                    tint: [0xFFDD00, 0xFFAA00], blendMode: 'ADD',
+                    quantity: 10, emitting: false,
+                }).explode(10);
             }
         }
 
