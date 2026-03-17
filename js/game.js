@@ -61,7 +61,9 @@ class GameScene extends Phaser.Scene {
                 if (!tree.active) continue;
                 // Set pivot to base of trunk so sway rotates from bottom
                 tree.setOrigin(0.5, 1);
-                tree.y += tree.height * 0.5; // adjust position for new origin
+                tree.y += tree.height * 0.5;
+                // Depth based on trunk base Y for proper Y-sorting
+                tree.setDepth(tree.y * 0.01);
                 tree.refreshBody();
                 // Stagger start so trees don't sway in unison
                 const delay = Math.random() * 3000;
@@ -729,14 +731,16 @@ class GameScene extends Phaser.Scene {
                 } else {
                     treeKey = 'tree';
                 }
-                const tree = this.trees.create(wx, wy, treeKey);
+                // Shift pixel art trees up by 1 tile so canopy is above, trunk sits on tile
+                const treeY = this._hasPixelArtTree ? wy - T : wy;
+                const tree = this.trees.create(wx, treeY, treeKey);
                 tree.setDepth(3);
                 if (this._hasPixelArtTree) {
-                    // Adjust body offset based on tree texture height
+                    // Body at bottom of sprite (trunk base) — collision stays on the original tile
                     const th = tree.height || 48;
                     const tw = tree.width || 48;
-                    tree.body.setSize(22, 28);
-                    tree.body.setOffset(Math.floor((tw - 22) / 2), th - 28);
+                    tree.body.setSize(22, 14);
+                    tree.body.setOffset(Math.floor((tw - 22) / 2), th - 14);
                 } else {
                     tree.body.setSize(22, 28);
                     tree.body.setOffset(5, 22);
