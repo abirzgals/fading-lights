@@ -690,6 +690,18 @@ class MazeScene extends Phaser.Scene {
         this._shadowTimer += delta;
         if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateMazeShadows(); }
 
+        // --- Heart pickups on ground ---
+        this.children.each(child => {
+            if (!child.active || !child._isHeart) return;
+            const d = Phaser.Math.Distance.Between(p.x, p.y, child.x, child.y);
+            if (d < 40) {
+                gameState.hp = Math.min(CONFIG.PLAYER_MAX_HP, gameState.hp + 20);
+                showFloatingText(this, child.x, child.y - 20, '+20 HP', '#FF4488');
+                updateHealthBar();
+                child.destroy();
+            }
+        });
+
         // --- Torch pickups (auto-collect when near) ---
         for (const tp of this._torchPickups) {
             if (tp.collected) continue;
@@ -1008,6 +1020,29 @@ class MazeScene extends Phaser.Scene {
             const gold = 1 + Math.floor(Math.random() * 3);
             gameState.resources.gold = (gameState.resources.gold || 0) + gold;
             showFloatingText(this, e.x, e.y - 30, `+${gold} gold`, '#FFD700');
+
+            // Big enemies (beast-size or larger) drop hearts
+            const size = e.getData('size') || 0;
+            if (size >= 20 && this.textures.exists('heart_drop')) {
+                const heart = this.add.image(e.x, e.y, 'heart_drop').setDepth(3);
+                heart._isHeart = true;
+                // Pulsing glow
+                this.tweens.add({ targets: heart, scaleX: 1.3, scaleY: 1.3, duration: 500, yoyo: true, repeat: 5 });
+                // Auto-pickup after 0.5s delay
+                this.time.delayedCall(500, () => {
+                    if (!heart.active) return;
+                    const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, heart.x, heart.y);
+                    if (d < 80) {
+                        gameState.hp = Math.min(CONFIG.PLAYER_MAX_HP, gameState.hp + 20);
+                        showFloatingText(this, heart.x, heart.y - 20, '+20 HP', '#FF4488');
+                        updateHealthBar();
+                        heart.destroy();
+                    } else {
+                        // Leave on ground for pickup later
+                        this.time.delayedCall(10000, () => { if (heart.active) heart.destroy(); });
+                    }
+                });
+            }
 
             // Boss death — unlock treasure
             if (e === this._boss) {

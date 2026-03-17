@@ -786,10 +786,11 @@ class GameScene extends Phaser.Scene {
             }
         }
 
-        // --- Starter stones near bonfire (snapped to tile grid) ---
-        for (let s = 0; s < 14; s++) {
-            const angle = rng() * Math.PI * 2;
-            const dist = 70 + rng() * 50;
+        // --- Guaranteed starter stones near bonfire (12 stones, close range) ---
+        let placedStarter = 0;
+        for (let s = 0; placedStarter < 12 && s < 40; s++) {
+            const angle = (s / 12) * Math.PI * 2 + rng() * 0.3;
+            const dist = 50 + rng() * 60;
             const stx = Math.round(cx + Math.cos(angle) * (dist / T));
             const sty = Math.round(cy + Math.sin(angle) * (dist / T));
             if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty)) continue;
@@ -799,6 +800,24 @@ class GameScene extends Phaser.Scene {
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
+            stone.setData('hits', 0);
+            stone.setData('type', 'stone');
+            this._occupiedTiles.add(`${stx},${sty}`);
+            placedStarter++;
+        }
+
+        // --- Scattered stones in forest (single stones among trees) ---
+        for (let s = 0; s < 60; s++) {
+            const stx = Math.floor(rng() * (worldSize - 10)) + 5;
+            const sty = Math.floor(rng() * (worldSize - 10)) + 5;
+            if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty) || isClearing(stx, sty)) continue;
+            const dcx = stx - cx, dcy = sty - cy;
+            if (dcx * dcx + dcy * dcy < 8 * 8) continue; // not too close to camp
+            const sx = stx * T + 16, sy = sty * T + 16;
+            const stone = this.stones.create(sx, sy, this._stoneKey);
+            stone.setDepth(2);
+            stone.body.setSize(20, 16);
+            stone.body.setOffset(6, 12);
             stone.setData('hits', 0);
             stone.setData('type', 'stone');
             this._occupiedTiles.add(`${stx},${sty}`);
@@ -1582,6 +1601,7 @@ class GameScene extends Phaser.Scene {
         if (aura) aura.destroy();
 
         this.showFloatingText(lair.x, lair.y - 30, 'LAIR DESTROYED!', '#44FF44');
+        this._trackObjective('lair_destroyed', 1);
         this.time.delayedCall(800, () => {
             this.showFloatingText(lair.x, lair.y - 55, 'LIGHT THE ANCIENT BONFIRE', '#FFAA44');
             this.showFloatingText(lair.x, lair.y - 72, 'TO CLAIM YOUR TORCH!', '#FFD700');
@@ -6275,15 +6295,24 @@ class GameScene extends Phaser.Scene {
     // Objectives System
     // --------------------------------------------------------
     _initObjectives() {
-        // Pick random objectives from the pool
-        const pool = [...OBJECTIVES];
-        const count = Math.min(OBJECTIVES_PER_SESSION, pool.length);
         this._objectives = [];
 
+        // PRIMARY objectives (story-driven, always present)
+        this._objectives.push({
+            type: 'second_camp_lit', desc: '🔥 Find the abandoned camp',
+            target: 1, current: 0, completed: false, reward: 'hp', primary: true,
+        });
+        this._objectives.push({
+            type: 'lair_destroyed', desc: '⚔ Find and destroy the Monster Lair',
+            target: 1, current: 0, completed: false, reward: 'hp', primary: true,
+        });
+
+        // SECONDARY objectives (random from pool, completing = full HP)
+        const pool = [...OBJECTIVES];
+        const count = Math.min(OBJECTIVES_PER_SESSION, pool.length);
         for (let i = 0; i < count; i++) {
             const idx = Math.floor(Math.random() * pool.length);
             const template = pool.splice(idx, 1)[0];
-            // Pick a random difficulty tier for the target
             const targets = template.target;
             const tier = Math.floor(Math.random() * targets.length);
             const target = targets[tier];
@@ -6294,7 +6323,7 @@ class GameScene extends Phaser.Scene {
                 target,
                 current: 0,
                 completed: false,
-                reward: template.reward,
+                reward: 'hp',
             });
         }
 
@@ -6315,6 +6344,7 @@ class GameScene extends Phaser.Scene {
             second_camp_lit: 0,
             trees_chopped: 0,
             stones_mined: 0,
+            lair_destroyed: 0,
         };
 
         // Build the UI
@@ -6369,16 +6399,21 @@ class GameScene extends Phaser.Scene {
                 obj.completed = true;
                 if (item) item.classList.add('completed');
 
-                // Grant reward
-                for (const [res, amount] of Object.entries(obj.reward)) {
-                    gameState.resources[res] = (gameState.resources[res] || 0) + amount;
+                // Grant reward — full HP + any resource rewards
+                if (obj.reward === 'hp' || typeof obj.reward === 'string') {
+                    gameState.hp = CONFIG.PLAYER_MAX_HP;
+                    updateHealthBar();
+                } else if (typeof obj.reward === 'object') {
+                    for (const [res, amount] of Object.entries(obj.reward)) {
+                        gameState.resources[res] = (gameState.resources[res] || 0) + amount;
+                    }
                 }
 
                 // Visual feedback
-                this.showFloatingText(this.player.x, this.player.y - 50,
-                    'OBJECTIVE COMPLETE!', '#FFD700');
+                const label = obj.primary ? '⭐ PRIMARY OBJECTIVE COMPLETE!' : 'OBJECTIVE COMPLETE!';
+                this.showFloatingText(this.player.x, this.player.y - 50, label, '#FFD700');
                 this.showFloatingText(this.player.x, this.player.y - 70,
-                    Object.entries(obj.reward).map(([r, a]) => `+${a} ${r}`).join('  '), '#88FF88');
+                    'FULL HP RESTORED', '#44FF44');
                 audioEngine.playOneShot('pickup', 1.2);
 
                 // Check if all objectives are done
