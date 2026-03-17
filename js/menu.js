@@ -120,33 +120,35 @@ class MenuScene extends Phaser.Scene {
             bg.setScale(scale);
         }
 
-        // Fire particle emitter on the campfire location (center-bottom of bg image)
-        const fireX = w * 0.5;
-        const fireY = h * 0.72;
+        // Fire particle emitter — positioned on the campfire in the background image
+        // BG image campfire is at ~50% x, ~78% y in the 320x180 source
+        const fireX = w * 0.50;
+        const fireY = h * 0.78;
 
-        // Main fire
+        // Main fire — large, matches the painted fire size
         this.fireEmitter = this.add.particles(fireX, fireY, 'particle', {
-            speed: { min: 12, max: 40 },
+            speed: { min: 15, max: 50 },
             angle: { min: 250, max: 290 },
-            lifespan: { min: 500, max: 1000 },
-            scale: { start: 1.0, end: 0.1 },
-            alpha: { start: 0.9, end: 0 },
+            lifespan: { min: 600, max: 1200 },
+            scale: { start: 2.5, end: 0.2 },
+            alpha: { start: 0.85, end: 0 },
             tint: [0xFF3300, 0xFF5500, 0xFF7700, 0xFFAA00, 0xFFCC44],
             blendMode: 'ADD',
-            frequency: 35,
-            quantity: 2,
+            frequency: 30,
+            quantity: 3,
+            x: { min: -8, max: 8 },
         }).setDepth(5);
 
         // Sparks flying up from campfire
-        this.sparkEmitter = this.add.particles(fireX, fireY - 5, 'particle', {
-            speed: { min: 30, max: 80 },
+        this.sparkEmitter = this.add.particles(fireX, fireY - 10, 'particle', {
+            speed: { min: 40, max: 100 },
             angle: { min: 245, max: 295 },
-            lifespan: { min: 1200, max: 2500 },
-            scale: { start: 0.25, end: 0 },
+            lifespan: { min: 1500, max: 3000 },
+            scale: { start: 0.5, end: 0 },
             alpha: { start: 0.8, end: 0 },
             tint: [0xFF8800, 0xFFAA00, 0xFFDD00],
             blendMode: 'ADD',
-            frequency: 120,
+            frequency: 100,
             quantity: 1,
         }).setDepth(5);
 
@@ -165,14 +167,36 @@ class MenuScene extends Phaser.Scene {
             quantity: 1,
         }).setDepth(3);
 
-        // Warm campfire glow
+        // Warm campfire glow — on the ground around fire
         const groundGlow = this.add.graphics().setDepth(2);
-        groundGlow.fillStyle(0xFF6600, 0.05);
-        groundGlow.fillEllipse(fireX, fireY + 15, 400, 100);
-        groundGlow.fillStyle(0xFF4400, 0.03);
-        groundGlow.fillEllipse(fireX, fireY + 8, 280, 60);
+        groundGlow.fillStyle(0xFF6600, 0.06);
+        groundGlow.fillEllipse(fireX, fireY + 20, 350, 80);
+        groundGlow.fillStyle(0xFF4400, 0.04);
+        groundGlow.fillEllipse(fireX, fireY + 10, 220, 50);
 
-        // --- Light glow overlay (pulsating) ---
+        // --- Pulsating firelight glow ---
+        const fireLightGlow = this.add.image(fireX, fireY - 20, 'glow')
+            .setDepth(4).setScale(8).setAlpha(0.12).setTint(0xFF6600).setBlendMode('ADD');
+        this.tweens.add({
+            targets: fireLightGlow, scale: 10, alpha: 0.06,
+            duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut',
+        });
+
+        // Drifting fog/mist across the scene
+        this.add.particles(w, h * 0.5, 'glow', {
+            x: { min: 0, max: 0 },
+            y: { min: -h * 0.3, max: h * 0.3 },
+            speedX: { min: -20, max: -8 },
+            speedY: { min: -3, max: 3 },
+            lifespan: { min: 8000, max: 14000 },
+            scale: { start: 1.5, end: 0.3 },
+            alpha: { start: 0.04, end: 0 },
+            tint: [0x222244, 0x1a1a33],
+            blendMode: 'ADD',
+            frequency: 600,
+            quantity: 1,
+        }).setDepth(6);
+
         this.glowGraphics = this.add.graphics().setDepth(4);
         this.bonfireX = fireX;
         this.bonfireY = fireY;
