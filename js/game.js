@@ -3845,6 +3845,12 @@ class GameScene extends Phaser.Scene {
         for (const enemy of enemyList) {
             if (!enemy.active) continue;
 
+            // Find nearest player (local or remote) for this enemy
+            const nearestP = findNearestPlayer(this, enemy.x, enemy.y);
+            const playerX = nearestP ? nearestP.x : this.player.x;
+            const playerY = nearestP ? nearestP.y : this.player.y;
+            const distToPlayer = nearestP ? nearestP.dist : Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+
             const targetsFire = enemy.getData('targetsFire');
             const speed = enemy.getData('speed');
             let cd = enemy.getData('attackCooldown') - dt * 1000;
@@ -3875,7 +3881,7 @@ class GameScene extends Phaser.Scene {
                 }
             } else if (enemy.getData('fromLair')) {
                 // LAIR ENEMY AI: march to bonfire, aggro player if close
-                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                // distToPlayer already computed from nearest player above
                 const aggroRange = 120;
                 const isRanged = enemy.getData('ranged');
                 const stats = isRanged ? ENEMIES[enemy.getData('type')] : null;
@@ -3890,18 +3896,18 @@ class GameScene extends Phaser.Scene {
                         // Ranged lair enemy: keep distance and shoot
                         if (distToPlayer > atkRange * 0.8) {
                             enemy.setData('aiState', 'CHASE');
-                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                            this._enemyPathToward(enemy, playerX, playerY, speed * 0.7);
                         } else if (distToPlayer < atkRange * 0.4) {
                             enemy.setData('aiState', 'RETREAT');
-                            const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            const awayAngle = Phaser.Math.Angle.Between(playerX, playerY, enemy.x, enemy.y);
                             this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
                         } else {
                             enemy.setData('aiState', 'AIM');
                             enemy.setVelocity(0, 0);
                         }
-                        enemy.setFlipX(this.player.x < enemy.x);
+                        enemy.setFlipX(playerX < enemy.x);
                         if (cd <= 0 && distToPlayer < atkRange) {
-                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            this._fireProjectile(enemy, playerX, playerY, stats);
                             enemy.setData('attackCooldown', stats.attackCooldown);
                         }
                     } else {
@@ -3909,7 +3915,7 @@ class GameScene extends Phaser.Scene {
                         if (distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                             enemy.setData('aiState', 'ATK PLAYER');
                             enemy.setVelocity(0, 0);
-                            enemy.setFlipX(this.player.x < enemy.x);
+                            enemy.setFlipX(playerX < enemy.x);
                             if (cd <= 0) {
                                 enemy.setData('attackCooldown', 1000);
                                 this._enemyAttackVisual(enemy, this.player.x, this.player.y);
@@ -3918,7 +3924,7 @@ class GameScene extends Phaser.Scene {
                             }
                         } else {
                             enemy.setData('aiState', 'CHASE');
-                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
+                            this._enemyPathToward(enemy, playerX, playerY, speed);
                         }
                     }
                 } else {
@@ -3950,7 +3956,7 @@ class GameScene extends Phaser.Scene {
 
                     // Ranged: shoot player while marching if in range
                     if (isRanged && cd <= 0 && distToPlayer < atkRange) {
-                        this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                        this._fireProjectile(enemy, playerX, playerY, stats);
                         enemy.setData('attackCooldown', stats.attackCooldown);
                     }
 
@@ -3972,7 +3978,7 @@ class GameScene extends Phaser.Scene {
                 // RANGED AI: archers and mages — keep distance, shoot projectiles
                 const stats = ENEMIES[enemy.getData('type')];
                 const atkRange = stats.attackRange || 200;
-                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                // distToPlayer already computed from nearest player above
                 const isRaider = enemy.getData('isRaider');
 
                 // Ranged raiders: march to camp edge then patrol and shoot
@@ -3994,20 +4000,20 @@ class GameScene extends Phaser.Scene {
                         // Chase player — keep at attack range
                         enemy.setData('aiState', 'CHASE');
                         if (distToPlayer > atkRange * 0.8) {
-                            this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                            this._enemyPathToward(enemy, playerX, playerY, speed * 0.7);
                         } else {
                             // Good range — strafe around player
-                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(playerX, playerY, enemy.x, enemy.y);
                             orbitAngle += dt * 0.5;
                             enemy.setData('orbitAngle', orbitAngle);
-                            const ox = this.player.x + Math.cos(orbitAngle) * atkRange * 0.75;
-                            const oy = this.player.y + Math.sin(orbitAngle) * atkRange * 0.75;
+                            const ox = playerX + Math.cos(orbitAngle) * atkRange * 0.75;
+                            const oy = playerY + Math.sin(orbitAngle) * atkRange * 0.75;
                             const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
                             this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.5);
-                            enemy.setFlipX(this.player.x < enemy.x);
+                            enemy.setFlipX(playerX < enemy.x);
                         }
                         if (cd <= 0 && distToPlayer < atkRange) {
-                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            this._fireProjectile(enemy, playerX, playerY, stats);
                             enemy.setData('attackCooldown', stats.attackCooldown);
                         }
                     } else if (distToTarget > atkRange * 0.9) {
@@ -4041,7 +4047,7 @@ class GameScene extends Phaser.Scene {
                     // Shoot at player if in range, otherwise shoot at bonfire
                     if (cd <= 0) {
                         if (distToPlayer < atkRange) {
-                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            this._fireProjectile(enemy, playerX, playerY, stats);
                             enemy.setData('attackCooldown', stats.attackCooldown);
                         } else if (distToTarget < atkRange * 1.2) {
                             this._fireProjectile(enemy, tx, ty, stats);
@@ -4060,7 +4066,7 @@ class GameScene extends Phaser.Scene {
                     // If aggro'd and player too far to shoot, close the distance
                     if (isAggro && distToPlayer > atkRange && distToPlayer < AGGRO_RANGE) {
                         enemy.setData('aiState', 'PURSUE');
-                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed * 0.7);
+                        this._enemyPathToward(enemy, playerX, playerY, speed * 0.7);
                         // Lose aggro if too far
                         if (distToPlayer > AGGRO_RANGE) enemy.setData('aggro', false);
                     } else if (distToPlayer < atkRange || (isAggro && distToPlayer < atkRange * 1.5)) {
@@ -4069,25 +4075,25 @@ class GameScene extends Phaser.Scene {
                         if (distToPlayer < fleeDist) {
                             // Too close — back away
                             enemy.setData('aiState', 'FLEE');
-                            const awayAngle = Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            const awayAngle = Phaser.Math.Angle.Between(playerX, playerY, enemy.x, enemy.y);
                             this._setVelocityWithGrid(enemy, Math.cos(awayAngle), Math.sin(awayAngle), speed);
-                            enemy.setFlipX(this.player.x < enemy.x);
+                            enemy.setFlipX(playerX < enemy.x);
                         } else {
                             // Good range — strafe
                             enemy.setData('aiState', 'AIM');
-                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(this.player.x, this.player.y, enemy.x, enemy.y);
+                            let orbitAngle = enemy.getData('orbitAngle') || Phaser.Math.Angle.Between(playerX, playerY, enemy.x, enemy.y);
                             orbitAngle += dt * 0.5;
                             enemy.setData('orbitAngle', orbitAngle);
-                            const ox = this.player.x + Math.cos(orbitAngle) * atkRange * 0.75;
-                            const oy = this.player.y + Math.sin(orbitAngle) * atkRange * 0.75;
+                            const ox = playerX + Math.cos(orbitAngle) * atkRange * 0.75;
+                            const oy = playerY + Math.sin(orbitAngle) * atkRange * 0.75;
                             const moveAngle = Phaser.Math.Angle.Between(enemy.x, enemy.y, ox, oy);
                             this._setVelocityWithGrid(enemy, Math.cos(moveAngle), Math.sin(moveAngle), speed * 0.5);
-                            enemy.setFlipX(this.player.x < enemy.x);
+                            enemy.setFlipX(playerX < enemy.x);
                         }
 
                         // Fire projectile
                         if (cd <= 0) {
-                            this._fireProjectile(enemy, this.player.x, this.player.y, stats);
+                            this._fireProjectile(enemy, playerX, playerY, stats);
                             enemy.setData('attackCooldown', stats.attackCooldown);
                         }
                     } else {
@@ -4105,7 +4111,7 @@ class GameScene extends Phaser.Scene {
                 }
             } else if (enemy.getData('isRaider')) {
                 // RAIDER AI: march to camp, but chase player if spotted
-                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                // distToPlayer already computed from nearest player above
                 let raidMode = enemy.getData('raidMode'); // 'march' or 'chase'
 
                 // Spot player → switch to chase
@@ -4125,7 +4131,7 @@ class GameScene extends Phaser.Scene {
                     // Chase player — stop at melee range
                     if (distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                         enemy.setVelocity(0, 0);
-                        enemy.setFlipX(this.player.x < enemy.x);
+                        enemy.setFlipX(playerX < enemy.x);
                         enemy.setData('aiState', 'ATK PLAYER');
                         if (cd <= 0) {
                             enemy.setData('attackCooldown', 1000);
@@ -4135,7 +4141,7 @@ class GameScene extends Phaser.Scene {
                         }
                     } else {
                         enemy.setData('aiState', 'CHASE');
-                        this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
+                        this._enemyPathToward(enemy, playerX, playerY, speed);
                     }
                 } else {
                     // March to camp following pathfinding waypoints
@@ -4188,7 +4194,7 @@ class GameScene extends Phaser.Scene {
                 this._updateGroqEnemy(enemy, dt);
             } else {
                 // Normal AI: decision tree — player nearby > bonfire > wander
-                const distToPlayer = Phaser.Math.Distance.Between(enemy.x, enemy.y, this.player.x, this.player.y);
+                // distToPlayer already computed from nearest player above
                 let aggro = enemy.getData('aggro');
 
                 // Gain aggro: player in sight range (also cancels any active search)
@@ -4201,8 +4207,8 @@ class GameScene extends Phaser.Scene {
                 if (aggro && distToPlayer > AGGRO_RANGE) {
                     aggro = false;
                     enemy.setData('aggro', false);
-                    enemy.setData('_lastKnownX', this.player.x);
-                    enemy.setData('_lastKnownY', this.player.y);
+                    enemy.setData('_lastKnownX', playerX);
+                    enemy.setData('_lastKnownY', playerY);
                     enemy.setData('_searching', true);
                     // Don't clear _aiPath here — let it repath to last known position naturally
                 }
@@ -4224,7 +4230,7 @@ class GameScene extends Phaser.Scene {
                 if (aggro && distToPlayer < CONFIG.ENEMY_MELEE_RANGE) {
                     // Player in melee range — stop and attack
                     enemy.setVelocity(0, 0);
-                    enemy.setFlipX(this.player.x < enemy.x);
+                    enemy.setFlipX(playerX < enemy.x);
                     enemy.setData('aiState', 'ATK PLAYER');
                     if (cd <= 0) {
                         enemy.setData('attackCooldown', 1000);
@@ -4244,7 +4250,7 @@ class GameScene extends Phaser.Scene {
                 } else if (aggro && distToPlayer < SIGHT_RANGE) {
                     // Chase player — stop just before overlap
                     enemy.setData('aiState', 'CHASE');
-                    this._enemyPathToward(enemy, this.player.x, this.player.y, speed);
+                    this._enemyPathToward(enemy, playerX, playerY, speed);
                 } else if (enemy.getData('_searching')) {
                     // Go to last known player position before giving up
                     const lkx = enemy.getData('_lastKnownX');
@@ -5729,6 +5735,12 @@ class GameScene extends Phaser.Scene {
             if (remote && remote.sprite) {
                 scene.showFloatingText(remote.sprite.x, remote.sprite.y - 30, '+' + (amt || 3), '#00FF66');
             }
+        };
+
+        // Remote damage: enemy on host hit ME (remote player)
+        network.onRemoteDamage = (dmg) => {
+            scene.damagePlayer(dmg);
+            scene.showFloatingText(scene.player.x, scene.player.y - 20, `-${dmg}`, '#FF4444');
         };
 
         // Periodic full-world sync from host

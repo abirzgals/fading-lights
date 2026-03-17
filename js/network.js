@@ -391,6 +391,13 @@ const network = {
                 if (this.onLevelChange) this.onLevelChange(msg.scene);
                 break;
 
+            case 'rd': // remote damage — enemy hit a remote player
+                if (msg.pid === this.peerId) {
+                    // This damage is for ME
+                    if (this.onRemoteDamage) this.onRemoteDamage(msg.dmg);
+                }
+                break;
+
             case 'fsr': // full sync request from client
                 if (this.onFullSyncRequest) this.onFullSyncRequest(fromPeerId);
                 break;

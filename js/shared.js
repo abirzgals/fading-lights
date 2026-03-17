@@ -402,6 +402,52 @@ function findPathAStar(walkGrid, gridSize, tileSize, fromWX, fromWY, toWX, toWY)
     return null;
 }
 
+// --------------------------------------------------------
+// Find nearest player (local + all remotes) from a position
+// Returns { x, y, dist, isLocal, peerId } or null
+// --------------------------------------------------------
+function findNearestPlayer(scene, fromX, fromY) {
+    let best = null;
+    let bestDist = Infinity;
+
+    // Local player
+    if (scene.player && scene.player.active) {
+        const d = Phaser.Math.Distance.Between(fromX, fromY, scene.player.x, scene.player.y);
+        if (d < bestDist) { bestDist = d; best = { x: scene.player.x, y: scene.player.y, dist: d, isLocal: true, peerId: null }; }
+    }
+
+    // Remote players
+    if (scene.remotePlayers) {
+        for (const [peerId, remote] of scene.remotePlayers) {
+            if (!remote.sprite || !remote.sprite.active) continue;
+            const rx = remote.targetX || remote.sprite.x;
+            const ry = remote.targetY || remote.sprite.y;
+            const d = Phaser.Math.Distance.Between(fromX, fromY, rx, ry);
+            if (d < bestDist) { bestDist = d; best = { x: rx, y: ry, dist: d, isLocal: false, peerId }; }
+        }
+    }
+
+    return best;
+}
+
+// Damage the nearest player (local or send to remote via network)
+function damageNearestPlayer(scene, enemy, damage) {
+    const nearest = findNearestPlayer(scene, enemy.x, enemy.y);
+    if (!nearest) return;
+    if (nearest.isLocal) {
+        // Local player
+        if (scene.damagePlayer) {
+            scene.damagePlayer(damage);
+        } else {
+            damagePlayerShared(scene, damage);
+        }
+        if (scene.showFloatingText) scene.showFloatingText(scene.player.x, scene.player.y - 20, `-${damage}`, '#FF4444');
+        else showFloatingText(scene, scene.player.x, scene.player.y - 20, `-${damage}`, '#FF4444');
+    } else if (typeof network !== 'undefined') {
+        network.broadcastReliable({ t: 'rd', dmg: damage, pid: nearest.peerId });
+    }
+}
+
 function showMazeHUD() {
     const hud = document.getElementById('hud');
     if (hud) hud.style.display = 'flex';

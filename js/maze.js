@@ -289,6 +289,12 @@ class MazeScene extends Phaser.Scene {
                     s.setFlipX(state.fx < 0);
                 }
             };
+            // Remote damage: enemy on host hit ME (remote player)
+            network.onRemoteDamage = (dmg) => {
+                const reduced = damagePlayerShared(mazeScene, dmg);
+                mazeScene.cameras.main.flash(120, 80, 0, 0);
+                showFloatingText(mazeScene, mazeScene.player.x, mazeScene.player.y - 20, `-${reduced}`, '#FF4444');
+            };
             // Create sprites for already-connected peers
             for (const [peerId, peer] of network.peers) {
                 if (peer.name && !mazeScene.remotePlayers.has(peerId)) {
@@ -951,38 +957,44 @@ class MazeScene extends Phaser.Scene {
     }
 
     _updateEnemies(dt) {
-        const p   = this.player;
-        const sig = this._torchRadius * 1.2; // sight slightly beyond torch
+        const sig = this._torchRadius * 1.2;
 
         for (const e of this.mazeEnemies.children.entries) {
             if (!e.active) continue;
-            // Skip boss during charging
             if (e === this._boss && this._bossCharging) continue;
 
             let ecd = e.getData('atkCd') - dt * 1000;
             e.setData('atkCd', ecd);
 
-            const dist = Phaser.Math.Distance.Between(e.x, e.y, p.x, p.y);
+            // Find nearest player (local + remote)
+            const nearestP = findNearestPlayer(this, e.x, e.y);
+            const px = nearestP ? nearestP.x : this.player.x;
+            const py = nearestP ? nearestP.y : this.player.y;
+            const dist = nearestP ? nearestP.dist : Phaser.Math.Distance.Between(e.x, e.y, this.player.x, this.player.y);
             const spd = e.getData('spd');
 
             if (dist < sig) {
                 e.setData('wanderTimer', 0);
-                e.setFlipX(p.x < e.x);
+                e.setFlipX(px < e.x);
 
                 if (dist < CONFIG.ENEMY_MELEE_RANGE) {
-                    // In melee range — stop and attack
                     e.setVelocity(0, 0);
                     e.setData('aiState', 'ATK PLAYER');
                     if (ecd <= 0) {
                         e.setData('atkCd', 1100);
-                        const dmg = damagePlayerShared(this, e.getData('dmg'));
-                        this.cameras.main.flash(120, 80, 0, 0);
-                        showFloatingText(this, p.x, p.y - 20, `-${dmg}`, '#FF4444');
+                        // Damage the nearest player (local or via network)
+                        if (!nearestP || nearestP.isLocal) {
+                            const dmg = damagePlayerShared(this, e.getData('dmg'));
+                            this.cameras.main.flash(120, 80, 0, 0);
+                            showFloatingText(this, this.player.x, this.player.y - 20, `-${dmg}`, '#FF4444');
+                        } else if (typeof network !== 'undefined') {
+                            // Remote player hit — notify them
+                            network.broadcastReliable({ t: 'rd', dmg: e.getData('dmg'), pid: nearestP.peerId });
+                        }
                     }
                 } else {
-                    // Chase with A* pathfinding
                     e.setData('aiState', 'CHASE');
-                    this._mazePathTo(e, p.x, p.y, spd);
+                    this._mazePathTo(e, px, py, spd);
                 }
             } else {
                 // Wander
