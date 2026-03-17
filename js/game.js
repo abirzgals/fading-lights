@@ -239,6 +239,8 @@ class GameScene extends Phaser.Scene {
             craft: Phaser.Input.Keyboard.KeyCodes.TAB,
             build: Phaser.Input.Keyboard.KeyCodes.B,
         });
+        // Arrow keys as alternative to WASD
+        this._arrows = this.input.keyboard.createCursorKeys();
 
         this.input.keyboard.on('keydown-TAB', (e) => {
             e.preventDefault();
@@ -361,6 +363,7 @@ class GameScene extends Phaser.Scene {
         // Switch back to keyboard facing when keys pressed
         for (const key of ['up', 'down', 'left', 'right']) {
             this.cursors[key].on('down', () => { this.useMouseFacing = false; });
+            this._arrows[key].on('down', () => { this.useMouseFacing = false; });
         }
 
         // --- Chat ---
@@ -2334,11 +2337,11 @@ class GameScene extends Phaser.Scene {
         let vx = 0, vy = 0;
 
         if (!gameState.craftingOpen && !this._chatOpen && !this._shopOpen) {
-            // Keyboard input
-            if (this.cursors.left.isDown)  vx = -1;
-            if (this.cursors.right.isDown) vx = 1;
-            if (this.cursors.up.isDown)    vy = -1;
-            if (this.cursors.down.isDown)  vy = 1;
+            // Keyboard input (WASD + arrow keys)
+            if (this.cursors.left.isDown  || this._arrows.left.isDown)  vx = -1;
+            if (this.cursors.right.isDown || this._arrows.right.isDown) vx = 1;
+            if (this.cursors.up.isDown    || this._arrows.up.isDown)    vy = -1;
+            if (this.cursors.down.isDown  || this._arrows.down.isDown)  vy = 1;
 
             // Mobile joystick input (overrides if active)
             if (mobileControls.isMobile) {
