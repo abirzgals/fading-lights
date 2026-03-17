@@ -117,6 +117,11 @@ class MazeScene extends Phaser.Scene {
         this.wasd    = this.input.keyboard.addKeys({ up: 'W', down: 'S', left: 'A', right: 'D' });
         this.input.keyboard.on('keydown-E', () => this._interact());
         this.input.keyboard.on('keydown-F', () => this._interact());
+        // Dev: press 1 to return to level 1
+        this.input.keyboard.on('keydown-ONE', () => {
+            if (!window._debugMode) return;
+            this.scene.start('GameScene');
+        });
         this.input.on('pointerdown', (ptr) => {
             if (ptr.rightButtonDown()) this._interact();
             // leftButtonDown() is false on touch — handled via ptr.isDown in update loop

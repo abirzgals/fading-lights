@@ -309,6 +309,16 @@ class GameScene extends Phaser.Scene {
             gameState.resources.gold += 1000;
             this.showFloatingText(this.player.x, this.player.y - 30, '+1000 GOLD', '#FFD700');
         });
+        // --- Dev: press 2 to go to level 2 (maze), press 1 to restart level 1 ---
+        this.input.keyboard.on('keydown-TWO', () => {
+            if (!window._debugMode || this._chatOpen) return;
+            gameState.hasTorch = true;
+            audioEngine.stopLoop('music', 400);
+            audioEngine.stopLoop('ambient', 400);
+            audioEngine.stopLoop('fire_crackle', 300);
+            audioEngine.stopFootsteps();
+            this.scene.start('MazeScene');
+        });
         // --- Spawn Shadow Mind (Groq AI enemy) for testing ---
         this.input.keyboard.on('keydown-N', () => {
             if (!window._debugMode || this._chatOpen) return;
