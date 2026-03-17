@@ -33,15 +33,19 @@ function getPlayerTextureKey(color) {
 function generateTextures(scene) {
     const g = scene.make.graphics({ add: false });
 
-    // Ground tiles
+    // Ground tiles — dark forest floor matching the pixel art tileset
     for (let i = 0; i < 4; i++) {
         g.clear();
-        const base = [0x2d4a2d, 0x305030, 0x284428, 0x2c4c2c][i];
+        const base = [0x1e3520, 0x213822, 0x1b311d, 0x1f3621][i];
         g.fillStyle(base, 1);
         g.fillRect(0, 0, 32, 32);
-        for (let d = 0; d < 8; d++) {
-            g.fillStyle(0x3a5a3a, 0.3);
+        for (let d = 0; d < 6; d++) {
+            g.fillStyle(0x2a4a2a, 0.25);
             g.fillRect(Math.random() * 30, Math.random() * 30, 2, 2);
+        }
+        for (let d = 0; d < 3; d++) {
+            g.fillStyle(0x162a16, 0.3);
+            g.fillRect(Math.random() * 28, Math.random() * 28, 3, 2);
         }
         g.generateTexture('ground' + i, 32, 32);
     }
