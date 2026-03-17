@@ -1363,6 +1363,48 @@ class MazeScene extends Phaser.Scene {
     // ----------------------------------------------------------
     // TREASURE
     // ----------------------------------------------------------
+    _playOutroVideo() {
+        const isMobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+        const video = document.createElement('video');
+        video.src = isMobile ? 'assets/outro_mobile.mp4' : 'assets/outro.mp4';
+        video.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            object-fit: contain; z-index: 9999; background: #000;
+        `;
+        video.playsInline = true;
+        video.setAttribute('playsinline', '');
+        video.setAttribute('webkit-playsinline', '');
+        video.setAttribute('data-outro', '1');
+        document.body.appendChild(video);
+
+        const finish = () => {
+            document.querySelectorAll('[data-outro]').forEach(el => {
+                el.style.pointerEvents = 'none';
+            });
+            setTimeout(() => {
+                document.querySelectorAll('[data-outro]').forEach(el => el.remove());
+                // Show final game over screen
+                const gs = document.getElementById('game-over-screen');
+                gs.querySelector('h1').textContent = '✨  VICTORY  ✨';
+                gs.querySelector('h1').style.color = '#FFD700';
+                document.getElementById('game-over-stats').textContent =
+                    `The Ancient Artifact is yours.\n` +
+                    `${this._killCount} creatures slain · Survived ${Math.floor(gameState.time)}s`;
+                gs.style.display = 'flex';
+            }, 500);
+        };
+
+        video.addEventListener('ended', finish);
+        video.addEventListener('error', finish);
+        video.addEventListener('click', finish);
+
+        video.muted = false;
+        video.play().catch(() => {
+            video.muted = true;
+            video.play().catch(finish);
+        });
+    }
+
     _collectTreasure() {
         this._done = true;
         this.player.setVelocity(0, 0);
@@ -1394,18 +1436,46 @@ class MazeScene extends Phaser.Scene {
 
         this.time.delayedCall(3800, () => {
             gameState.gameOver = true;
-            const gs = document.getElementById('game-over-screen');
-            gs.querySelector('h1').textContent = '✨  VICTORY  ✨';
-            gs.querySelector('h1').style.color = '#FFD700';
-            document.getElementById('game-over-stats').textContent =
-                `The Ancient Artifact is yours.\n` +
-                `${this._killCount} creatures slain · Survived ${Math.floor(gameState.time)}s`;
-            gs.style.display = 'flex';
             if (typeof audioEngine !== 'undefined') {
                 audioEngine.stopLoop?.('music_lvl2', 500);
                 audioEngine.stopLoop?.('music', 500);
                 audioEngine.stopLoop?.('ambient', 500);
             }
+
+            // Show OK button overlay, then play outro video
+            const overlay = document.createElement('div');
+            overlay.setAttribute('data-outro', '1');
+            overlay.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                z-index: 9999; background: rgba(0,0,0,0.9);
+                display: flex; flex-direction: column; align-items: center; justify-content: center;
+                font-family: monospace; color: #FFD700; text-align: center;
+            `;
+            overlay.innerHTML = `
+                <div style="font-size: 24px; margin-bottom: 20px; letter-spacing: 4px;
+                            text-shadow: 0 0 20px rgba(255,200,0,0.5);">
+                    ✨ VICTORY ✨
+                </div>
+                <div style="color: #FFEEAA; font-size: 13px; margin-bottom: 8px;">
+                    The Ancient Artifact is yours.
+                </div>
+                <div style="color: #CC88FF; font-size: 11px; margin-bottom: 24px;">
+                    ${this._killCount} creatures slain · Survived ${Math.floor(gameState.time)}s
+                </div>
+                <button style="padding: 12px 40px; background: rgba(255,200,0,0.2);
+                    border: 1px solid rgba(255,200,0,0.5); border-radius: 8px;
+                    color: #FFD700; font-family: monospace; font-size: 16px;
+                    letter-spacing: 3px; cursor: pointer;">OK</button>
+            `;
+            document.body.appendChild(overlay);
+
+            const okBtn = overlay.querySelector('button');
+            const playOutro = () => {
+                overlay.remove();
+                this._playOutroVideo();
+            };
+            okBtn.addEventListener('click', playOutro);
+            okBtn.addEventListener('touchend', (e) => { e.preventDefault(); playOutro(); });
         });
     }
 }
