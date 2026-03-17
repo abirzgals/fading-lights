@@ -636,6 +636,26 @@ class MazeScene extends Phaser.Scene {
         ctx.arc(px, py, fr, 0, Math.PI * 2);
         ctx.fill();
 
+        // Remote players — also light sources
+        for (const [, remote] of this.remotePlayers) {
+            if (!remote.sprite || !remote.sprite.active) continue;
+            const rx = remote.targetX || remote.sprite.x;
+            const ry = remote.targetY || remote.sprite.y;
+            const { x: rpx, y: rpy } = this._worldToScreen(rx, ry);
+            if (rpx < -200 || rpx > gameW + 200 || rpy < -200 || rpy > gameH + 200) continue;
+            const rFlicker = 1.0 + Math.sin(this.time.now * 0.009 + rx) * 0.03;
+            const rr = r * rFlicker; // same radius as local player
+            const rGrad = ctx.createRadialGradient(rpx, rpy, 0, rpx, rpy, rr);
+            rGrad.addColorStop(0, 'rgba(0,0,0,1)');
+            rGrad.addColorStop(0.4, 'rgba(0,0,0,0.9)');
+            rGrad.addColorStop(0.7, 'rgba(0,0,0,0.4)');
+            rGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = rGrad;
+            ctx.beginPath();
+            ctx.arc(rpx, rpy, rr, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         // Wall torches — smaller light sources
         for (const torch of this._wallTorches) {
             const { x: tlx, y: tly } = this._worldToScreen(torch.x, torch.y);
@@ -663,6 +683,24 @@ class MazeScene extends Phaser.Scene {
         ctx.beginPath();
         ctx.arc(px, py, fr, 0, Math.PI * 2);
         ctx.fill();
+
+        // Warm tint for remote players
+        for (const [, remote] of this.remotePlayers) {
+            if (!remote.sprite || !remote.sprite.active) continue;
+            const rx = remote.targetX || remote.sprite.x;
+            const ry = remote.targetY || remote.sprite.y;
+            const { x: rpx, y: rpy } = this._worldToScreen(rx, ry);
+            if (rpx < -200 || rpx > gameW + 200 || rpy < -200 || rpy > gameH + 200) continue;
+            const rr = r;
+            const rtg = ctx.createRadialGradient(rpx, rpy, 0, rpx, rpy, rr);
+            rtg.addColorStop(0, 'rgba(255, 140, 50, 0.15)');
+            rtg.addColorStop(0.5, 'rgba(255, 100, 30, 0.08)');
+            rtg.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.fillStyle = rtg;
+            ctx.beginPath();
+            ctx.arc(rpx, rpy, rr, 0, Math.PI * 2);
+            ctx.fill();
+        }
 
         // Warm tint for wall torches
         for (const torch of this._wallTorches) {
