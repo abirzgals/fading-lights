@@ -36,6 +36,10 @@ class GameScene extends Phaser.Scene {
             }
         }
         this._hasPixelArtGround = this.textures.exists('ground_tileset');
+        this._stoneKey = this.textures.exists('pa_stone') ? 'pa_stone' : 'stone';
+        this._metalKey = this.textures.exists('pa_metal') ? 'pa_metal' : 'metal';
+        this._rockWallKey = this.textures.exists('pa_rock_wall') ? 'pa_rock_wall' : 'rock_wall';
+        this._metalMineKey = this.textures.exists('pa_metal_mine') ? 'pa_metal_mine' : 'metal_mine';
 
         // --- Resource Groups ---
         this.trees = this.physics.add.staticGroup();
@@ -753,7 +757,7 @@ class GameScene extends Phaser.Scene {
             if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
             const sx = stx * T + 16;
             const sy = sty * T + 16;
-            const stone = this.stones.create(sx, sy, 'stone');
+            const stone = this.stones.create(sx, sy, this._stoneKey);
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);
@@ -775,7 +779,7 @@ class GameScene extends Phaser.Scene {
                 if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
                 const sx = stx * T + 16;
                 const sy = sty * T + 16;
-                const stone = this.stones.create(sx, sy, 'stone');
+                const stone = this.stones.create(sx, sy, this._stoneKey);
                 stone.setDepth(2);
                 stone.body.setSize(20, 16);
                 stone.body.setOffset(6, 12);
@@ -798,7 +802,7 @@ class GameScene extends Phaser.Scene {
                 if (this._occupiedTiles.has(`${mtx},${mty}`)) continue;
                 const px = mtx * T + 16;
                 const py = mty * T + 16;
-                const ore = this.metals.create(px, py, 'metal');
+                const ore = this.metals.create(px, py, this._metalKey);
                 ore.setDepth(2);
                 ore.body.setSize(24, 20);
                 ore.body.setOffset(4, 10);
@@ -817,7 +821,7 @@ class GameScene extends Phaser.Scene {
             if (isPath(rtx, rty)) return false;
             const rx = rtx * T + 16;
             const ry = rty * T + 16;
-            const rock = this.rockWalls.create(rx, ry, 'rock_wall');
+            const rock = this.rockWalls.create(rx, ry, this._rockWallKey);
             rock.setDepth(2);
             rock.body.setSize(48, 28);
             rock.body.setOffset(8, 14);
@@ -901,7 +905,7 @@ class GameScene extends Phaser.Scene {
             if (isPath(mmx, mmy)) continue;
             const mx = mmx * T + 16;
             const my = mmy * T + 16;
-            const mine = this.metalMines.create(mx, my, 'metal_mine');
+            const mine = this.metalMines.create(mx, my, this._metalMineKey);
             mine.setDepth(2);
             mine.body.setSize(36, 30);
             mine.body.setOffset(6, 12);
@@ -950,7 +954,7 @@ class GameScene extends Phaser.Scene {
             if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
             const rx = stx * T + 16;
             const ry = sty * T + 16;
-            const stone = this.stones.create(rx, ry, 'stone');
+            const stone = this.stones.create(rx, ry, this._stoneKey);
             stone.setDepth(2);
             stone.body.setSize(24, 20);
             stone.body.setOffset(4, 10);

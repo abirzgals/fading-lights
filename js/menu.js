@@ -28,6 +28,10 @@ class MenuScene extends Phaser.Scene {
         this.load.image('tree_oak', 'assets/pixelart/tree_oak.png');
         this.load.image('tree_dead', 'assets/pixelart/tree_dead.png');
         this.load.image('tree_birch', 'assets/pixelart/tree_birch.png');
+        this.load.image('pa_stone', 'assets/pixelart/stone_deposit.png');
+        this.load.image('pa_metal', 'assets/pixelart/metal_ore.png');
+        this.load.image('pa_rock_wall', 'assets/pixelart/rock_wall.png');
+        this.load.image('pa_metal_mine', 'assets/pixelart/metal_mine.png');
         this.load.spritesheet('ground_tileset', 'assets/pixelart/ground-tileset.png', {
             frameWidth: 32, frameHeight: 32,
         });
