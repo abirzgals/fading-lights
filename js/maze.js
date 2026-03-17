@@ -354,6 +354,27 @@ class MazeScene extends Phaser.Scene {
             if (mobileControls.interactHeld) this._interact();
         }
 
+        // Auto-attack: face and attack nearest enemy in weapon range
+        if (p.attackCooldown <= 0) {
+            const weapon = WEAPONS[gameState.weapon] || { range: 52 };
+            let nearest = null, nearestDist = Infinity;
+            for (const e of this.mazeEnemies.children.entries) {
+                if (!e.active) continue;
+                const d = Phaser.Math.Distance.Between(p.x, p.y, e.x, e.y);
+                if (d < weapon.range + e.getData('size') && d < nearestDist) {
+                    nearest = e; nearestDist = d;
+                }
+            }
+            if (nearest) {
+                const dx = nearest.x - p.x, dy = nearest.y - p.y;
+                p.facing = {
+                    x: Math.abs(dx) > Math.abs(dy) * 0.5 ? Math.sign(dx) : 0,
+                    y: Math.abs(dy) > Math.abs(dx) * 0.5 ? Math.sign(dy) : 0,
+                };
+                this._attack();
+            }
+        }
+
         // Mouse / touch tap attack (ptr.isDown covers both mouse LMB and touch)
         const ptr = this.input.activePointer;
         if (ptr.isDown && !ptr.rightButtonDown() && p.attackCooldown <= 0) this._attack();
