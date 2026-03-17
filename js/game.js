@@ -555,10 +555,11 @@ class GameScene extends Phaser.Scene {
             pointer-events: auto;
         `;
         panel.innerHTML = `
-            <div style="padding:6px 10px;background:rgba(140,0,255,0.15);
+            <div id="groq-panel-header" style="padding:6px 10px;background:rgba(140,0,255,0.15);
                         border-bottom:1px solid rgba(180,60,255,0.25);
-                        color:#CC44FF;font-weight:bold;font-size:11px;flex-shrink:0">
-                GROQ AI LOG
+                        color:#CC44FF;font-weight:bold;font-size:11px;flex-shrink:0;
+                        cursor:pointer;user-select:none">
+                <span id="groq-collapse-arrow">▼</span> GROQ AI LOG
                 <span style="color:#666;font-weight:normal;font-size:9px;float:right">
                     model: ${GROQ_MODEL}
                 </span>
@@ -568,6 +569,17 @@ class GameScene extends Phaser.Scene {
         const container = document.getElementById('game-container') || document.body;
         container.appendChild(panel);
         this._groqPanel = panel;
+
+        // Collapse toggle
+        const header = document.getElementById('groq-panel-header');
+        const body = document.getElementById('groq-log-body');
+        const arrow = document.getElementById('groq-collapse-arrow');
+        header.addEventListener('click', () => {
+            const collapsed = body.style.display === 'none';
+            body.style.display = collapsed ? '' : 'none';
+            arrow.textContent = collapsed ? '▼' : '▶';
+            panel.style.width = collapsed ? '360px' : '160px';
+        });
         this._groqPanelFrame = 0; // throttle DOM updates
     }
 
@@ -940,7 +952,7 @@ class GameScene extends Phaser.Scene {
         // --- Second camp (unlit) at the edge of level 5 radius ---
         // Place deterministically using seeded RNG so both host + client agree
         const secondCampAngle = rng() * Math.PI * 2;
-        const secondCampDist = 34; // tiles from center (~1088px, near lvl5 light edge)
+        const secondCampDist = 22; // tiles from center (~704px, findable within lvl3-4 light)
         const sc_tx = Math.round(cx + Math.cos(secondCampAngle) * secondCampDist);
         const sc_ty = Math.round(cy + Math.sin(secondCampAngle) * secondCampDist);
         this._secondCampTile = { tx: sc_tx, ty: sc_ty };
@@ -987,7 +999,7 @@ class GameScene extends Phaser.Scene {
         // --- Monster Lair (win condition) ---
         // Place so the lair is visible at the edge of second camp's max light (level 5)
         // Second camp max radius ≈ 540px → lair ~500px from camp = ~16 tiles further
-        const lairDist = 49; // tiles from center (camp at 34 → ~480px apart, within max light edge)
+        const lairDist = 35; // tiles from center — reachable from second camp light
         const lairAngle = secondCampAngle + (rng() - 0.5) * 0.15; // small offset to stay in range
         const lair_tx = Math.round(cx + Math.cos(lairAngle) * lairDist);
         const lair_ty = Math.round(cy + Math.sin(lairAngle) * lairDist);
@@ -2939,7 +2951,9 @@ class GameScene extends Phaser.Scene {
         }
         if (resType === 'stone') this._trackObjective('stones_mined', 1);
         // Update walkability grid — destroyed resource opens path
-        this._setGridWalkable(ox, oy);
+        // Pixel art trees were shifted up by 1 tile, so grid position is oy + T
+        const gridY = (resType === 'tree' && this._hasPixelArtTree) ? oy + CONFIG.TILE_SIZE : oy;
+        this._setGridWalkable(ox, gridY);
         obj.destroy();
 
         // Track destroyed resources so rejoining players get the right map state
@@ -3139,7 +3153,8 @@ class GameScene extends Phaser.Scene {
         const fuel = bonfire.getData('fuel');
         if (fuel <= 0) return 0; // no fuel = no light, no glow
         const fuelRatio = fuel / bonfire.getData('maxFuel');
-        const base = bonfire.getData('isMain') ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
+        const isCamp = bonfire.getData('isMain') || bonfire.getData('isSecondCamp') || bonfire.getData('isLairCamp');
+        const base = isCamp ? CONFIG.BONFIRE_BASE_RADIUS : (BUILDINGS.OUTPOST.lightRadius || 180);
         const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
         // Fire level multiplier: each level significantly increases radius
         const campLevel = bonfire.getData('campFireLevel') || 1;
