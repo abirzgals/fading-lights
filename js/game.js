@@ -4842,7 +4842,16 @@ class GameScene extends Phaser.Scene {
             if (nearestEnemy) {
                 const angle = Phaser.Math.Angle.Between(ally.x, ally.y, nearestEnemy.x, nearestEnemy.y);
                 this._setVelocityWithGrid(ally, Math.cos(angle), Math.sin(angle), 100);
-                ally.setFlipX(Math.cos(angle) < 0);
+                // Use pixel art directional sprite if available
+                if (ally._charVariant && this.textures.exists(ally._charVariant + '_south')) {
+                    const dir = facingToDirection(Math.cos(angle), Math.sin(angle));
+                    const walkKey = 'player_walk_' + dir;
+                    if (this.anims.exists(walkKey) && ally.anims.currentAnim?.key !== walkKey) ally.play(walkKey);
+                    ally._lastDir = dir;
+                    ally.setFlipX(false);
+                } else {
+                    ally.setFlipX(Math.cos(angle) < 0);
+                }
 
                 // Attack
                 let cd = ally.getData('attackCooldown') - dt * 1000;
@@ -4858,11 +4867,21 @@ class GameScene extends Phaser.Scene {
                 if (distHome > 120) {
                     const angle = Phaser.Math.Angle.Between(ally.x, ally.y, home.x, home.y);
                     this._setVelocityWithGrid(ally, Math.cos(angle), Math.sin(angle), 50);
+                    if (ally._charVariant && this.textures.exists(ally._charVariant + '_south')) {
+                        const dir = facingToDirection(Math.cos(angle), Math.sin(angle));
+                        const wk = 'player_walk_' + dir;
+                        if (this.anims.exists(wk) && ally.anims.currentAnim?.key !== wk) ally.play(wk);
+                        ally._lastDir = dir;
+                        ally.setFlipX(false);
+                    }
                 } else {
-                    // Wander
+                    // Wander or idle
                     if (Math.random() < 0.02) {
                         const wa = Math.random() * Math.PI * 2;
                         this._setVelocityWithGrid(ally, Math.cos(wa), Math.sin(wa), 30);
+                    } else if (ally._charVariant && ally.anims.isPlaying) {
+                        ally.anims.stop();
+                        ally.setTexture(ally._charVariant + '_' + (ally._lastDir || 'south'));
                     }
                 }
             }
@@ -5271,11 +5290,17 @@ class GameScene extends Phaser.Scene {
     }
 
     spawnAlly(x, y, homeBuilding) {
-        const ally = this.allies.create(x + 20, y, 'ally');
+        // Use random pixel art character for ally if available
+        const variants = ['male', 'female'];
+        const av = variants[Math.floor(Math.random() * variants.length)];
+        const allyTex = this.textures.exists(av + '_south') ? (av + '_south') : 'ally';
+        const ally = this.allies.create(x + 20, y, allyTex);
         ally.setDepth(5);
         ally.body.setAllowGravity(false);
         ally.setData('attackCooldown', 0);
         ally.setData('home', { x, y });
+        ally._charVariant = av;
+        ally._lastDir = 'south';
     }
 
     destroyBuilding(building, broadcast = true) {
@@ -5447,11 +5472,21 @@ class GameScene extends Phaser.Scene {
             const cx = scene.bonfires[0].x;
             const cy = scene.bonfires[0].y;
 
-            // Use colored player texture
-            const texKey = getPlayerTextureKey(color);
-            const tex = scene.textures.exists(texKey) ? texKey : 'player';
+            // Use pixel art character (random variant) or fallback to colored procedural
+            const variants = ['male', 'female'];
+            const remoteVariant = variants[Math.floor(Math.random() * variants.length)];
+            const paTex = remoteVariant + '_south';
+            let tex;
+            if (scene.textures.exists(paTex)) {
+                tex = paTex;
+            } else {
+                const texKey = getPlayerTextureKey(color);
+                tex = scene.textures.exists(texKey) ? texKey : 'player';
+            }
 
             const sprite = scene.add.sprite(cx, cy - 30, tex);
+            sprite._charVariant = remoteVariant;
+            sprite._lastDir = 'south';
             sprite.setDepth(5);
 
             const nameLabel = scene.add.text(cx, cy - 55, name || 'Player', {
@@ -5491,12 +5526,31 @@ class GameScene extends Phaser.Scene {
         network.onPeerState = (peerId, state) => {
             const remote = scene.remotePlayers.get(peerId);
             if (remote) {
+                const oldX = remote.targetX, oldY = remote.targetY;
                 remote.targetX = state.x;
                 remote.targetY = state.y;
                 remote.state = state;
-                // Flip sprite based on facing
-                if (state.fx !== undefined) {
-                    remote.sprite.setFlipX(state.fx < 0);
+                const s = remote.sprite;
+                const cv = s._charVariant;
+                // Use pixel art directional sprites if available
+                if (cv && scene.textures.exists(cv + '_south')) {
+                    const isMoving = Math.abs(state.x - oldX) > 1 || Math.abs(state.y - oldY) > 1;
+                    const fx = state.fx || 0;
+                    const fy = state.fy || 0;
+                    if (fx !== 0 || fy !== 0) {
+                        const dir = facingToDirection(fx, fy);
+                        const walkKey = 'player_walk_' + dir;
+                        if (isMoving && scene.anims.exists(walkKey)) {
+                            if (s.anims.currentAnim?.key !== walkKey) s.play(walkKey);
+                        } else {
+                            if (s.anims.isPlaying) s.anims.stop();
+                            if (dir !== s._lastDir) s.setTexture(cv + '_' + dir);
+                        }
+                        s._lastDir = dir;
+                        s.setFlipX(false);
+                    }
+                } else if (state.fx !== undefined) {
+                    s.setFlipX(state.fx < 0);
                 }
             }
         };

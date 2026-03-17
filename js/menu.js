@@ -23,10 +23,8 @@ class MenuScene extends Phaser.Scene {
                 this.load.spritesheet(variant + '_ranged_' + dir, base + '/ranged/' + dir + '.png', FRAME_SIZE);
             });
         });
-        // Pick random character variant (stored globally for the session)
-        if (typeof window._charVariant === 'undefined') {
-            window._charVariant = CHAR_VARIANTS[Math.floor(Math.random() * CHAR_VARIANTS.length)];
-        }
+        // Pick random character variant each game start
+        window._charVariant = CHAR_VARIANTS[Math.floor(Math.random() * CHAR_VARIANTS.length)];
         // Stalker enemy
         directions.forEach(dir => {
             this.load.image('stalker_' + dir, 'assets/pixelart/shadow-stalker/rotations/' + dir + '.png');
