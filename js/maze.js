@@ -51,8 +51,9 @@ class MazeScene extends Phaser.Scene {
         const sr  = rooms[0];
         const spx = (sr.x + Math.floor(sr.w / 2)) * TILE + 16;
         const spy = (sr.y + Math.floor(sr.h / 2)) * TILE + 16;
-        const hasPA = this.textures.exists('player_south');
-        const texKey = hasPA ? 'player_south'
+        this._charPrefix = window._charVariant || 'male';
+        const hasPA = this.textures.exists(this._charPrefix + '_south');
+        const texKey = hasPA ? (this._charPrefix + '_south')
             : ((typeof getPlayerTextureKey !== 'undefined')
                 ? getPlayerTextureKey(network.playerColor) : 'player');
         this.player = this.physics.add.sprite(
@@ -363,14 +364,14 @@ class MazeScene extends Phaser.Scene {
                 if (this.anims.exists(animKey)) {
                     if (curKey !== animKey) p.play(animKey);
                 } else if (dir !== p._lastDir) {
-                    p.setTexture('player_' + dir);
+                    p.setTexture(this._charPrefix + '_' + dir);
                 }
                 p._lastDir = dir;
                 p.setFlipX(false);
             }
         } else if (this._hasPixelArtPlayer) {
             if (p.anims.isPlaying) p.anims.stop();
-            p.setTexture('player_' + (p._lastDir || 'south'));
+            p.setTexture(this._charPrefix + '_' + (p._lastDir || 'south'));
         }
 
         // Attack cooldown
@@ -405,7 +406,7 @@ class MazeScene extends Phaser.Scene {
                 };
                 if (this._hasPixelArtPlayer) {
                     const dir = facingToDirection(p.facing.x, p.facing.y);
-                    if (dir !== p._lastDir) { p.setTexture('player_' + dir); p._lastDir = dir; p.setFlipX(false); }
+                    if (dir !== p._lastDir) { p.setTexture(this._charPrefix + '_' + dir); p._lastDir = dir; p.setFlipX(false); }
                 }
                 this._attack();
             }
@@ -583,7 +584,7 @@ class MazeScene extends Phaser.Scene {
             if (this.anims.exists(atkKey)) {
                 p.play(atkKey);
                 p.once('animationcomplete', () => {
-                    p.setTexture('player_' + dir);
+                    p.setTexture(this._charPrefix + '_' + dir);
                     p._lastDir = dir;
                 });
             }

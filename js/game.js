@@ -23,8 +23,10 @@ class GameScene extends Phaser.Scene {
             .setOrigin(0, 0)
             .setDepth(-1);
 
+        // Character variant prefix (male/female, randomly picked in menu)
+        this._charPrefix = window._charVariant || 'male';
         // Cache whether pixel art is available for direction-based rendering
-        this._hasPixelArtPlayer = this.textures.exists('player_south');
+        this._hasPixelArtPlayer = this.textures.exists(this._charPrefix + '_south');
         this._hasPixelArtStalker = this.textures.exists('stalker_south');
         this._hasPixelArtTree = this.textures.exists('dark_tree');
         // Build array of available tree texture keys
@@ -109,7 +111,7 @@ class GameScene extends Phaser.Scene {
 
         // --- Player (use pixel art if available, else tshirt color) ---
         const playerTexKey = getPlayerTextureKey(network.playerColor);
-        const playerTex = this._hasPixelArtPlayer ? 'player_south'
+        const playerTex = this._hasPixelArtPlayer ? (this._charPrefix + '_south')
             : (this.textures.exists(playerTexKey) ? playerTexKey : 'player');
         this.player = this.physics.add.sprite(cx, cy - 50, playerTex);
 
@@ -2657,6 +2659,7 @@ class GameScene extends Phaser.Scene {
 
         // Play attack animation (melee jab or ranged throw)
         if (this._hasPixelArtPlayer) {
+            const cp = this._charPrefix;
             const dir = facingToDirection(p.facing.x, p.facing.y);
             const attackType = weapon.attackType || 'swing';
             const atkAnimKey = attackType === 'shoot'
@@ -2664,9 +2667,8 @@ class GameScene extends Phaser.Scene {
                 : 'player_melee_' + dir;
             if (this.anims.exists(atkAnimKey)) {
                 p.play(atkAnimKey);
-                // Return to idle after animation completes
                 p.once('animationcomplete', () => {
-                    p.setTexture('player_' + dir);
+                    p.setTexture(cp + '_' + dir);
                     p._lastDir = dir;
                 });
             }
@@ -4406,7 +4408,7 @@ class GameScene extends Phaser.Scene {
             } else {
                 if (p.anims.isPlaying) p.anims.stop();
                 if (dir !== p._lastDir) {
-                    p.setTexture('player_' + dir);
+                    p.setTexture(this._charPrefix + '_' + dir);
                 }
             }
             p._lastDir = dir;

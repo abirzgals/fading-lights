@@ -10,25 +10,28 @@ class MenuScene extends Phaser.Scene {
             frameWidth: 32, frameHeight: 32,
         });
 
-        // Pixel art assets
+        // Character variants — load all from folder structure
+        const CHAR_VARIANTS = ['male', 'female'];
         const directions = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        const FRAME_SIZE = { frameWidth: 48, frameHeight: 48 };
+        CHAR_VARIANTS.forEach(variant => {
+            const base = 'assets/characters/' + variant;
+            directions.forEach(dir => {
+                this.load.image(variant + '_' + dir, base + '/rotations/' + dir + '.png');
+                this.load.spritesheet(variant + '_walk_' + dir, base + '/walk/' + dir + '.png', FRAME_SIZE);
+                this.load.spritesheet(variant + '_melee_' + dir, base + '/melee/' + dir + '.png', FRAME_SIZE);
+                this.load.spritesheet(variant + '_ranged_' + dir, base + '/ranged/' + dir + '.png', FRAME_SIZE);
+            });
+        });
+        // Pick random character variant (stored globally for the session)
+        if (typeof window._charVariant === 'undefined') {
+            window._charVariant = CHAR_VARIANTS[Math.floor(Math.random() * CHAR_VARIANTS.length)];
+        }
+        // Stalker enemy
         directions.forEach(dir => {
-            this.load.image('player_' + dir, 'assets/pixelart/survivor-player/rotations/' + dir + '.png');
             this.load.image('stalker_' + dir, 'assets/pixelart/shadow-stalker/rotations/' + dir + '.png');
-            // Walk animation spritesheets (6 frames, 48x48 each)
-            this.load.spritesheet('player_walk_' + dir,
-                'assets/pixelart/spritesheets/player_walk_' + dir + '.png',
-                { frameWidth: 48, frameHeight: 48 });
             this.load.spritesheet('stalker_walk_' + dir,
-                'assets/pixelart/spritesheets/stalker_walk_' + dir + '.png',
-                { frameWidth: 48, frameHeight: 48 });
-            // Attack animation spritesheets
-            this.load.spritesheet('player_melee_' + dir,
-                'assets/pixelart/spritesheets/player_melee_' + dir + '.png',
-                { frameWidth: 48, frameHeight: 48 });
-            this.load.spritesheet('player_ranged_' + dir,
-                'assets/pixelart/spritesheets/player_ranged_' + dir + '.png',
-                { frameWidth: 48, frameHeight: 48 });
+                'assets/pixelart/spritesheets/stalker_walk_' + dir + '.png', FRAME_SIZE);
         });
         this.load.image('dark_tree', 'assets/pixelart/dark-tree.png');
         this.load.image('tree_pine', 'assets/pixelart/tree_pine.png');
@@ -47,39 +50,43 @@ class MenuScene extends Phaser.Scene {
     create() {
         generateTextures(this);
 
-        // Create walk animations for pixel art characters
+        // Create animations for selected character variant
+        // Register with 'player_' prefix so game code works unchanged
         const directions = ['south', 'south-east', 'east', 'north-east', 'north', 'north-west', 'west', 'south-west'];
+        const cv = window._charVariant || 'male';
+        console.log('[Character] Using variant:', cv);
         directions.forEach(dir => {
-            if (this.textures.exists('player_walk_' + dir)) {
+            // Map variant textures to player_ keys so game.js works transparently
+            const walkKey = cv + '_walk_' + dir;
+            if (this.textures.exists(walkKey)) {
                 this.anims.create({
                     key: 'player_walk_' + dir,
-                    frames: this.anims.generateFrameNumbers('player_walk_' + dir, { start: 0, end: 5 }),
-                    frameRate: 10,
-                    repeat: -1,
+                    frames: this.anims.generateFrameNumbers(walkKey, { start: 0, end: 5 }),
+                    frameRate: 10, repeat: -1,
                 });
             }
+            const meleeKey = cv + '_melee_' + dir;
+            if (this.textures.exists(meleeKey)) {
+                this.anims.create({
+                    key: 'player_melee_' + dir,
+                    frames: this.anims.generateFrameNumbers(meleeKey, { start: 0, end: 2 }),
+                    frameRate: 12, repeat: 0,
+                });
+            }
+            const rangedKey = cv + '_ranged_' + dir;
+            if (this.textures.exists(rangedKey)) {
+                this.anims.create({
+                    key: 'player_ranged_' + dir,
+                    frames: this.anims.generateFrameNumbers(rangedKey, { start: 0, end: 6 }),
+                    frameRate: 14, repeat: 0,
+                });
+            }
+            // Stalker (unchanged)
             if (this.textures.exists('stalker_walk_' + dir)) {
                 this.anims.create({
                     key: 'stalker_walk_' + dir,
                     frames: this.anims.generateFrameNumbers('stalker_walk_' + dir, { start: 0, end: 5 }),
-                    frameRate: 10,
-                    repeat: -1,
-                });
-            }
-            if (this.textures.exists('player_melee_' + dir)) {
-                this.anims.create({
-                    key: 'player_melee_' + dir,
-                    frames: this.anims.generateFrameNumbers('player_melee_' + dir, { start: 0, end: 2 }),
-                    frameRate: 12,
-                    repeat: 0,
-                });
-            }
-            if (this.textures.exists('player_ranged_' + dir)) {
-                this.anims.create({
-                    key: 'player_ranged_' + dir,
-                    frames: this.anims.generateFrameNumbers('player_ranged_' + dir, { start: 0, end: 6 }),
-                    frameRate: 14,
-                    repeat: 0,
+                    frameRate: 10, repeat: -1,
                 });
             }
         });
