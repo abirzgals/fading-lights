@@ -2898,6 +2898,17 @@ class GameScene extends Phaser.Scene {
             }
         }
 
+        // Light abandoned camp on interact (E key) when near with wood
+        for (const bonfire of this.bonfires) {
+            if (bonfire.getData('lit') || bonfire.getData('isMain')) continue;
+            const dist = Phaser.Math.Distance.Between(p.x, p.y, bonfire.x, bonfire.y);
+            if (dist < CONFIG.INTERACT_RADIUS && gameState.resources.wood > 0) {
+                this._lightSecondCamp(bonfire);
+                this._feedBonfire(bonfire);
+                return;
+            }
+        }
+
         // Check build spots first
         if (this._tryBuildOnSpot()) return;
 
@@ -3337,12 +3348,8 @@ class GameScene extends Phaser.Scene {
                 // More raiders at higher levels (2-4)
                 const raidCount = Math.min(4, 1 + Math.floor((maxLevel - 1)));
                 // Target a random fueled camp
-                const fueledCamps = this.bonfires.filter(b =>
-                    (b.getData('campFuelAdded') || 0) >= 1 && b.getData('fuel') > 0
-                );
-                const targetCamp = fueledCamps.length > 0
-                    ? fueledCamps[Math.floor(Math.random() * fueledCamps.length)]
-                    : this.bonfires[0];
+                // Always target the main base camp
+                const targetCamp = this.bonfires[0];
 
                 for (let i = 0; i < raidCount; i++) {
                     this.spawnRaider(targetCamp);
