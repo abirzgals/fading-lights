@@ -1323,6 +1323,7 @@ class GameScene extends Phaser.Scene {
         bonfire.setData('isMain', isMain);
         bonfire.setData('campFuelAdded', isMain ? gameState.fuelAdded : 0);
         bonfire.setData('campFireLevel', isMain ? gameState.fireLevel : 1);
+        bonfire.setData('lit', isMain ? true : false);
 
         // Fire particle emitter
         const emitter = this.add.particles(x, y - 8, 'particle', {
