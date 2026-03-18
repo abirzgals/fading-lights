@@ -573,154 +573,51 @@ class MazeScene extends Phaser.Scene {
     // TORCH LIGHT
     // ----------------------------------------------------------
     _initTorchLight(worldW, worldH) {
-        this._lightW = worldW;
-        this._lightH = worldH;
-        // Canvas-based fog of war (same approach as overworld)
-        this._fogCanvas = document.createElement('canvas');
-        this._fogCanvas.width = this.scale.width;
-        this._fogCanvas.height = this.scale.height;
-        this._fogCtx = this._fogCanvas.getContext('2d');
-        if (this.textures.exists('maze_fog')) this.textures.remove('maze_fog');
-        this._fogTexture = this.textures.createCanvas('maze_fog', this.scale.width, this.scale.height);
-        this._fogImage = this.add.image(0, 0, 'maze_fog').setDepth(80).setScrollFactor(0).setOrigin(0, 0);
-        this._fogTimer = 0;
-
-        this.scale.on('resize', (gameSize) => {
-            this._fogCanvas.width = gameSize.width;
-            this._fogCanvas.height = gameSize.height;
-            if (this.textures.exists('maze_fog')) this.textures.remove('maze_fog');
-            this._fogTexture = this.textures.createCanvas('maze_fog', gameSize.width, gameSize.height);
-            this._fogImage.setTexture('maze_fog');
-        });
-    }
-
-    _worldToScreen(wx, wy) {
-        const cam = this.cameras.main;
-        return { x: (wx - cam.scrollX) * cam.zoom, y: (wy - cam.scrollY) * cam.zoom };
+        // WebGL fog shader pipeline (shared with overworld)
+        this._fogPipeline = setupFogPipeline(this);
     }
 
     _updateTorchLight() {
-        // Throttle to ~20fps
-        this._fogTimer += this.game.loop.delta;
-        if (this._fogTimer < 50) return;
-        this._fogTimer = 0;
-
-        const ctx = this._fogCtx;
-        const gameW = this.scale.width;
-        const gameH = this.scale.height;
-        if (this._fogCanvas.width !== gameW || this._fogCanvas.height !== gameH) {
-            this._fogCanvas.width = gameW;
-            this._fogCanvas.height = gameH;
-        }
-
-        const p = this.player;
+        if (!this._fogPipeline) return;
+        const cam = this.cameras.main;
+        const toScreen = (wx, wy) => ({
+            x: (wx - cam.scrollX) * cam.zoom,
+            y: (wy - cam.scrollY) * cam.zoom,
+        });
+        const t = this.time.now;
         const r = this._torchRadius;
-        const { x: px, y: py } = this._worldToScreen(p.x, p.y);
+        const lights = [];
 
-        // Fill with darkness
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(2, 1, 5, 0.97)';
-        ctx.fillRect(0, 0, gameW, gameH);
+        // Player torch with flicker
+        const flicker = 1.0 + Math.sin(t * 0.008) * 0.03 + Math.sin(t * 0.013) * 0.02;
+        const ps = toScreen(this.player.x, this.player.y);
+        lights.push({ sx: ps.x, sy: ps.y, radius: r * flicker,
+            intensity: 1.0, softness: 0.4,
+            tintR: 1.0, tintG: 0.55, tintB: 0.2, tintA: 0.15 });
 
-        // Punch light hole with gradient (player is torch)
-        ctx.globalCompositeOperation = 'destination-out';
-        const flicker = 1.0 + Math.sin(this.time.now * 0.008) * 0.03 + Math.sin(this.time.now * 0.013) * 0.02;
-        const fr = r * flicker;
-        const gradient = ctx.createRadialGradient(px, py, 0, px, py, fr);
-        gradient.addColorStop(0, 'rgba(0,0,0,1)');
-        gradient.addColorStop(0.4, 'rgba(0,0,0,0.9)');
-        gradient.addColorStop(0.7, 'rgba(0,0,0,0.4)');
-        gradient.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(px, py, fr, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Remote players — also light sources
+        // Remote players
         for (const [, remote] of this.remotePlayers) {
             if (!remote.sprite || !remote.sprite.active) continue;
             const rx = remote.targetX || remote.sprite.x;
             const ry = remote.targetY || remote.sprite.y;
-            const { x: rpx, y: rpy } = this._worldToScreen(rx, ry);
-            if (rpx < -200 || rpx > gameW + 200 || rpy < -200 || rpy > gameH + 200) continue;
-            const rFlicker = 1.0 + Math.sin(this.time.now * 0.009 + rx) * 0.03;
-            const rr = r * rFlicker; // same radius as local player
-            const rGrad = ctx.createRadialGradient(rpx, rpy, 0, rpx, rpy, rr);
-            rGrad.addColorStop(0, 'rgba(0,0,0,1)');
-            rGrad.addColorStop(0.4, 'rgba(0,0,0,0.9)');
-            rGrad.addColorStop(0.7, 'rgba(0,0,0,0.4)');
-            rGrad.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = rGrad;
-            ctx.beginPath();
-            ctx.arc(rpx, rpy, rr, 0, Math.PI * 2);
-            ctx.fill();
+            const rs = toScreen(rx, ry);
+            const rFlicker = 1.0 + Math.sin(t * 0.009 + rx) * 0.03;
+            lights.push({ sx: rs.x, sy: rs.y, radius: r * rFlicker,
+                intensity: 1.0, softness: 0.4,
+                tintR: 1.0, tintG: 0.55, tintB: 0.2, tintA: 0.15 });
         }
 
-        // Wall torches — smaller light sources
+        // Wall torches
         for (const torch of this._wallTorches) {
-            const { x: tlx, y: tly } = this._worldToScreen(torch.x, torch.y);
-            // Skip off-screen torches
-            if (tlx < -100 || tlx > gameW + 100 || tly < -100 || tly > gameH + 100) continue;
-            const tFlicker = 1.0 + Math.sin(this.time.now * 0.012 + torch.x) * 0.06;
-            const tr = 65 * tFlicker;
-            const tGrad = ctx.createRadialGradient(tlx, tly, 0, tlx, tly, tr);
-            tGrad.addColorStop(0, 'rgba(0,0,0,0.9)');
-            tGrad.addColorStop(0.5, 'rgba(0,0,0,0.4)');
-            tGrad.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = tGrad;
-            ctx.beginPath();
-            ctx.arc(tlx, tly, tr, 0, Math.PI * 2);
-            ctx.fill();
+            const ws = toScreen(torch.x, torch.y);
+            if (ws.x < -100 || ws.x > this.scale.width + 100 || ws.y < -100 || ws.y > this.scale.height + 100) continue;
+            const tFlicker = 1.0 + Math.sin(t * 0.012 + torch.x) * 0.06;
+            lights.push({ sx: ws.x, sy: ws.y, radius: 65 * tFlicker,
+                intensity: 0.9, softness: 0.5,
+                tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.18 });
         }
 
-        // Warm color tint in lit area
-        ctx.globalCompositeOperation = 'source-atop';
-        const tg = ctx.createRadialGradient(px, py, 0, px, py, fr);
-        tg.addColorStop(0, 'rgba(255, 140, 50, 0.15)');
-        tg.addColorStop(0.5, 'rgba(255, 100, 30, 0.08)');
-        tg.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = tg;
-        ctx.beginPath();
-        ctx.arc(px, py, fr, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Warm tint for remote players
-        for (const [, remote] of this.remotePlayers) {
-            if (!remote.sprite || !remote.sprite.active) continue;
-            const rx = remote.targetX || remote.sprite.x;
-            const ry = remote.targetY || remote.sprite.y;
-            const { x: rpx, y: rpy } = this._worldToScreen(rx, ry);
-            if (rpx < -200 || rpx > gameW + 200 || rpy < -200 || rpy > gameH + 200) continue;
-            const rr = r;
-            const rtg = ctx.createRadialGradient(rpx, rpy, 0, rpx, rpy, rr);
-            rtg.addColorStop(0, 'rgba(255, 140, 50, 0.15)');
-            rtg.addColorStop(0.5, 'rgba(255, 100, 30, 0.08)');
-            rtg.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = rtg;
-            ctx.beginPath();
-            ctx.arc(rpx, rpy, rr, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Warm tint for wall torches
-        for (const torch of this._wallTorches) {
-            const { x: tlx, y: tly } = this._worldToScreen(torch.x, torch.y);
-            if (tlx < -100 || tlx > gameW + 100 || tly < -100 || tly > gameH + 100) continue;
-            const tr = 65;
-            const ttg = ctx.createRadialGradient(tlx, tly, 0, tlx, tly, tr);
-            ttg.addColorStop(0, 'rgba(255, 120, 40, 0.18)');
-            ttg.addColorStop(0.5, 'rgba(255, 80, 20, 0.08)');
-            ttg.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = ttg;
-            ctx.beginPath();
-            ctx.arc(tlx, tly, tr, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Copy to Phaser texture
-        this._fogTexture.context.clearRect(0, 0, gameW, gameH);
-        this._fogTexture.context.drawImage(this._fogCanvas, 0, 0);
-        this._fogTexture.refresh();
+        updateFogLights(this._fogPipeline, this, lights);
     }
 
     // ----------------------------------------------------------

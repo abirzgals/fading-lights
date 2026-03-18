@@ -222,24 +222,8 @@ class GameScene extends Phaser.Scene {
         this.cameras.main.setBackgroundColor('#000000');
 
         this._setLoadProgress(85, 'Setting up fog of war...');
-        // --- Fog of War (off-screen canvas) ---
-        this.fogCanvas = document.createElement('canvas');
-        this.fogCanvas.width = this.scale.width;
-        this.fogCanvas.height = this.scale.height;
-        this.fogCtx = this.fogCanvas.getContext('2d');
-        // Remove any previous texture with this key
-        if (this.textures.exists('game_fog')) this.textures.remove('game_fog');
-        this.fogTexture = this.textures.createCanvas('game_fog', this.scale.width, this.scale.height);
-        this.fogImage = this.add.image(0, 0, 'game_fog').setDepth(5050).setScrollFactor(0).setOrigin(0, 0);
-
-        // Handle resize
-        this.scale.on('resize', (gameSize) => {
-            this.fogCanvas.width = gameSize.width;
-            this.fogCanvas.height = gameSize.height;
-            if (this.textures.exists('game_fog')) this.textures.remove('game_fog');
-            this.fogTexture = this.textures.createCanvas('game_fog', gameSize.width, gameSize.height);
-            this.fogImage.setTexture('game_fog');
-        });
+        // --- Fog of War (WebGL shader pipeline) ---
+        this._fogPipeline = setupFogPipeline(this);
 
         // --- Fire particles ---
         // (created per bonfire in createBonfire)
@@ -2166,9 +2150,8 @@ class GameScene extends Phaser.Scene {
         this.updateDarknessDamage(dt);
         this.updateSpawning(dt);
         this.updateRain(dt);
-        // Throttle fog to ~20fps
-        this._fogTimer += delta;
-        if (this._fogTimer > 50) { this._fogTimer = 0; this.updateFogOfWar(); }
+        // Update fog shader lights (runs every frame — GPU does the work)
+        this.updateFogOfWar();
         this.updateBuildGhost();
         this._updateBuildSpots();
         this.updateHUD();
@@ -3275,99 +3258,44 @@ class GameScene extends Phaser.Scene {
     }
 
     // --------------------------------------------------------
-    // Fog of War
+    // Fog of War (WebGL shader — see shared.js FogOfWarPipeline)
     // --------------------------------------------------------
-    // Convert world coords to screen coords for fog canvas
-    worldToScreen(worldX, worldY) {
-        const cam = this.cameras.main;
-        return {
-            x: (worldX - cam.scrollX) * cam.zoom,
-            y: (worldY - cam.scrollY) * cam.zoom,
-        };
-    }
 
     updateFogOfWar() {
-        const ctx = this.fogCtx;
-        const w = this.fogCanvas.width;
-        const h = this.fogCanvas.height;
+        if (!this._fogPipeline) return;
+        const cam = this.cameras.main;
+        const toScreen = (wx, wy) => ({
+            x: (wx - cam.scrollX) * cam.zoom,
+            y: (wy - cam.scrollY) * cam.zoom,
+        });
+        const lights = [];
 
-        // Sync fog canvas size with actual game canvas
-        const gameW = this.scale.width;
-        const gameH = this.scale.height;
-        if (this.fogCanvas.width !== gameW || this.fogCanvas.height !== gameH) {
-            this.fogCanvas.width = gameW;
-            this.fogCanvas.height = gameH;
-        }
-
-        // Fill with darkness
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.fillStyle = 'rgba(2, 1, 5, 0.97)';
-        ctx.fillRect(0, 0, gameW, gameH);
-
-        // Punch light holes
-        ctx.globalCompositeOperation = 'destination-out';
-
+        // Bonfires
         for (const bonfire of this.bonfires) {
             const radius = this.getLightRadius(bonfire);
-            const { x: bx, y: by } = this.worldToScreen(bonfire.x, bonfire.y);
-
-            const gradient = ctx.createRadialGradient(bx, by, 0, bx, by, radius);
-            gradient.addColorStop(0, 'rgba(0,0,0,1)');
-            gradient.addColorStop(0.5, 'rgba(0,0,0,0.8)');
-            gradient.addColorStop(0.75, 'rgba(0,0,0,0.3)');
-            gradient.addColorStop(1, 'rgba(0,0,0,0)');
-
-            ctx.fillStyle = gradient;
-            ctx.beginPath();
-            ctx.arc(bx, by, radius, 0, Math.PI * 2);
-            ctx.fill();
+            if (radius <= 0) continue;
+            const s = toScreen(bonfire.x, bonfire.y);
+            lights.push({ sx: s.x, sy: s.y, radius,
+                intensity: 1.0, softness: 0.5,
+                tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12 });
         }
 
-        // Player has a small personal light
-        const { x: px, y: py } = this.worldToScreen(this.player.x, this.player.y);
-        const playerLight = 60;
-        const pg = ctx.createRadialGradient(px, py, 0, px, py, playerLight);
-        pg.addColorStop(0, 'rgba(0,0,0,0.85)');
-        pg.addColorStop(0.5, 'rgba(0,0,0,0.4)');
-        pg.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = pg;
-        ctx.beginPath();
-        ctx.arc(px, py, playerLight, 0, Math.PI * 2);
-        ctx.fill();
+        // Player personal light
+        const ps = toScreen(this.player.x, this.player.y);
+        lights.push({ sx: ps.x, sy: ps.y, radius: 60,
+            intensity: 0.85, softness: 0.5,
+            tintR: 0, tintG: 0, tintB: 0, tintA: 0 });
 
-        // Remote players also have small personal light
+        // Remote players
         for (const [, remote] of this.remotePlayers) {
-            const { x: rpx, y: rpy } = this.worldToScreen(remote.sprite.x, remote.sprite.y);
-            const rpg = ctx.createRadialGradient(rpx, rpy, 0, rpx, rpy, 40);
-            rpg.addColorStop(0, 'rgba(0,0,0,0.5)');
-            rpg.addColorStop(1, 'rgba(0,0,0,0)');
-            ctx.fillStyle = rpg;
-            ctx.beginPath();
-            ctx.arc(rpx, rpy, 40, 0, Math.PI * 2);
-            ctx.fill();
+            if (!remote.sprite || !remote.sprite.active) continue;
+            const rs = toScreen(remote.sprite.x, remote.sprite.y);
+            lights.push({ sx: rs.x, sy: rs.y, radius: 40,
+                intensity: 0.5, softness: 0.0,
+                tintR: 0, tintG: 0, tintB: 0, tintA: 0 });
         }
 
-        // Add warm color tint to lit areas
-        ctx.globalCompositeOperation = 'source-atop';
-        for (const bonfire of this.bonfires) {
-            const radius = this.getLightRadius(bonfire);
-            const { x: bx, y: by } = this.worldToScreen(bonfire.x, bonfire.y);
-            const tg = ctx.createRadialGradient(bx, by, 0, bx, by, radius);
-            tg.addColorStop(0, 'rgba(255, 120, 40, 0.12)');
-            tg.addColorStop(0.5, 'rgba(255, 80, 20, 0.06)');
-            tg.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            ctx.fillStyle = tg;
-            ctx.beginPath();
-            ctx.arc(bx, by, radius, 0, Math.PI * 2);
-            ctx.fill();
-        }
-
-        // Copy to Phaser texture
-        const fogW = this.fogTexture.width;
-        const fogH = this.fogTexture.height;
-        this.fogTexture.context.clearRect(0, 0, fogW, fogH);
-        this.fogTexture.context.drawImage(this.fogCanvas, 0, 0);
-        this.fogTexture.refresh();
+        updateFogLights(this._fogPipeline, this, lights);
     }
 
     // --------------------------------------------------------

@@ -98,94 +98,109 @@ function drawDirectionalShadow(g, baseX, baseY, objW, objH, lightX, lightY, ligh
 }
 
 // --------------------------------------------------------
-// Fog of War system
+// Fog of War — WebGL PostFX Shader Pipeline
 // --------------------------------------------------------
-function initFogOfWar(scene, textureKey, depth) {
-    const fog = {
-        canvas: document.createElement('canvas'),
-        timer: 0,
-    };
-    fog.canvas.width = scene.scale.width;
-    fog.canvas.height = scene.scale.height;
-    fog.ctx = fog.canvas.getContext('2d');
-    if (scene.textures.exists(textureKey)) scene.textures.remove(textureKey);
-    fog.texture = scene.textures.createCanvas(textureKey, scene.scale.width, scene.scale.height);
-    fog.image = scene.add.image(0, 0, textureKey).setDepth(depth).setScrollFactor(0).setOrigin(0, 0);
-    fog.key = textureKey;
+const FOG_FRAG_SHADER = `
+precision mediump float;
 
-    scene.scale.on('resize', (gameSize) => {
-        fog.canvas.width = gameSize.width;
-        fog.canvas.height = gameSize.height;
-        if (scene.textures.exists(textureKey)) scene.textures.remove(textureKey);
-        fog.texture = scene.textures.createCanvas(textureKey, gameSize.width, gameSize.height);
-        fog.image.setTexture(textureKey);
-    });
+uniform sampler2D uMainSampler;
+varying vec2 outTexCoord;
 
-    return fog;
+uniform vec2 uResolution;
+uniform int uLightCount;
+uniform vec2 uLightPos[16];
+uniform vec3 uLightParams[16];
+uniform vec4 uLightTint[16];
+
+void main() {
+    vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
+    vec2 fragPixel = outTexCoord * uResolution;
+
+    float darkness = 0.97;
+    vec3 warmTint = vec3(0.0);
+
+    for (int i = 0; i < 16; i++) {
+        if (i >= uLightCount) break;
+
+        float radius = uLightParams[i].x;
+        float intensity = uLightParams[i].y;
+        float softness = uLightParams[i].z;
+
+        float dist = distance(fragPixel, uLightPos[i]);
+        if (dist >= radius) continue;
+
+        float t = dist / radius;
+
+        float falloff;
+        if (t <= softness) {
+            falloff = mix(intensity, intensity * 0.8, t / max(softness, 0.01));
+        } else if (t <= 0.75) {
+            falloff = mix(intensity * 0.8, 0.3, (t - softness) / max(0.75 - softness, 0.01));
+        } else {
+            falloff = mix(0.3, 0.0, (t - 0.75) / 0.25);
+        }
+
+        darkness *= (1.0 - falloff);
+
+        vec4 lt = uLightTint[i];
+        float tintFalloff = smoothstep(1.0, 0.0, t);
+        warmTint += lt.rgb * lt.a * tintFalloff;
+    }
+
+    darkness = clamp(darkness, 0.0, 0.97);
+    vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
+    vec3 finalColor = mix(sceneColor.rgb, darkColor, darkness) + warmTint;
+    gl_FragColor = vec4(finalColor, sceneColor.a);
+}
+`;
+
+class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
+    constructor(game) {
+        super({ game, name: 'FogOfWarPipeline', fragShader: FOG_FRAG_SHADER });
+    }
+
+    setLights(lights, resolution) {
+        const count = Math.min(lights.length, 16);
+        this.set1i('uLightCount', count);
+        this.set2f('uResolution', resolution.x, resolution.y);
+
+        const pos = new Float32Array(32);
+        const params = new Float32Array(48);
+        const tint = new Float32Array(64);
+
+        for (let i = 0; i < count; i++) {
+            const l = lights[i];
+            pos[i * 2] = l.sx;
+            pos[i * 2 + 1] = l.sy;
+            params[i * 3] = l.radius;
+            params[i * 3 + 1] = l.intensity;
+            params[i * 3 + 2] = l.softness;
+            tint[i * 4] = l.tintR;
+            tint[i * 4 + 1] = l.tintG;
+            tint[i * 4 + 2] = l.tintB;
+            tint[i * 4 + 3] = l.tintA;
+        }
+
+        this.set2fv('uLightPos', pos);
+        this.set3fv('uLightParams', params);
+        this.set4fv('uLightTint', tint);
+    }
 }
 
-function updateFogWithLights(fog, scene, lights, time) {
-    // Throttle to ~20fps
-    fog.timer += scene.game.loop.delta;
-    if (fog.timer < 50) return;
-    fog.timer = 0;
-
-    const ctx = fog.ctx;
-    const gameW = scene.scale.width, gameH = scene.scale.height;
-    if (fog.canvas.width !== gameW || fog.canvas.height !== gameH) {
-        fog.canvas.width = gameW;
-        fog.canvas.height = gameH;
+// Setup fog pipeline on a scene (shared by both GameScene and MazeScene)
+function setupFogPipeline(scene) {
+    if (scene.renderer.type === Phaser.WEBGL) {
+        scene.renderer.pipelines.addPostPipeline('FogOfWarPipeline', FogOfWarPipeline);
+        scene.cameras.main.setPostPipeline('FogOfWarPipeline');
+        return scene.cameras.main.getPostPipeline('FogOfWarPipeline');
     }
+    return null; // Canvas fallback — scene should use old method
+}
 
-    const cam = scene.cameras.main;
-    const toScreen = (wx, wy) => ({
-        x: (wx - cam.scrollX) * cam.zoom,
-        y: (wy - cam.scrollY) * cam.zoom,
-    });
-
-    // Fill with darkness
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = 'rgba(2, 1, 5, 0.97)';
-    ctx.fillRect(0, 0, gameW, gameH);
-
-    // Punch light holes
-    ctx.globalCompositeOperation = 'destination-out';
-    for (const light of lights) {
-        const { x: sx, y: sy } = toScreen(light.x, light.y);
-        const flicker = 1.0 + Math.sin(time * 0.008) * 0.03 + Math.sin(time * 0.013) * 0.02;
-        const r = light.radius * flicker;
-        const grad = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-        grad.addColorStop(0, 'rgba(0,0,0,1)');
-        grad.addColorStop(light.softness || 0.5, `rgba(0,0,0,${light.intensity || 0.8})`);
-        grad.addColorStop(0.75, 'rgba(0,0,0,0.3)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Warm color tint
-    ctx.globalCompositeOperation = 'source-atop';
-    for (const light of lights) {
-        if (!light.tint) continue;
-        const { x: sx, y: sy } = toScreen(light.x, light.y);
-        const flicker = 1.0 + Math.sin(time * 0.008) * 0.03;
-        const r = light.radius * flicker;
-        const tg = ctx.createRadialGradient(sx, sy, 0, sx, sy, r);
-        tg.addColorStop(0, light.tint);
-        tg.addColorStop(0.5, light.tintMid || 'rgba(255, 80, 20, 0.06)');
-        tg.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = tg;
-        ctx.beginPath();
-        ctx.arc(sx, sy, r, 0, Math.PI * 2);
-        ctx.fill();
-    }
-
-    // Copy to Phaser texture
-    fog.texture.context.clearRect(0, 0, gameW, gameH);
-    fog.texture.context.drawImage(fog.canvas, 0, 0);
-    fog.texture.refresh();
+// Collect lights and push to pipeline (shared helper)
+function updateFogLights(pipeline, scene, lights) {
+    if (!pipeline) return;
+    pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
 }
 
 // --------------------------------------------------------
