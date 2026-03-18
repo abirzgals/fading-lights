@@ -206,9 +206,8 @@ function updateAllShadows(scene, opts) {
         }
     }
 
-    // Throttled groups — trees etc (skip on mobile — too many sprites)
-    const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
-    if (opts.throttledGroups && !isMobile) {
+    // Throttled groups — trees etc (cleanup off-screen shadow sprites to save memory)
+    if (opts.throttledGroups) {
         for (const group of opts.throttledGroups) {
             for (const s of group.children.entries) updateSprite(s, true);
         }
@@ -227,48 +226,47 @@ varying vec2 outTexCoord;
 
 uniform vec2 uResolution;
 uniform float uLightCount;
-uniform float uLightX[16];
-uniform float uLightY[16];
-uniform float uLightRadius[16];
-uniform float uLightIntensity[16];
-uniform float uLightSoftness[16];
-uniform float uTintR[16];
-uniform float uTintG[16];
-uniform float uTintB[16];
-uniform float uTintA[16];
+uniform float uLightX[8];
+uniform float uLightY[8];
+uniform float uLightRadius[8];
+uniform float uLightIntensity[8];
+uniform float uLightSoftness[8];
+uniform float uTintR[8];
+uniform float uTintG[8];
+uniform float uTintB[8];
+uniform float uTintA[8];
 uniform float uNormalStrength;
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
-    // Flip Y — Phaser PostFX textures have inverted Y in WebGL
     vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
 
-    // Sample normal buffer — RGB encodes surface direction
-    // Default (128,128,255) = (0,0,1) = flat surface facing up = no directional bias
-    // Sample normal buffer — flip Y (RT texture stored bottom-up in WebGL)
-    vec4 normalSample = texture2D(uNormalSampler, vec2(outTexCoord.x, 1.0 - outTexCoord.y));
-    vec3 surfNormal = normalize(normalSample.rgb * 2.0 - 1.0);
-    surfNormal.xy = -surfNormal.xy; // flip both — RT coords are inverted relative to light coords
-    // How much this pixel has real normal data (vs default flat 128,128,255)
-    float hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
+    // Normal map: only sample if enabled (uNormalStrength > 0)
+    vec3 surfNormal = vec3(0.0, 0.0, 1.0);
+    float hasNormal = 0.0;
+    if (uNormalStrength > 0.0) {
+        vec4 ns = texture2D(uNormalSampler, vec2(outTexCoord.x, 1.0 - outTexCoord.y));
+        surfNormal = normalize(ns.rgb * 2.0 - 1.0);
+        surfNormal.xy = -surfNormal.xy;
+        hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
+    }
 
     float darkness = 1.0;
     vec3 warmTint = vec3(0.0);
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 8; i++) {
         if (i >= lightCount) break;
-
-        float radius = uLightRadius[i];
-        float intensity = uLightIntensity[i];
-        float softness = uLightSoftness[i];
 
         vec2 lightPos = vec2(uLightX[i], uLightY[i]);
         vec2 toLight = lightPos - fragPixel;
         float dist = length(toLight);
+        float radius = uLightRadius[i];
         if (dist >= radius) continue;
 
         float t = dist / radius;
+        float intensity = uLightIntensity[i];
+        float softness = uLightSoftness[i];
 
         float falloff;
         if (t <= softness) {
@@ -279,16 +277,14 @@ void main() {
             falloff = mix(0.3, 0.0, (t - 0.75) / 0.25);
         }
 
-        // Per-pixel normal map directional lighting
-        // Light shines from its position with a virtual height (2.5D)
-        vec3 lightDir = normalize(vec3(toLight, radius * 0.4));
-        float nDotL = max(dot(surfNormal, lightDir), 0.0);
-        // Blend: pixels with normal data get directional shading,
-        // flat pixels (no normal map) get uniform falloff
-        falloff *= mix(1.0, nDotL * 1.5, hasNormal * uNormalStrength);
+        // Normal map directional lighting (skipped when uNormalStrength = 0)
+        if (hasNormal > 0.0) {
+            vec3 lightDir = normalize(vec3(toLight, radius * 0.4));
+            float nDotL = max(dot(surfNormal, lightDir), 0.0);
+            falloff *= mix(1.0, nDotL * 1.5, uNormalStrength);
+        }
 
         darkness *= (1.0 - falloff);
-
         float tintFalloff = smoothstep(1.0, 0.0, t);
         warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
@@ -332,20 +328,21 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
     }
 
     setLights(lights, resolution, normalStrength) {
-        const count = Math.min(lights.length, 16);
+        const MAX = 8;
+        const count = Math.min(lights.length, MAX);
         this.set1f('uLightCount', count);
         this.set2f('uResolution', resolution.x, resolution.y);
-        this.set1f('uNormalStrength', normalStrength || 3.0);
+        this.set1f('uNormalStrength', normalStrength || 0);
 
-        const lx = new Float32Array(16);
-        const ly = new Float32Array(16);
-        const lr = new Float32Array(16);
-        const li = new Float32Array(16);
-        const ls = new Float32Array(16);
-        const tr = new Float32Array(16);
-        const tg = new Float32Array(16);
-        const tb = new Float32Array(16);
-        const ta = new Float32Array(16);
+        const lx = new Float32Array(MAX);
+        const ly = new Float32Array(MAX);
+        const lr = new Float32Array(MAX);
+        const li = new Float32Array(MAX);
+        const ls = new Float32Array(MAX);
+        const tr = new Float32Array(MAX);
+        const tg = new Float32Array(MAX);
+        const tb = new Float32Array(MAX);
+        const ta = new Float32Array(MAX);
 
         for (let i = 0; i < count; i++) {
             const l = lights[i];
@@ -398,7 +395,10 @@ function setupFogPipeline(scene) {
 function updateFogLights(pipeline, scene, lights, normalStrength) {
     if (!pipeline) return;
     try {
-        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height }, normalStrength);
+        // Disable normal maps on mobile (no normal buffer = no sampling)
+        const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
+        const ns = isMobile ? 0 : (normalStrength || 0);
+        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height }, ns);
     } catch (e) {
         // Silently ignore shader errors
     }
