@@ -303,6 +303,8 @@ class MenuScene extends Phaser.Scene {
 
         // START GAME — join default MAIN room (full retry for server wakeup)
         this._startGame = async () => {
+            if (this._launching) return; // prevent double-click
+            this._launching = true;
             const name = this._getName();
             const statusEl = document.getElementById('room-status');
             if (statusEl) statusEl.textContent = 'Connecting...';
