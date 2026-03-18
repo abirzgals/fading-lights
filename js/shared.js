@@ -265,7 +265,7 @@ void main() {
     vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
 
-    float darkness = 1.0;
+    float darkness = 0.97;
     vec3 warmTint = vec3(0.0);
 
     for (int i = 0; i < 8; i++) {
@@ -295,10 +295,10 @@ void main() {
         warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
 
-    darkness = clamp(darkness, 0.0, 1.0);
-    float light = 1.0 - darkness;
-    vec3 finalColor = sceneColor.rgb * light + warmTint * light;
-    gl_FragColor = vec4(finalColor, 1.0);
+    darkness = clamp(darkness, 0.0, 0.97);
+    vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
+    vec3 finalColor = mix(sceneColor.rgb, darkColor, darkness) + warmTint;
+    gl_FragColor = vec4(finalColor, sceneColor.a);
 }
 `;
 
