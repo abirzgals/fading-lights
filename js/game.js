@@ -224,11 +224,14 @@ class GameScene extends Phaser.Scene {
         this._setLoadProgress(85, 'Setting up fog of war...');
         // --- Fog of War (WebGL shader pipeline) ---
         this._fogPipeline = setupFogPipeline(this);
-        // Normal buffer for per-pixel directional lighting
-        this._normalBuffer = createNormalBuffer(this);
-        this._normalTimer = 0;
-        if (this._fogPipeline && this._normalBuffer) {
-            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
+        // Normal buffer for per-pixel directional lighting (desktop only)
+        const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
+        if (!isMobile) {
+            this._normalBuffer = createNormalBuffer(this);
+            this._normalTimer = 0;
+            if (this._fogPipeline && this._normalBuffer) {
+                bindNormalBuffer(this._fogPipeline, this._normalBuffer);
+            }
         }
 
         // --- Fire particles ---
@@ -2224,9 +2227,9 @@ class GameScene extends Phaser.Scene {
 
         const opts = { lights, sprites, groups: [this.enemies, this.allies] };
 
-        // Tree texture shadows only on throttled ticks (cleanup off-screen to save memory)
+        // Static object shadows + visibility culling (throttled, cleanup off-screen)
         if (includeStatics) {
-            opts.throttledGroups = [this.trees];
+            opts.throttledGroups = [this.trees, this.stones, this.metals];
         }
 
         updateAllShadows(this, opts);
