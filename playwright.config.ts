@@ -5,6 +5,7 @@ export default defineConfig({
   timeout: 30000,
   use: {
     baseURL: 'http://localhost:5001/',
+    deviceScaleFactor: 2, // test with HiDPI like real devices
   },
   webServer: {
     command: 'npx vite --port 5001 --strictPort',
