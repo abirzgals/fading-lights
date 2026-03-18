@@ -88,13 +88,15 @@ export class GameScene extends ex.Scene {
     const cx = Math.floor(worldSize / 2);
     const cy = Math.floor(worldSize / 2);
 
-    // Dark ground chunks
-    const chunkSize = 16;
+    // Dark forest floor — simple dark color background
+    const chunkSize = 32;
     for (let gy = 0; gy < worldSize; gy += chunkSize) {
       for (let gx = 0; gx < worldSize; gx += chunkSize) {
+        const w = Math.min(chunkSize, worldSize - gx) * T;
+        const h = Math.min(chunkSize, worldSize - gy) * T;
         const chunk = new ex.Actor({
-          pos: ex.vec((gx + chunkSize / 2) * T, (gy + chunkSize / 2) * T),
-          width: chunkSize * T, height: chunkSize * T,
+          pos: ex.vec(gx * T + w / 2, gy * T + h / 2),
+          width: w, height: h,
           color: ex.Color.fromHex('#050a02'), anchor: ex.vec(0.5, 0.5),
         });
         chunk.z = -10;
@@ -144,13 +146,14 @@ export class GameScene extends ex.Scene {
     const isClearing = (tx: number, ty: number) => clearings.some(cl => (tx - cl.x) ** 2 + (ty - cl.y) ** 2 < cl.r ** 2);
     const isPath = (tx: number, ty: number) => pathTiles.has(`${tx},${ty}`);
 
-    // Draw roads with Wang tile transitions (same as original)
+    // Draw ground with Wang tile transitions (same as original)
+    // Wang tiles handle both road AND grass — transition tiles at edges
     const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
     const gs = AssetLoader.groundTileset.isLoaded()
       ? ex.SpriteSheet.fromImageSource({ image: AssetLoader.groundTileset, grid: { rows: 4, columns: 4, spriteWidth: 32, spriteHeight: 32 } })
       : null;
 
-    // Build render set (path tiles + 1-tile border for transitions)
+    // Build render set: path tiles + 1-tile border for Wang transitions
     const renderSet = new Set<string>();
     for (const key of pathTiles) {
       const [tx, ty] = key.split(',').map(Number);
@@ -159,26 +162,37 @@ export class GameScene extends ex.Scene {
           renderSet.add(`${tx + dx},${ty + dy}`);
     }
 
+    // Also render grass tiles in clearings
+    for (const cl of clearings) {
+      for (let dx = -cl.r - 1; dx <= cl.r + 1; dx++) {
+        for (let dy = -cl.r - 1; dy <= cl.r + 1; dy++) {
+          const tx = cl.x + dx, ty = cl.y + dy;
+          if (tx >= 0 && ty >= 0 && tx < worldSize && ty < worldSize) {
+            renderSet.add(`${tx},${ty}`);
+          }
+        }
+      }
+    }
+
     for (const key of renderSet) {
       const [tx, ty] = key.split(',').map(Number);
-      // Wang corner sampling: NW, NE, SW, SE
       const nw = pathTiles.has(`${tx},${ty}`) ? 1 : 0;
       const ne = pathTiles.has(`${tx + 1},${ty}`) ? 1 : 0;
       const sw = pathTiles.has(`${tx},${ty + 1}`) ? 1 : 0;
       const se = pathTiles.has(`${tx + 1},${ty + 1}`) ? 1 : 0;
       const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
-      if (wangIdx === 0) continue; // all corners empty = no tile
 
-      const road = new ex.Actor({ pos: ex.vec(tx * T + T / 2, ty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
+      const tile = new ex.Actor({ pos: ex.vec(tx * T + T / 2, ty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
       if (gs) {
         const frameIdx = WANG_TO_FRAME[wangIdx];
         const col = frameIdx % 4, row = Math.floor(frameIdx / 4);
-        road.graphics.use(gs.getSprite(col, row)!);
+        tile.graphics.use(gs.getSprite(col, row)!);
       } else {
-        road.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromHex('#3a2a1a') }));
+        const color = wangIdx === 0 ? '#0a1a05' : '#3a2a1a';
+        tile.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromHex(color) }));
       }
-      road.z = -8;
-      this.add(road);
+      tile.z = -8;
+      this.add(tile);
     }
 
     // Bonfire + Player
