@@ -15,6 +15,7 @@ import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { BotAI } from '../ai/BotAI';
+import { EnemyBrainSystem } from '../ai/EnemyBrainSystem';
 import { setGridSystem } from '../components/GridOccupancyComponent';
 
 const T = CONFIG.TILE_SIZE;
@@ -29,6 +30,7 @@ export class GameScene extends ex.Scene {
   private level!: LevelData;
   private botAI: BotAI | null = null;
   private botEnabled = false;
+  private enemyBrains!: EnemyBrainSystem;
 
   // Game state (will move to GameStateComponent later)
   private hp: number = 1000;
@@ -53,6 +55,9 @@ export class GameScene extends ex.Scene {
 
     audioEngine.startMusic();
     audioEngine.startFireCrackle();
+
+    // Enemy AI system
+    this.enemyBrains = new EnemyBrainSystem(this.level.grid);
 
     // Bot AI — toggle with backtick key
     this.botAI = new BotAI({
@@ -148,114 +153,12 @@ export class GameScene extends ex.Scene {
     });
   }
 
-  // ======== ENEMY AI ========
+  // ======== ENEMY AI — delegated to EnemyBrainSystem ========
 
   private runEnemyAI(dt: number): void {
-    const player = this.level.player;
-    for (const e of this.level.enemies) {
-      if (e.isKilled()) continue;
-      const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
-      if (!ai) continue;
-
-      const dist = e.pos.distance(player.pos);
-
-      // State transitions
-      if (dist < ai.sightRange || ai.aggroFlag) {
-        if (ai.isRanged) {
-          ai.state = dist < ai.attackRange * 0.6 ? 'FLEE' : dist < ai.attackRange ? 'ORBIT' : 'CHASE';
-        } else {
-          ai.state = dist < CONFIG.ENEMY_MELEE_RANGE + 20 ? 'ATTACK' : 'CHASE';
-        }
-      } else {
-        ai.state = 'WANDER';
-        if (ai.wanderTimer <= 0) { ai.wanderAngle = Math.random() * Math.PI * 2; ai.wanderTimer = 1 + Math.random() * 2; }
-      }
-
-      // Execute
-      const speed = ai.speed;
-      switch (ai.state) {
-        case 'WANDER':
-          e.vel = ex.vec(Math.cos(ai.wanderAngle) * speed * 0.3, Math.sin(ai.wanderAngle) * speed * 0.3);
-          break;
-        case 'CHASE': {
-          // A* pathfinding to player — repath every ~1s
-          let path = (e as any)._aiPath as Array<{x: number; y: number}> | null;
-          let pathIdx = (e as any)._aiPathIdx as number || 0;
-          let repathTimer = ((e as any)._aiRepathTimer as number || 0) - dt;
-
-          if (!path || pathIdx >= path.length || repathTimer <= 0) {
-            path = this.level.grid.findPath(e.pos.x, e.pos.y, player.pos.x, player.pos.y);
-            (e as any)._aiPath = path;
-            (e as any)._aiPathIdx = 0;
-            pathIdx = 0;
-            repathTimer = 0.8 + Math.random() * 0.4;
-          }
-          (e as any)._aiRepathTimer = repathTimer;
-
-          if (path && pathIdx < path.length) {
-            const wp = path[pathIdx];
-            const wpDist = Math.sqrt((e.pos.x - wp.x) ** 2 + (e.pos.y - wp.y) ** 2);
-            if (wpDist < 16) {
-              pathIdx++;
-              (e as any)._aiPathIdx = pathIdx;
-            }
-            if (pathIdx < path.length) {
-              const next = path[pathIdx];
-              const dir = ex.vec(next.x - e.pos.x, next.y - e.pos.y).normalize();
-              e.vel = ex.vec(dir.x * speed, dir.y * speed);
-            }
-          } else {
-            // Fallback: direct movement
-            const dir = player.pos.sub(e.pos).normalize();
-            e.vel = ex.vec(dir.x * speed, dir.y * speed);
-          }
-          break;
-        }
-        case 'ATTACK': {
-          e.vel = ex.vec(0, 0);
-          const anim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
-          const melee = e.get(MeleeAttackComponent) as MeleeAttackComponent | null;
-          if (melee?.canAttack && !anim?.isAttacking) {
-            ai.aggroFlag = true;
-            // Play attack animation — damage checked on damage frame
-            // If player dodged away by damage frame, it's a MISS!
-            if (anim) {
-              anim.playAttack(() => {
-                // Damage frame callback — check if player still in range
-                const distNow = e.pos.distance(player.pos);
-                if (distNow <= melee.range) {
-                  const playerHp = player.get(HealthComponent) as HealthComponent | null;
-                  if (playerHp) playerHp.damage(melee.damage);
-                }
-              });
-            }
-            melee.startAttack(player);
-          }
-          break;
-        }
-        case 'ORBIT': {
-          const orbitDir = e.pos.sub(player.pos).normalize();
-          e.vel = ex.vec(-orbitDir.y * speed * 0.5, orbitDir.x * speed * 0.5);
-          const ranged = e.get(RangedAttackComponent) as RangedAttackComponent | null;
-          const rangedAnim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
-          if (ranged?.canFire && dist < ai.attackRange) {
-            if (rangedAnim && !rangedAnim.isAttacking) {
-              rangedAnim.playAttack(() => {
-                // Fire projectile on damage frame
-                ranged.fire(player, this);
-              });
-            } else {
-              ranged.fire(player, this);
-            }
-          }
-          break;
-        }
-        case 'FLEE':
-          const away = e.pos.sub(player.pos).normalize();
-          e.vel = ex.vec(away.x * speed * 0.8, away.y * speed * 0.8);
-          break;
-      }
-    }
+    this.enemyBrains.update(
+      this.level.enemies, this.level.player, this.level.bonfires, this, dt
+    );
   }
 
   // ======== SPAWNING ========

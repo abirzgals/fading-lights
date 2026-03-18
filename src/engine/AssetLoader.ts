@@ -138,13 +138,17 @@ export class AssetLoader {
     'VOID_MAGE:fireball':      ['south-west', 'north', 'north-west'],
   };
 
-  // Mirror map: if a direction doesn't exist, use this one instead
-  private static readonly DIR_MIRRORS: Record<string, string> = {
-    'north': 'south',
-    'north-east': 'south-west',
-    'east': 'west',
-    'south-east': 'south-west',
-    'north-west': 'south-west',
+  // Mirror map: if a direction doesn't exist, use the closest available
+  // Prefer same vertical direction, just mirror horizontally
+  private static readonly DIR_MIRRORS: Record<string, string[]> = {
+    'north':      ['south', 'north-west', 'north-east'],
+    'north-east': ['north-west', 'east', 'south-east', 'south'],
+    'east':       ['west', 'south-east', 'north-east', 'south'],
+    'south-east': ['south-west', 'east', 'south'],
+    'south':      ['south-west', 'south-east', 'west'],
+    'south-west': ['south-east', 'south', 'west'],
+    'west':       ['east', 'south-west', 'north-west', 'south'],
+    'north-west': ['north-east', 'west', 'south-west', 'south'],
   };
 
   private static _initAnimFrames(): void {
@@ -177,14 +181,15 @@ export class AssetLoader {
           result[dir] = frames;
         }
 
-        // Mirror missing directions to closest existing one
+        // Mirror missing directions — try each fallback in order
         for (const dir of allDirs) {
           if (result[dir]) continue;
-          // Try mirror, then fallback to 'south'
-          const mirror = this.DIR_MIRRORS[dir];
-          if (mirror && result[mirror]) {
-            result[dir] = result[mirror];
-          } else if (result['south']) {
+          const fallbacks = this.DIR_MIRRORS[dir] ?? [];
+          let found = false;
+          for (const fb of fallbacks) {
+            if (result[fb]) { result[dir] = result[fb]; found = true; break; }
+          }
+          if (!found && result['south']) {
             result[dir] = result['south'];
           }
         }
