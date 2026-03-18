@@ -3766,7 +3766,7 @@ class GameScene extends Phaser.Scene {
         }
         enemy.setData('_aiRepathTimer', repathTimer);
 
-        // Follow waypoints
+        // Follow waypoints — direct velocity (no grid collision, path is pre-validated)
         if (path && pathIdx < path.length) {
             const wp = path[pathIdx];
             const dist = Phaser.Math.Distance.Between(enemy.x, enemy.y, wp.x, wp.y);
@@ -3777,7 +3777,7 @@ class GameScene extends Phaser.Scene {
             if (pathIdx < path.length) {
                 const next = path[pathIdx];
                 const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, next.x, next.y);
-                this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed);
+                enemy.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
                 enemy.setFlipX(Math.cos(angle) < 0);
             }
         }
@@ -3907,7 +3907,9 @@ class GameScene extends Phaser.Scene {
                         if (marchIdx < marchPath.length) {
                             const next = marchPath[marchIdx];
                             const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, next.x, next.y);
-                            this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
+                            // Direct velocity — path is pre-computed along roads, no grid check needed
+                            const ms = speed * 0.7;
+                            enemy.setVelocity(Math.cos(angle) * ms, Math.sin(angle) * ms);
                             enemy.setFlipX(Math.cos(angle) < 0);
                         }
                     } else {
@@ -3993,7 +3995,9 @@ class GameScene extends Phaser.Scene {
                         }
                         const wp = (path && pathIdx < path.length) ? path[pathIdx] : { x: tx, y: ty };
                         const angle = Phaser.Math.Angle.Between(enemy.x, enemy.y, wp.x, wp.y);
-                        this._setVelocityWithGrid(enemy, Math.cos(angle), Math.sin(angle), speed * 0.7);
+                        // Direct velocity — raid path is A*-validated, no grid collision needed
+                        const rs = speed * 0.7;
+                        enemy.setVelocity(Math.cos(angle) * rs, Math.sin(angle) * rs);
                         enemy.setFlipX(Math.cos(angle) < 0);
                     } else {
                         // In range — strafe around target
