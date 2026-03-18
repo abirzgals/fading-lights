@@ -2247,30 +2247,39 @@ class GameScene extends Phaser.Scene {
     // Debug overlay — draw enemy paths, grid info
     // --------------------------------------------------------
     _drawDebug() {
-        // Colored collider visualization
+        // Colored collider visualization — shows actual walkability grid
         const cg = this._colliderGfx;
         if (cg) {
             cg.clear();
-            if (this._showColliders) {
+            if (this._showColliders && this._walkGrid) {
                 const cam = this.cameras.main;
-                const m = 50;
-                const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
-                const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
-                const drawGroup = (group, color, label) => {
-                    for (const s of group.children.entries) {
-                        if (!s.active || !s.body) continue;
-                        const b = s.body;
-                        if (b.x < cl || b.x > cr || b.y < ct || b.y > cb) continue;
-                        cg.lineStyle(1, color, s.visible ? 0.8 : 0.3);
-                        cg.strokeRect(b.x, b.y, b.width, b.height);
+                const T = CONFIG.TILE_SIZE;
+                const gs = this._gridSize;
+                const grid = this._walkGrid;
+                // Visible tile range
+                const txMin = Math.max(0, Math.floor(cam.scrollX / T) - 1);
+                const tyMin = Math.max(0, Math.floor(cam.scrollY / T) - 1);
+                const txMax = Math.min(gs - 1, Math.ceil((cam.scrollX + cam.width) / T) + 1);
+                const tyMax = Math.min(gs - 1, Math.ceil((cam.scrollY + cam.height) / T) + 1);
+                // Draw blocked tiles (red = can't walk)
+                cg.fillStyle(0xFF0000, 0.25);
+                for (let ty = tyMin; ty <= tyMax; ty++) {
+                    for (let tx = txMin; tx <= txMax; tx++) {
+                        if (!grid[ty * gs + tx]) {
+                            cg.fillRect(tx * T, ty * T, T, T);
+                        }
                     }
-                };
-                drawGroup(this.trees, 0x00FF00);       // green = trees
-                drawGroup(this.stones, 0xFFFF00);      // yellow = stones
-                drawGroup(this.metals, 0xFF8800);      // orange = metals
-                drawGroup(this.rockWalls, 0x8888FF);   // blue = rock walls
-                drawGroup(this.buildingsGroup, 0xFF00FF); // magenta = buildings
-                // Player body
+                }
+                // Walkable tiles border (subtle green)
+                cg.lineStyle(1, 0x00FF00, 0.1);
+                for (let ty = tyMin; ty <= tyMax; ty++) {
+                    for (let tx = txMin; tx <= txMax; tx++) {
+                        if (grid[ty * gs + tx]) {
+                            cg.strokeRect(tx * T, ty * T, T, T);
+                        }
+                    }
+                }
+                // Player body (pink)
                 const pb = this.player.body;
                 cg.lineStyle(2, 0xFF0088, 1);
                 cg.strokeRect(pb.x, pb.y, pb.width, pb.height);
