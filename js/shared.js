@@ -122,6 +122,15 @@ function updateAllShadows(scene, opts) {
         return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.radius } : null;
     };
 
+    // Find light with padded radius (for visibility culling — prevents pop-in)
+    const findLightPadded = (ox, oy) => {
+        for (const l of lights) {
+            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
+            if (d < l.radius * 1.15) return true; // 15% padding
+        }
+        return false;
+    };
+
     // --- Texture-based shadows for sprites ---
     // cleanup=true: destroy shadow sprites when off-screen (for large groups like trees)
     const updateSprite = (sprite, cleanup) => {
@@ -136,14 +145,22 @@ function updateAllShadows(scene, opts) {
                 if (cleanup) { sprite._shadow.destroy(); sprite._shadow = null; }
                 else sprite._shadow.setVisible(false);
             }
+            // Off-screen cleanup objects: hide to skip rendering
+            if (cleanup) sprite.setVisible(false);
             return;
         }
 
         const light = findLight(sprite.x, sprite.y);
         if (!light) {
             if (sprite._shadow) sprite._shadow.setVisible(false);
+            // Static objects in darkness: hide completely (shader makes them black anyway)
+            if (cleanup) {
+                sprite.setVisible(!findLightPadded(sprite.x, sprite.y) ? false : true);
+            }
             return;
         }
+        // In light — ensure visible
+        sprite.setVisible(true);
 
         // Lazy-create shadow sprite on first use
         if (!sprite._shadow) {
@@ -294,10 +311,8 @@ void main() {
     }
 
     darkness = clamp(darkness, 0.0, 1.0);
-    vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
-    vec3 foggedColor = mix(sceneColor.rgb, darkColor, darkness);
-    float foggedLum = dot(foggedColor, vec3(0.299, 0.587, 0.114));
-    vec3 finalColor = foggedColor + warmTint * foggedLum * 2.0;
+    vec3 foggedColor = sceneColor.rgb * (1.0 - darkness); // pure black outside light
+    vec3 finalColor = foggedColor + warmTint * (1.0 - darkness);
     gl_FragColor = vec4(finalColor, sceneColor.a);
 }
 `;
