@@ -28,7 +28,8 @@ export class EntityFactory {
       rotations: AssetLoader.maleRotations,
       fallback: { width: 16, height: 24, color: ex.Color.fromHex('#FFAA44') },
     }));
-    player.addComponent(new HealthComponent(CONFIG.PLAYER_MAX_HP));
+    // 1000 HP for testing, CONFIG.PLAYER_MAX_HP for production
+    player.addComponent(new HealthComponent(1000));
     player.addComponent(new MeleeAttackComponent({
       damage: 10, range: 32, cooldownMs: 800, damageFrame: 2, totalFrames: 3, arcDeg: 120,
     }));
