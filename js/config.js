@@ -2,7 +2,7 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.22.3';
+const GAME_VERSION = '0.22.4';
 
 // Localhost dev mode — boosted resources and damage for testing
 const IS_DEV = location.hostname === 'localhost' || location.hostname === '127.0.0.1';

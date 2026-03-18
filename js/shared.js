@@ -247,9 +247,13 @@ void main() {
     float hasNormal = 0.0;
     if (uNormalStrength > 0.0) {
         vec4 ns = texture2D(uNormalSampler, vec2(outTexCoord.x, 1.0 - outTexCoord.y));
-        surfNormal = normalize(ns.rgb * 2.0 - 1.0);
-        surfNormal.xy = -surfNormal.xy;
-        hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
+        // Guard: if texture not bound, sample returns black → use flat normal
+        float nsLen = dot(ns.rgb, ns.rgb);
+        if (nsLen > 0.01) {
+            surfNormal = normalize(ns.rgb * 2.0 - 1.0);
+            surfNormal.xy = -surfNormal.xy;
+            hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
+        }
     }
 
     float darkness = 1.0;
