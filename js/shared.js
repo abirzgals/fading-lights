@@ -3,6 +3,29 @@
 // ============================================================
 
 // --------------------------------------------------------
+// FPS counter — small overlay in top-right corner
+// --------------------------------------------------------
+(function initFpsCounter() {
+    const el = document.createElement('div');
+    el.id = 'fps-counter';
+    el.style.cssText = 'position:fixed;top:4px;right:8px;color:#8f8;font:bold 11px monospace;z-index:99999;pointer-events:none;opacity:0.7;text-shadow:0 0 2px #000';
+    document.body.appendChild(el);
+    let frames = 0, lastTime = performance.now();
+    const tick = () => {
+        frames++;
+        const now = performance.now();
+        if (now - lastTime >= 1000) {
+            const rend = el.dataset.renderer || '?';
+            el.textContent = frames + ' fps ' + rend;
+            frames = 0;
+            lastTime = now;
+        }
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+})();
+
+// --------------------------------------------------------
 // Floating damage/heal text
 // --------------------------------------------------------
 function showFloatingText(scene, x, y, msg, color) {
@@ -66,35 +89,154 @@ function playAttackAnimation(scene, player, weapon) {
 }
 
 // --------------------------------------------------------
-// Shadow casting system
+// Unified Shadow System — texture-based silhouette + ellipse shadows
+// Called from ANY scene with just data, zero scene-specific logic here.
 // --------------------------------------------------------
-function drawDirectionalShadow(g, baseX, baseY, objW, objH, lightX, lightY, lightRadius) {
-    const dx = baseX - lightX, dy = baseY - lightY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 2 || dist > lightRadius) return;
 
-    const angle = Math.atan2(dy, dx);
-    const shadowLen = Math.min(objH * 1.2, objH * 400 / dist);
-    const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
-    const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
-    const edgeFade = 1 - (dist / lightRadius);
-    const alpha = Math.max(0.04, 0.3 * edgeFade);
+/**
+ * updateAllShadows(scene, opts) — single entry point for all shadow rendering.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {Object} opts
+ * @param {Array<{x,y,radius}>} opts.lights       — active light sources in world coords
+ * @param {Array<Phaser.GameObjects.Sprite>} [opts.sprites]  — individual sprites (player, boss)
+ * @param {Array<Phaser.GameObjects.Group>}  [opts.groups]   — sprite groups (enemies, allies)
+ * @param {Phaser.GameObjects.Graphics}      [opts.graphics] — for ellipse shadows (trees etc)
+ * @param {Array<{x,y,w,h}>}                [opts.statics]  — static objects for ellipse shadows
+ */
+function updateAllShadows(scene, opts) {
+    const lights = opts.lights || [];
+    if (lights.length === 0) return;
 
-    const halfW = objW * 0.3;
-    const halfH = shadowLen * 0.5;
-    const cos = Math.cos(angle), sin = Math.sin(angle);
-    const pts = [];
-    for (let i = 0; i < 16; i++) {
-        const t = (i / 16) * Math.PI * 2;
-        const ex = Math.cos(t) * halfW, ey = Math.sin(t) * halfH;
-        pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
+    const cam = scene.cameras.main;
+    const m = 100;
+    const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+    const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+
+    // Find nearest light to a position
+    const findLight = (ox, oy) => {
+        let best = null, bestD = Infinity;
+        for (const l of lights) {
+            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
+            if (d < l.radius && d < bestD) { best = l; bestD = d; }
+        }
+        return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.radius } : null;
+    };
+
+    // Find light with padded radius (for visibility culling — prevents pop-in)
+    const findLightPadded = (ox, oy) => {
+        for (const l of lights) {
+            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
+            if (d < l.radius * 1.3) return true; // 30% padding — hide only in guaranteed blackness
+        }
+        return false;
+    };
+
+    // --- Texture-based shadows for sprites ---
+    // cleanup=true: destroy shadow sprites when off-screen (for large groups like trees)
+    const updateSprite = (sprite, cleanup) => {
+        if (!sprite || !sprite.active) {
+            if (sprite && sprite._shadow) {
+                sprite._shadow.destroy(); sprite._shadow = null;
+            }
+            return;
+        }
+        if (sprite.x < cl || sprite.x > cr || sprite.y < ct || sprite.y > cb) {
+            if (sprite._shadow) {
+                if (cleanup) { sprite._shadow.destroy(); sprite._shadow = null; }
+                else sprite._shadow.setVisible(false);
+            }
+            // Off-screen cleanup objects: hide sprite + disable physics
+            if (cleanup) {
+                sprite.setVisible(false);
+                if (sprite.body) sprite.body.enable = false;
+            }
+            return;
+        }
+
+        const light = findLight(sprite.x, sprite.y);
+        if (!light) {
+            if (sprite._shadow) sprite._shadow.setVisible(false);
+            // Static objects in darkness: hide completely (shader makes them black anyway)
+            if (cleanup && !findLightPadded(sprite.x, sprite.y)) {
+                sprite.setVisible(false);
+                if (sprite.body) sprite.body.enable = false;
+            }
+            return;
+        }
+        // In light — ensure visible and physics active
+        if (!sprite.visible) {
+            sprite.setVisible(true);
+            if (sprite.body) sprite.body.enable = true;
+        }
+
+        // Lazy-create shadow sprite on first use
+        if (!sprite._shadow) {
+            const sh = scene.add.sprite(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name);
+            sh.setTint(0x000000);
+            sh.setOrigin(0.5, 1); // anchor at bottom center (feet)
+            sh.setDepth(0.5);
+            sprite._shadow = sh;
+        }
+
+        const shadow = sprite._shadow;
+        // Sync texture & frame
+        const fName = sprite.frame ? sprite.frame.name : undefined;
+        if (shadow.texture.key !== sprite.texture.key || shadow.frame.name !== fName) {
+            shadow.setTexture(sprite.texture.key, fName);
+        }
+        shadow.setFlipX(sprite.flipX);
+        shadow.setFlipY(false);
+
+        const dist = light.dist;
+        if (dist < 3) { shadow.setVisible(false); return; }
+        shadow.setVisible(true);
+
+        // Shadow stretches AWAY from light source
+        const dx = sprite.x - light.lx, dy = sprite.y - light.ly;
+        const angle = Math.atan2(dy, dx);
+        // Shadow length: closer to light = longer shadow
+        const shadowLen = Math.min(1.2, 400 / (dist + 50));
+
+        // Ground contact point — use physics body bottom if available
+        let feetY;
+        if (sprite.body) {
+            // Body bottom edge = actual ground contact
+            feetY = sprite.body.y + sprite.body.height;
+        } else {
+            const sprH = sprite.displayHeight || sprite.height || 48;
+            feetY = sprite.y + sprH * 0.35;
+        }
+
+        // Shadow origin at ground contact, stretching away from light
+        shadow.setPosition(sprite.x, feetY);
+        shadow.setRotation(angle + Math.PI * 0.5); // point away from light
+        shadow.setScale((sprite.scaleX || 1), shadowLen * 0.45);
+
+        // Alpha fades at light edge
+        const edgeFade = 1 - (dist / light.radius);
+        shadow.setAlpha(Math.max(0.05, 0.35 * edgeFade));
+        shadow.setDepth(sprite.depth - 0.1);
+    };
+
+    // Update individual sprites (every frame, no cleanup)
+    if (opts.sprites) {
+        for (const s of opts.sprites) updateSprite(s, false);
     }
-    g.fillStyle(0x000000, alpha);
-    g.beginPath();
-    g.moveTo(pts[0], pts[1]);
-    for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
-    g.closePath();
-    g.fillPath();
+
+    // Update groups — every frame (enemies, allies)
+    if (opts.groups) {
+        for (const group of opts.groups) {
+            for (const s of group.children.entries) updateSprite(s, false);
+        }
+    }
+
+    // Throttled groups — trees etc (cleanup off-screen shadow sprites to save memory)
+    if (opts.throttledGroups) {
+        for (const group of opts.throttledGroups) {
+            for (const s of group.children.entries) updateSprite(s, true);
+        }
+    }
 }
 
 // --------------------------------------------------------
@@ -108,37 +250,35 @@ varying vec2 outTexCoord;
 
 uniform vec2 uResolution;
 uniform float uLightCount;
-uniform float uLightX[16];
-uniform float uLightY[16];
-uniform float uLightRadius[16];
-uniform float uLightIntensity[16];
-uniform float uLightSoftness[16];
-uniform float uTintR[16];
-uniform float uTintG[16];
-uniform float uTintB[16];
-uniform float uTintA[16];
+uniform float uLightX[8];
+uniform float uLightY[8];
+uniform float uLightRadius[8];
+uniform float uLightIntensity[8];
+uniform float uLightSoftness[8];
+uniform float uTintR[8];
+uniform float uTintG[8];
+uniform float uTintB[8];
+uniform float uTintA[8];
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
-    // Flip Y — Phaser PostFX textures have inverted Y in WebGL
     vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
 
-    float darkness = 1.0;
+    float darkness = 0.97;
     vec3 warmTint = vec3(0.0);
 
-    for (int i = 0; i < 16; i++) {
+    for (int i = 0; i < 8; i++) {
         if (i >= lightCount) break;
-
-        float radius = uLightRadius[i];
-        float intensity = uLightIntensity[i];
-        float softness = uLightSoftness[i];
 
         vec2 lightPos = vec2(uLightX[i], uLightY[i]);
         float dist = distance(fragPixel, lightPos);
+        float radius = uLightRadius[i];
         if (dist >= radius) continue;
 
         float t = dist / radius;
+        float intensity = uLightIntensity[i];
+        float softness = uLightSoftness[i];
 
         float falloff;
         if (t <= softness) {
@@ -155,7 +295,7 @@ void main() {
         warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
 
-    darkness = clamp(darkness, 0.0, 1.0);
+    darkness = clamp(darkness, 0.0, 0.97);
     vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
     vec3 finalColor = mix(sceneColor.rgb, darkColor, darkness) + warmTint;
     gl_FragColor = vec4(finalColor, sceneColor.a);
@@ -168,19 +308,20 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
     }
 
     setLights(lights, resolution) {
-        const count = Math.min(lights.length, 16);
+        const MAX = 8;
+        const count = Math.min(lights.length, MAX);
         this.set1f('uLightCount', count);
         this.set2f('uResolution', resolution.x, resolution.y);
 
-        const lx = new Float32Array(16);
-        const ly = new Float32Array(16);
-        const lr = new Float32Array(16);
-        const li = new Float32Array(16);
-        const ls = new Float32Array(16);
-        const tr = new Float32Array(16);
-        const tg = new Float32Array(16);
-        const tb = new Float32Array(16);
-        const ta = new Float32Array(16);
+        const lx = new Float32Array(MAX);
+        const ly = new Float32Array(MAX);
+        const lr = new Float32Array(MAX);
+        const li = new Float32Array(MAX);
+        const ls = new Float32Array(MAX);
+        const tr = new Float32Array(MAX);
+        const tg = new Float32Array(MAX);
+        const tb = new Float32Array(MAX);
+        const ta = new Float32Array(MAX);
 
         for (let i = 0; i < count; i++) {
             const l = lights[i];
@@ -210,21 +351,25 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
 // Setup fog pipeline on a scene (shared by both GameScene and MazeScene)
 function setupFogPipeline(scene) {
     try {
-        if (scene.renderer.type !== Phaser.WEBGL) return null;
-        // Register the pipeline class (idempotent — safe to call multiple times)
+        if (scene.renderer.type !== Phaser.WEBGL) {
+            console.warn('[Fog] Canvas renderer — no WebGL fog available');
+            return null;
+        }
         if (!scene.renderer.pipelines.getPostPipeline('FogOfWarPipeline')) {
             scene.renderer.pipelines.addPostPipeline('FogOfWarPipeline', FogOfWarPipeline);
         }
         scene.cameras.main.setPostPipeline(FogOfWarPipeline);
         const pipelines = scene.cameras.main.getPostPipeline(FogOfWarPipeline);
-        // getPostPipeline may return array or single instance
         const pipeline = Array.isArray(pipelines) ? pipelines[0] : pipelines;
         if (pipeline) {
             console.log('[Fog] WebGL shader pipeline active');
+            // Show renderer info in FPS counter
+            const fps = document.getElementById('fps-counter');
+            if (fps) fps.dataset.renderer = 'WebGL';
             return pipeline;
         }
     } catch (e) {
-        console.warn('[Fog] WebGL pipeline failed, using no fog:', e.message);
+        console.warn('[Fog] WebGL pipeline failed:', e.message);
     }
     return null;
 }
@@ -234,10 +379,9 @@ function updateFogLights(pipeline, scene, lights) {
     if (!pipeline) return;
     try {
         pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
-    } catch (e) {
-        // Silently ignore shader errors
-    }
+    } catch (e) {}
 }
+
 
 // --------------------------------------------------------
 // Debug overlay — enemy paths, AI states, velocity, grid
