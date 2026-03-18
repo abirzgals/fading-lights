@@ -8,6 +8,7 @@ import { GridOccupancyComponent, setGridSystem } from '../components/GridOccupan
 import { LightSourceComponent } from '../components/LightSourceComponent';
 import { CONFIG, ENEMIES, WEAPONS } from '../config';
 import { EnemyType, Direction } from '../types';
+import { audioEngine } from '../engine/AudioEngine';
 
 const T = CONFIG.TILE_SIZE;
 const WORLD_TILES = CONFIG.WORLD_TILES;
@@ -73,6 +74,10 @@ export class GameScene extends ex.Scene {
     this.camera.strategy.lockToActor(this.player);
     this.camera.zoom = 2;
     this.createHUD(engine);
+
+    // Start music and ambient audio
+    audioEngine.startMusic();
+    audioEngine.startFireCrackle();
 
     console.log(`[GameScene] initialized — ${this._gameEntities.length} entities`);
   }
@@ -228,6 +233,13 @@ export class GameScene extends ex.Scene {
       vx, vy, speed
     );
     this.player.vel = ex.vec(gc.vx * speed, gc.vy * speed);
+
+    // Footsteps audio
+    if (gc.vx !== 0 || gc.vy !== 0) {
+      audioEngine.startFootsteps();
+    } else {
+      audioEngine.stopFootsteps();
+    }
   }
 
   private updatePlayerAnimation(_engine: ex.Engine): void {
@@ -250,6 +262,7 @@ export class GameScene extends ex.Scene {
     if (!engine.input.keyboard.wasPressed(ex.Keys.Space) || this.attackCooldown > 0) return;
 
     this.attackCooldown = 0.4;
+    audioEngine.playAttack();
     const weapon = WEAPONS.WOODEN_CLUB;
     const range = weapon.range;
 
@@ -262,7 +275,7 @@ export class GameScene extends ex.Scene {
           hp.damage(weapon.damage);
           const dir = e.pos.sub(this.player.pos).normalize();
           e.pos = e.pos.add(dir.scale(8));
-          if (!hp.alive) { this.kills++; e.kill(); }
+          if (!hp.alive) { this.kills++; audioEngine.playEnemyDeath(); e.kill(); }
         }
       }
     }
