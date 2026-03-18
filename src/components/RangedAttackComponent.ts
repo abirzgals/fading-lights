@@ -58,35 +58,36 @@ export class RangedAttackComponent extends ex.Component {
     const projType = this.projectileType;
 
     if (ismagic) {
-      // Magic orb with pixel art texture
+      // Magic orb — scaled down to 50% for smaller projectile
       if (AssetLoader.magicOrb.isLoaded()) {
         proj.graphics.use(AssetLoader.magicOrb.toSprite());
       } else {
-        proj.graphics.use(new ex.Circle({ radius: 5, color: ex.Color.fromHex('#AA44FF') }));
+        proj.graphics.use(new ex.Circle({ radius: 4, color: ex.Color.fromHex('#AA44FF') }));
       }
-      // Outer glow halo
+      proj.scale = ex.vec(0.5, 0.5);
+      // Smaller glow halo
       const glow = new ex.Actor({ pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5) });
-      glow.graphics.use(new ex.Circle({ radius: 14, color: ex.Color.fromRGB(170, 68, 255, 0.12) }));
+      glow.graphics.use(new ex.Circle({ radius: 8, color: ex.Color.fromRGB(170, 68, 255, 0.1) }));
       glow.z = 99;
       scene.add(glow);
-      // Pulsing scale
       let pulseT = 0;
       proj.on('preupdate', () => {
         pulseT += 0.15;
-        const s = 1.0 + Math.sin(pulseT) * 0.25;
+        const s = 0.5 + Math.sin(pulseT) * 0.1;
         proj.scale = ex.vec(s, s);
         glow.pos = proj.pos.clone();
-        glow.graphics.opacity = 0.12 + Math.sin(pulseT * 1.5) * 0.08;
+        glow.graphics.opacity = 0.1 + Math.sin(pulseT * 1.5) * 0.06;
         if (proj.isKilled()) { glow.kill(); }
       });
     } else {
-      // Arrow with pixel art texture
+      // Arrow — texture rotated to flight direction + 45° CW correction
       if (AssetLoader.arrowProj.isLoaded()) {
         proj.graphics.use(AssetLoader.arrowProj.toSprite());
+        proj.scale = ex.vec(0.6, 0.6);
       } else {
         proj.graphics.use(new ex.Rectangle({ width: 8, height: 2, color: ex.Color.fromHex('#FFCC88') }));
       }
-      proj.rotation = Math.atan2(dir.y, dir.x);
+      proj.rotation = Math.atan2(dir.y, dir.x) + Math.PI * 0.25; // +45° CW to fix sprite orientation
     }
 
     proj.vel = dir.scale(this.projectileSpeed);
@@ -146,8 +147,8 @@ export class RangedAttackComponent extends ex.Component {
           splash.graphics.use(new ex.Circle({ radius: 20, color: ex.Color.fromRGB(170, 68, 255, 0.4) }));
         }
         splash.z = 102;
-        splash.scale = ex.vec(0.5, 0.5);
-        splash.actions.scaleTo(ex.vec(2.0, 2.0), ex.vec(4, 4));
+        splash.scale = ex.vec(0.3, 0.3);
+        splash.actions.scaleTo(ex.vec(1.0, 1.0), ex.vec(3, 3));
         splash.actions.fade(0, 400).die();
         scn.add(splash);
       }
