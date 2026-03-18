@@ -246,7 +246,6 @@ const FOG_FRAG_SHADER = `
 precision mediump float;
 
 uniform sampler2D uMainSampler;
-uniform sampler2D uNormalSampler;
 varying vec2 outTexCoord;
 
 uniform vec2 uResolution;
@@ -260,26 +259,11 @@ uniform float uTintR[8];
 uniform float uTintG[8];
 uniform float uTintB[8];
 uniform float uTintA[8];
-uniform float uNormalStrength;
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
     vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
-
-    // Normal map: only sample if enabled (uNormalStrength > 0)
-    vec3 surfNormal = vec3(0.0, 0.0, 1.0);
-    float hasNormal = 0.0;
-    if (uNormalStrength > 0.0) {
-        vec4 ns = texture2D(uNormalSampler, vec2(outTexCoord.x, 1.0 - outTexCoord.y));
-        // Guard: if texture not bound, sample returns black → use flat normal
-        float nsLen = dot(ns.rgb, ns.rgb);
-        if (nsLen > 0.01) {
-            surfNormal = normalize(ns.rgb * 2.0 - 1.0);
-            surfNormal.xy = -surfNormal.xy;
-            hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
-        }
-    }
 
     float darkness = 1.0;
     vec3 warmTint = vec3(0.0);
@@ -288,8 +272,7 @@ void main() {
         if (i >= lightCount) break;
 
         vec2 lightPos = vec2(uLightX[i], uLightY[i]);
-        vec2 toLight = lightPos - fragPixel;
-        float dist = length(toLight);
+        float dist = distance(fragPixel, lightPos);
         float radius = uLightRadius[i];
         if (dist >= radius) continue;
 
@@ -306,62 +289,29 @@ void main() {
             falloff = mix(0.3, 0.0, (t - 0.75) / 0.25);
         }
 
-        // Normal map directional lighting (skipped when uNormalStrength = 0)
-        if (hasNormal > 0.0) {
-            vec3 lightDir = normalize(vec3(toLight, radius * 0.4));
-            float nDotL = max(dot(surfNormal, lightDir), 0.0);
-            falloff *= mix(1.0, nDotL * 1.5, uNormalStrength);
-        }
-
         darkness *= (1.0 - falloff);
+
         float tintFalloff = smoothstep(1.0, 0.0, t);
         warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
 
     darkness = clamp(darkness, 0.0, 1.0);
-    vec3 foggedColor = sceneColor.rgb * (1.0 - darkness);
-    vec3 finalColor = foggedColor + warmTint * (1.0 - darkness);
-    gl_FragColor = vec4(finalColor, 1.0); // force full alpha — no bleed-through
+    float light = 1.0 - darkness;
+    vec3 finalColor = sceneColor.rgb * light + warmTint * light;
+    gl_FragColor = vec4(finalColor, 1.0);
 }
 `;
 
 class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
     constructor(game) {
         super({ game, name: 'FogOfWarPipeline', fragShader: FOG_FRAG_SHADER });
-        this._normalGlTex = null;
     }
 
-    // Bind the normal buffer GL texture for use in the shader
-    setNormalBuffer(glTexture) {
-        this._normalGlTex = glTexture;
-    }
-
-    // Override onDraw to bind the normal buffer as texture unit 1
-    onDraw(renderTarget) {
-        if (this._normalRT && this._normalRT._ready) {
-            try {
-                const gl = this.renderer.gl;
-                if (!this._normalGlTex) {
-                    const src = this._normalRT.texture.source[0];
-                    this._normalGlTex = src.glTexture?.webGLTexture || src.glTexture || null;
-                }
-                if (this._normalGlTex) {
-                    gl.activeTexture(gl.TEXTURE1);
-                    gl.bindTexture(gl.TEXTURE_2D, this._normalGlTex);
-                    this.set1i('uNormalSampler', 1);
-                    gl.activeTexture(gl.TEXTURE0);
-                }
-            } catch (e) { /* skip */ }
-        }
-        this.bindAndDraw(renderTarget);
-    }
-
-    setLights(lights, resolution, normalStrength) {
+    setLights(lights, resolution) {
         const MAX = 8;
         const count = Math.min(lights.length, MAX);
         this.set1f('uLightCount', count);
         this.set2f('uResolution', resolution.x, resolution.y);
-        this.set1f('uNormalStrength', normalStrength || 0);
 
         const lx = new Float32Array(MAX);
         const ly = new Float32Array(MAX);
@@ -425,90 +375,13 @@ function setupFogPipeline(scene) {
 }
 
 // Collect lights and push to pipeline (shared helper)
-function updateFogLights(pipeline, scene, lights, normalStrength) {
+function updateFogLights(pipeline, scene, lights) {
     if (!pipeline) return;
     try {
-        // Disable normal maps on mobile (no normal buffer = no sampling)
-        const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
-        const ns = isMobile ? 0 : (normalStrength || 0);
-        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height }, ns);
-    } catch (e) {
-        // Silently ignore shader errors
-    }
+        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
+    } catch (e) {}
 }
 
-// --------------------------------------------------------
-// Normal buffer — per-pixel normal maps for directional lighting
-// --------------------------------------------------------
-
-// Create a normal buffer RenderTexture for a scene
-// On mobile: 1x1 pixel (just to keep the sampler valid — some GPUs
-// sample uNormalSampler even inside if(false) branches)
-function createNormalBuffer(scene) {
-    const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
-    const w = isMobile ? 1 : scene.scale.width;
-    const h = isMobile ? 1 : scene.scale.height;
-    const rt = scene.make.renderTexture({ x: 0, y: 0, width: w, height: h, add: false });
-    rt.fill(0x8080FF); // default flat normal (128,128,255) = vec3(0,0,1)
-    rt._scale = 1;
-    rt._ready = true; // 1x1 is always ready
-    return rt;
-}
-
-// Update the normal buffer with visible objects' normal maps
-// Only draws normals for objects within a light radius (dark areas = wasted draw calls)
-function updateNormalBuffer(normalRT, scene, objects, lights) {
-    if (!normalRT) return;
-    // Skip on mobile — too expensive and can corrupt GL state
-    if (typeof mobileControls !== 'undefined' && mobileControls.isMobile) return;
-    // Skip if WebGL not available
-    if (scene.renderer.type !== Phaser.WEBGL) return;
-    if (!lights || lights.length === 0) return;
-
-    const cam = scene.cameras.main;
-    const m = 50;
-    const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
-    const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
-
-    // Clear to default flat normal
-    normalRT.fill(0x8080FF);
-
-    let drawn = 0;
-    for (const obj of objects) {
-        if (!obj.active) continue;
-        if (obj.x < cl || obj.x > cr || obj.y < ct || obj.y > cb) continue;
-
-        // Only draw normals for objects within a light radius
-        let inLight = false;
-        for (const l of lights) {
-            const dx = obj.x - l.x, dy = obj.y - l.y;
-            if (dx * dx + dy * dy < l.radius * l.radius) { inLight = true; break; }
-        }
-        if (!inLight) continue;
-
-        const normalKey = obj.texture.key + '_n';
-        if (!scene.textures.exists(normalKey)) continue;
-
-        const s = normalRT._scale || 1;
-        const tl = obj.getTopLeft();
-        const sx = (tl.x - cam.scrollX) * cam.zoom * s;
-        const sy = (tl.y - cam.scrollY) * cam.zoom * s;
-        normalRT.drawFrame(normalKey, undefined, sx, sy);
-        if (++drawn >= 20) break; // cap draw calls per frame
-    }
-    // Signal pipeline that normal buffer has valid data
-    if (drawn > 0) normalRT._ready = true;
-}
-
-// Bind the normal buffer to the fog pipeline — called once at setup,
-// then the pipeline re-binds every frame in onDraw
-function bindNormalBuffer(pipeline, normalRT) {
-    if (!pipeline || !normalRT) return;
-    pipeline._normalRT = normalRT;
-    pipeline._normalReady = false;
-    pipeline._normalGlTex = null;
-    console.log('[NormalBuffer] deferred bind registered');
-}
 
 // --------------------------------------------------------
 // Debug overlay — enemy paths, AI states, velocity, grid

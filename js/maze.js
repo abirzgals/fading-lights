@@ -574,11 +574,6 @@ class MazeScene extends Phaser.Scene {
     // ----------------------------------------------------------
     _initTorchLight(worldW, worldH) {
         this._fogPipeline = setupFogPipeline(this);
-        // Normal buffer — 1x1 on mobile (keeps GPU sampler valid), full on desktop
-        this._normalBuffer = createNormalBuffer(this);
-        if (this._fogPipeline && this._normalBuffer) {
-            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
-        }
     }
 
     _updateTorchLight() {
@@ -624,7 +619,7 @@ class MazeScene extends Phaser.Scene {
                 tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.18 });
         }
 
-        updateFogLights(this._fogPipeline, this, lights, 10.0);
+        updateFogLights(this._fogPipeline, this, lights);
     }
 
     // ----------------------------------------------------------

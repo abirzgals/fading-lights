@@ -224,12 +224,6 @@ class GameScene extends Phaser.Scene {
         this._setLoadProgress(85, 'Setting up fog of war...');
         // --- Fog of War (WebGL shader pipeline) ---
         this._fogPipeline = setupFogPipeline(this);
-        // Normal buffer — full-size on desktop, 1x1 on mobile (keeps GPU sampler valid)
-        this._normalBuffer = createNormalBuffer(this);
-        this._normalTimer = 0;
-        if (this._fogPipeline && this._normalBuffer) {
-            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
-        }
 
         // --- Fire particles ---
         // (created per bonfire in createBonfire)
@@ -2171,27 +2165,6 @@ class GameScene extends Phaser.Scene {
         // Tree shadows throttled to ~15fps
         this._shadowTimer += delta;
         if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateShadows(true); }
-        // Normal buffer throttled to ~10fps (only objects near lights)
-        this._normalTimer += delta;
-        if (this._normalTimer > 100 && this._normalBuffer) {
-            this._normalTimer = 0;
-            // Collect active lights for culling
-            const nLights = [];
-            for (const bf of this.bonfires) {
-                if (!bf.getData('lit')) continue;
-                nLights.push({ x: bf.x, y: bf.y, radius: this.getLightRadius(bf) });
-            }
-            for (const b of this.buildingsGroup.children.entries) {
-                if (!b.active || b.getData('type') !== 'outpost') continue;
-                nLights.push({ x: b.x, y: b.y, radius: 120 });
-            }
-            if (nLights.length > 0) {
-                const objs = this.trees.children.entries
-                    .concat(this.stones.children.entries)
-                    .concat(this.metals.children.entries);
-                updateNormalBuffer(this._normalBuffer, this, objs, nLights);
-            }
-        }
         this.updateDepthSort();
         this._drawDebug();
     }
@@ -3265,7 +3238,7 @@ class GameScene extends Phaser.Scene {
                 tintR: 0, tintG: 0, tintB: 0, tintA: 0 });
         }
 
-        updateFogLights(this._fogPipeline, this, lights, 8.0);
+        updateFogLights(this._fogPipeline, this, lights);
     }
 
     // --------------------------------------------------------
