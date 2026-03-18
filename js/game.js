@@ -1190,6 +1190,29 @@ class GameScene extends Phaser.Scene {
         this._pathTiles = pathTiles;
         this._clearings = clearings;
 
+        // Rebuild _occupiedTiles from actual existing objects
+        // (world gen destroys some objects to clear roads, but doesn't remove their tiles)
+        this._occupiedTiles.clear();
+        const T2 = CONFIG.TILE_SIZE;
+        for (const group of [this.trees, this.stones, this.metals, this.rockWalls]) {
+            for (const obj of group.children.entries) {
+                if (!obj.active) continue;
+                const tx = Math.floor(obj.x / T2);
+                const ty = Math.floor(obj.y / T2);
+                this._occupiedTiles.add(`${tx},${ty}`);
+                // Trees shifted up — also block original tile below
+                if (group === this.trees && this._hasPixelArtTree) {
+                    this._occupiedTiles.add(`${tx},${ty + 1}`);
+                }
+            }
+        }
+        // Bonfires block their tile
+        for (const bf of this.bonfires) {
+            const tx = Math.floor(bf.x / T2);
+            const ty = Math.floor(bf.y / T2);
+            this._occupiedTiles.add(`${tx},${ty}`);
+        }
+
         // Build walkability grid for pathfinding (true = walkable)
         this._walkGrid = new Uint8Array(worldSize * worldSize);
         for (let ty = 0; ty < worldSize; ty++) {
