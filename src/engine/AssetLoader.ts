@@ -117,46 +117,62 @@ export class AssetLoader {
     },
   };
 
-  // Enemy animation frames (walking + attack, 6 frames × 8 directions)
+  // Enemy animation frames — pre-created and registered for loading
   private static _animCache: Record<string, Record<string, ex.ImageSource[]>> = {};
+  private static _animInitialized = false;
 
-  /** Load animation frames for an enemy type. Call after allResources loaded. */
-  static getEnemyAnimFrames(enemyType: string, animName: string): Record<string, ex.ImageSource[]> {
-    const key = `${enemyType}:${animName}`;
-    if (this._animCache[key]) return this._animCache[key];
+  private static _initAnimFrames(): void {
+    if (this._animInitialized) return;
+    this._animInitialized = true;
 
     const dirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
-    const basePath = enemyType === 'SHADOW_STALKER'
-      ? '/assets/pixelart/shadow-stalker-anim/animations'
-      : `/assets/enemies/${enemyType.toLowerCase().replace(/_/g, '_')}/animations`;
+    const enemyAnims: Record<string, string[]> = {
+      SHADOW_WISP: ['walking', 'cross-punch'],
+      SHADOW_BEAST: ['walking', 'cross-punch'],
+      SHADOW_LORD: ['walking', 'cross-punch'],
+      FOG_CRAWLER: ['walking', 'cross-punch'],
+      SHADOW_ARCHER: ['walking', 'fireball'],
+      VOID_MAGE: ['walking', 'fireball'],
+    };
 
-    const result: Record<string, ex.ImageSource[]> = {};
-    for (const dir of dirs) {
-      const frames: ex.ImageSource[] = [];
-      for (let i = 0; i < 6; i++) {
-        frames.push(new ex.ImageSource(`${basePath}/${animName}/${dir}/frame_00${i}.png`));
+    for (const [type, anims] of Object.entries(enemyAnims)) {
+      const folder = type.toLowerCase();
+      for (const animName of anims) {
+        const key = `${type}:${animName}`;
+        const result: Record<string, ex.ImageSource[]> = {};
+        for (const dir of dirs) {
+          const frames: ex.ImageSource[] = [];
+          for (let i = 0; i < 6; i++) {
+            frames.push(new ex.ImageSource(`/assets/enemies/${folder}/animations/${animName}/${dir}/frame_00${i}.png`));
+          }
+          result[dir] = frames;
+        }
+        this._animCache[key] = result;
       }
-      result[dir] = frames;
     }
-    this._animCache[key] = result;
-    return result;
   }
 
-  /** Get all animation ImageSources for loading */
-  static allAnimResources(): ex.Loadable<any>[] {
-    const anims: ex.Loadable<any>[] = [];
-    const types = ['shadow_wisp', 'shadow_beast', 'shadow_lord', 'fog_crawler', 'shadow_archer', 'void_mage'];
-    const dirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
-    for (const type of types) {
-      for (const animName of ['walking', 'cross-punch']) {
-        for (const dir of dirs) {
-          for (let i = 0; i < 6; i++) {
-            anims.push(new ex.ImageSource(`/assets/enemies/${type}/animations/${animName}/${dir}/frame_00${i}.png`));
-          }
+  /** Get pre-created animation frames. Starts loading them lazily. */
+  static getEnemyAnimFrames(enemyType: string, animName: string): Record<string, ex.ImageSource[]> {
+    this._initAnimFrames();
+    const frames = this._animCache[`${enemyType}:${animName}`] ?? {};
+    // Lazy-load: start loading each frame that isn't loaded yet
+    for (const dirFrames of Object.values(frames)) {
+      for (const img of dirFrames) {
+        if (!img.isLoaded()) {
+          img.load().catch(() => {}); // silently skip missing frames
         }
       }
     }
-    return anims;
+    return frames;
+  }
+
+  /** Get ALL animation ImageSources for the Loader — skip missing files gracefully */
+  static allAnimResources(): ex.Loadable<any>[] {
+    // Don't pre-load animation frames in the Loader — load on demand
+    // This avoids 404 errors for missing directions
+    // AnimatedSpriteComponent handles missing frames gracefully (fallback to rotation)
+    return [];
   }
 
   // Menu background

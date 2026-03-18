@@ -120,7 +120,7 @@ export class GameScene extends ex.Scene {
 
   // ======== ENEMY AI ========
 
-  private runEnemyAI(_dt: number): void {
+  private runEnemyAI(dt: number): void {
     const player = this.level.player;
     for (const e of this.level.enemies) {
       if (e.isKilled()) continue;
@@ -147,10 +147,40 @@ export class GameScene extends ex.Scene {
         case 'WANDER':
           e.vel = ex.vec(Math.cos(ai.wanderAngle) * speed * 0.3, Math.sin(ai.wanderAngle) * speed * 0.3);
           break;
-        case 'CHASE':
-          const dir = player.pos.sub(e.pos).normalize();
-          e.vel = ex.vec(dir.x * speed, dir.y * speed);
+        case 'CHASE': {
+          // A* pathfinding to player — repath every ~1s
+          let path = (e as any)._aiPath as Array<{x: number; y: number}> | null;
+          let pathIdx = (e as any)._aiPathIdx as number || 0;
+          let repathTimer = ((e as any)._aiRepathTimer as number || 0) - dt;
+
+          if (!path || pathIdx >= path.length || repathTimer <= 0) {
+            path = this.level.grid.findPath(e.pos.x, e.pos.y, player.pos.x, player.pos.y);
+            (e as any)._aiPath = path;
+            (e as any)._aiPathIdx = 0;
+            pathIdx = 0;
+            repathTimer = 0.8 + Math.random() * 0.4;
+          }
+          (e as any)._aiRepathTimer = repathTimer;
+
+          if (path && pathIdx < path.length) {
+            const wp = path[pathIdx];
+            const wpDist = Math.sqrt((e.pos.x - wp.x) ** 2 + (e.pos.y - wp.y) ** 2);
+            if (wpDist < 16) {
+              pathIdx++;
+              (e as any)._aiPathIdx = pathIdx;
+            }
+            if (pathIdx < path.length) {
+              const next = path[pathIdx];
+              const dir = ex.vec(next.x - e.pos.x, next.y - e.pos.y).normalize();
+              e.vel = ex.vec(dir.x * speed, dir.y * speed);
+            }
+          } else {
+            // Fallback: direct movement
+            const dir = player.pos.sub(e.pos).normalize();
+            e.vel = ex.vec(dir.x * speed, dir.y * speed);
+          }
           break;
+        }
         case 'ATTACK': {
           e.vel = ex.vec(0, 0);
           const anim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;

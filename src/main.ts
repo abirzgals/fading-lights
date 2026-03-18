@@ -17,7 +17,12 @@ const game = new ex.Engine({
   suppressPlayButton: true,
 });
 
-const loader = new ex.Loader(AssetLoader.allResources());
+// Load ALL assets: sprites + animation frames
+const allAssets = [
+  ...AssetLoader.allResources(),
+  ...AssetLoader.allAnimResources(),
+];
+const loader = new ex.Loader(allAssets);
 loader.suppressPlayButton = true;
 
 game.addScene('intro', new IntroScene());
@@ -25,6 +30,6 @@ game.addScene('menu', new MenuScene());
 game.addScene('game', new GameScene());
 
 game.start(loader).then(() => {
-  console.log('[Assets] loaded');
+  console.log(`[Assets] loaded ${allAssets.length} resources`);
   game.goToScene('intro');
 });
