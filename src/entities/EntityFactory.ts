@@ -177,8 +177,19 @@ export class EntityFactory {
     bf.entityType = 'bonfire';
     bf.z = 3;
 
-    // Animated bonfire with pulsing fire
-    bf.addComponent(new BonfireAnimComponent() as any);
+    // Bonfire pixel art sprite with pulse
+    if (AssetLoader.bonfireSprite.isLoaded()) {
+      bf.graphics.use(AssetLoader.bonfireSprite.toSprite());
+    } else {
+      bf.graphics.use(new ex.Rectangle({ width: 20, height: 10, color: ex.Color.fromHex('#5a3a1a') }));
+    }
+    // Subtle scale pulse like original
+    let bfPulse = 0;
+    bf.on('preupdate', () => {
+      bfPulse += 0.004;
+      const s = 1.0 + Math.sin(bfPulse) * 0.06;
+      bf.scale = ex.vec(s, s);
+    });
     bf.addComponent(new LightSourceComponent({
       radius: CONFIG.BONFIRE_BASE_RADIUS, intensity: 1.0, softness: 0.5,
       tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12,
