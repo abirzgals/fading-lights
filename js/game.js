@@ -343,13 +343,15 @@ class GameScene extends Phaser.Scene {
             if (network.peerCount > 0) network.broadcastReliable({ t: 'lv', scene: 'MazeScene' });
             this.scene.start('MazeScene');
         });
-        // --- Toggle physics debug bodies (C key) — works on localhost always ---
+        // --- Toggle colored collider debug (C key) ---
+        this._showColliders = false;
+        this._colliderGfx = this.add.graphics().setDepth(9999).setScrollFactor(1);
         this.input.keyboard.on('keydown-C', () => {
             if ((!window._debugMode && !IS_DEV) || this._chatOpen) return;
-            this.physics.world.drawDebug = !this.physics.world.drawDebug;
-            if (!this.physics.world.drawDebug) this.physics.world.debugGraphic.clear();
+            this._showColliders = !this._showColliders;
+            if (!this._showColliders) this._colliderGfx.clear();
             this.showFloatingText(this.player.x, this.player.y - 30,
-                this.physics.world.drawDebug ? 'COLLIDERS ON' : 'COLLIDERS OFF', '#00FF88');
+                this._showColliders ? 'COLLIDERS ON' : 'COLLIDERS OFF', '#00FF88');
         });
         // --- Spawn Shadow Mind (Groq AI enemy) for testing ---
         this.input.keyboard.on('keydown-N', () => {
@@ -1194,7 +1196,7 @@ class GameScene extends Phaser.Scene {
         this._pathTiles = pathTiles;
         this._clearings = clearings;
 
-        // Rock walls collider (created during world gen above)
+        // Rock walls collider
         this.physics.add.collider(this.player, this.rockWalls);
 
         // Build walkability grid for pathfinding (true = walkable)
@@ -2254,6 +2256,36 @@ class GameScene extends Phaser.Scene {
     // Debug overlay — draw enemy paths, grid info
     // --------------------------------------------------------
     _drawDebug() {
+        // Colored collider visualization
+        const cg = this._colliderGfx;
+        if (cg) {
+            cg.clear();
+            if (this._showColliders) {
+                const cam = this.cameras.main;
+                const m = 50;
+                const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+                const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+                const drawGroup = (group, color, label) => {
+                    for (const s of group.children.entries) {
+                        if (!s.active || !s.body) continue;
+                        const b = s.body;
+                        if (b.x < cl || b.x > cr || b.y < ct || b.y > cb) continue;
+                        cg.lineStyle(1, color, s.visible ? 0.8 : 0.3);
+                        cg.strokeRect(b.x, b.y, b.width, b.height);
+                    }
+                };
+                drawGroup(this.trees, 0x00FF00);       // green = trees
+                drawGroup(this.stones, 0xFFFF00);      // yellow = stones
+                drawGroup(this.metals, 0xFF8800);      // orange = metals
+                drawGroup(this.rockWalls, 0x8888FF);   // blue = rock walls
+                drawGroup(this.buildingsGroup, 0xFF00FF); // magenta = buildings
+                // Player body
+                const pb = this.player.body;
+                cg.lineStyle(2, 0xFF0088, 1);
+                cg.strokeRect(pb.x, pb.y, pb.width, pb.height);
+            }
+        }
+
         const g = this._debugGfx;
         g.clear();
         if (this._debugText) this._debugText.setVisible(false);
