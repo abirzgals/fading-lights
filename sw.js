@@ -1,57 +1,19 @@
-// Version injected from index.html via query param — single source of truth is config.js
-const SW_VERSION = new URL(self.location).searchParams.get('v') || '0';
-const CACHE_NAME = 'fading-light-' + SW_VERSION;
-const ASSETS = [
-    './',
-    './index.html',
-    './css/style.css',
-    './js/config.js',
-    './js/audio.js',
-    './js/network.js',
-    './js/mobile.js',
-    './js/textures.js',
-    './js/shared.js',
-    './js/intro.js',
-    './js/menu.js',
-    './js/game.js',
-    './js/maze.js',
-    './js/groq-enemy.js',
-    './js/boss-ai.js',
-    './js/main.js',
-    './js/bot.js',
-    './js/autotest.js',
-    './assets/weapons.png',
-    './manifest.json',
-];
+// Minimal service worker — NEVER cache JS/HTML (always fresh from network)
+// Only cache large static assets (images, audio) for offline/speed
 
-self.addEventListener('install', (e) => {
-    e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
-    );
-    self.skipWaiting();
-});
-
+self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (e) => {
+    // Nuke ALL old caches on activate
     e.waitUntil(
-        caches.keys().then((keys) =>
-            Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k)))
-        )
+        caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))))
     );
     self.clients.claim();
 });
 
 self.addEventListener('fetch', (e) => {
-    // Skip WebSocket/API requests
-    if (e.request.url.includes('onrender.com') || e.request.url.startsWith('ws')) return;
-
-    // Network-first: always try to get fresh version, fall back to cache if offline
-    e.respondWith(
-        fetch(e.request).then((response) => {
-            if (response && response.status === 200) {
-                const clone = response.clone();
-                caches.open(CACHE_NAME).then((cache) => cache.put(e.request, clone));
-            }
-            return response;
-        }).catch(() => caches.match(e.request))
-    );
+    const url = e.request.url;
+    // Never intercept: websockets, API, JS, HTML, CSS
+    if (url.includes('onrender.com') || url.startsWith('ws')) return;
+    if (url.endsWith('.js') || url.endsWith('.html') || url.endsWith('.css')) return;
+    // Let browser handle everything else normally (no caching)
 });
