@@ -65,7 +65,9 @@ export class EntityFactory {
 
     // Load animation frames (may not all exist yet — graceful fallback)
     const walkFrames = AssetLoader.getEnemyAnimFrames(type, 'walking');
-    const attackFrames = AssetLoader.getEnemyAnimFrames(type, 'cross-punch');
+    // Ranged enemies use 'fireball' attack animation, melee use 'cross-punch'
+    const attackAnimName = def.ranged ? 'fireball' : 'cross-punch';
+    const attackFrames = AssetLoader.getEnemyAnimFrames(type, attackAnimName);
 
     enemy.addComponent(new AnimatedSpriteComponent({
       rotations: sprites,
