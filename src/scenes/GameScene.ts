@@ -681,32 +681,21 @@ export class GameScene extends ex.Scene {
     });
     enemy.entityType = 'enemy';
 
-    // Visual — different shapes for different enemy types
-    const r = (def.color >> 16) & 0xFF, g = (def.color >> 8) & 0xFF, b = def.color & 0xFF;
-    const color = ex.Color.fromRGB(r, g, b);
-
-    if (type === 'SHADOW_ARCHER' || type === 'VOID_MAGE') {
-      // Triangle for ranged enemies
-      const size = def.size;
-      const polygon = new ex.Polygon({
-        points: [ex.vec(0, -size / 2), ex.vec(size / 2, size / 2), ex.vec(-size / 2, size / 2)],
-        color,
+    // Use pixel art sprites if loaded, fallback to colored shapes
+    const sprites = AssetLoader.enemySprites[type];
+    const southSprite = sprites?.south;
+    if (southSprite?.isLoaded()) {
+      enemy.graphics.use(southSprite.toSprite());
+      // Update facing direction on preupdate
+      enemy.on('preupdate', () => {
+        if (enemy.vel.squareDistance() < 1) return;
+        const dir = facingToDirection(enemy.vel.x, enemy.vel.y);
+        const img = sprites[dir];
+        if (img?.isLoaded()) enemy.graphics.use(img.toSprite());
       });
-      enemy.graphics.use(polygon);
-    } else if (type === 'SHADOW_BEAST' || type === 'SHADOW_LORD') {
-      // Large square for big enemies
-      enemy.graphics.use(new ex.Rectangle({ width: def.size, height: def.size, color }));
-    } else if (type === 'FOG_CRAWLER') {
-      // Diamond shape for crawlers
-      const s = def.size / 2;
-      const polygon = new ex.Polygon({
-        points: [ex.vec(0, -s), ex.vec(s, 0), ex.vec(0, s), ex.vec(-s, 0)],
-        color,
-      });
-      enemy.graphics.use(polygon);
     } else {
-      // Circle for basic enemies
-      enemy.graphics.use(new ex.Circle({ radius: def.size / 2, color }));
+      const r = (def.color >> 16) & 0xFF, g = (def.color >> 8) & 0xFF, b = def.color & 0xFF;
+      enemy.graphics.use(new ex.Circle({ radius: def.size / 2, color: ex.Color.fromRGB(r, g, b) }));
     }
 
     enemy.addComponent(new HealthComponent(def.hp));

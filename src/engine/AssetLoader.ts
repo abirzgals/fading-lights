@@ -43,6 +43,80 @@ export class AssetLoader {
   static maleWalkNE = new ex.ImageSource('/assets/characters/male/walk/north-east.png');
   static maleWalkNW = new ex.ImageSource('/assets/characters/male/walk/north-west.png');
 
+  // Enemy sprites (8 directions each)
+  static enemySprites: Record<string, Record<string, ex.ImageSource>> = {
+    SHADOW_WISP: {
+      south: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north-west.png'),
+    },
+    SHADOW_STALKER: {
+      south: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south.png'),
+      north: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north.png'),
+      east: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/east.png'),
+      west: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north-west.png'),
+    },
+    SHADOW_BEAST: {
+      south: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north-west.png'),
+    },
+    SHADOW_LORD: {
+      south: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north-west.png'),
+    },
+    FOG_CRAWLER: {
+      south: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north-west.png'),
+    },
+    SHADOW_ARCHER: {
+      south: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north-west.png'),
+    },
+    VOID_MAGE: {
+      south: new ex.ImageSource('/assets/enemies/void_mage/rotations/south.png'),
+      north: new ex.ImageSource('/assets/enemies/void_mage/rotations/north.png'),
+      east: new ex.ImageSource('/assets/enemies/void_mage/rotations/east.png'),
+      west: new ex.ImageSource('/assets/enemies/void_mage/rotations/west.png'),
+      'south-east': new ex.ImageSource('/assets/enemies/void_mage/rotations/south-east.png'),
+      'south-west': new ex.ImageSource('/assets/enemies/void_mage/rotations/south-west.png'),
+      'north-east': new ex.ImageSource('/assets/enemies/void_mage/rotations/north-east.png'),
+      'north-west': new ex.ImageSource('/assets/enemies/void_mage/rotations/north-west.png'),
+    },
+  };
+
   // Menu background
   static menuBg = new ex.ImageSource('/assets/menu_bg.png');
 
@@ -91,6 +165,8 @@ export class AssetLoader {
       // Walk spritesheets
       this.maleWalkSouth, this.maleWalkNorth, this.maleWalkEast, this.maleWalkWest,
       this.maleWalkSE, this.maleWalkSW, this.maleWalkNE, this.maleWalkNW,
+      // Enemy sprites (all directions)
+      ...Object.values(this.enemySprites).flatMap(dirs => Object.values(dirs)),
     ];
   }
 
