@@ -120,10 +120,11 @@ uniform float uTintA[16];
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
-    vec2 fragPixel = outTexCoord * uResolution;
+    // Flip Y — Phaser PostFX textures have inverted Y in WebGL
+    vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
 
-    float darkness = 0.97;
+    float darkness = 1.0;
     vec3 warmTint = vec3(0.0);
 
     for (int i = 0; i < 16; i++) {
@@ -154,7 +155,7 @@ void main() {
         warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
 
-    darkness = clamp(darkness, 0.0, 0.97);
+    darkness = clamp(darkness, 0.0, 1.0);
     vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
     vec3 finalColor = mix(sceneColor.rgb, darkColor, darkness) + warmTint;
     gl_FragColor = vec4(finalColor, sceneColor.a);
