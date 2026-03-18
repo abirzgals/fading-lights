@@ -6,6 +6,8 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black">
     <meta name="theme-color" content="#020105">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <title>The Fading Light</title>
     <link rel="stylesheet" href="css/style.css">
     <link rel="manifest" href="manifest.json">
@@ -112,19 +114,25 @@
             window._gs = this;
         };
 
-        // Register service worker for PWA — force update on every load
+        // Service worker — nuke stale caches on every load, force fresh code
         if ('serviceWorker' in navigator) {
-            // Nuke old caches and SW if version mismatch
             (async () => {
+                // Delete ALL old caches
                 const keys = await caches.keys();
-                const stale = keys.filter(k => k.startsWith('fading-light-') && k !== 'fading-light-' + GAME_VERSION);
-                await Promise.all(stale.map(k => caches.delete(k)));
+                const stale = keys.filter(k => k !== 'fading-light-' + GAME_VERSION);
                 if (stale.length > 0) {
-                    // Old cache found — unregister old SW so fresh one installs
+                    await Promise.all(stale.map(k => caches.delete(k)));
+                    // Unregister old SW
                     const regs = await navigator.serviceWorker.getRegistrations();
                     for (const r of regs) await r.unregister();
+                    // Force reload with fresh code (only once)
+                    if (!sessionStorage.getItem('sw_refreshed_' + GAME_VERSION)) {
+                        sessionStorage.setItem('sw_refreshed_' + GAME_VERSION, '1');
+                        location.reload();
+                        return;
+                    }
                 }
-                // Register (or re-register) the SW
+                // Register SW
                 const reg = await navigator.serviceWorker.register('sw.js?v=' + GAME_VERSION, { updateViaCache: 'none' });
                 reg.update();
                 let refreshing = false;
