@@ -573,15 +573,11 @@ class MazeScene extends Phaser.Scene {
     // TORCH LIGHT
     // ----------------------------------------------------------
     _initTorchLight(worldW, worldH) {
-        // WebGL fog shader pipeline (shared with overworld)
         this._fogPipeline = setupFogPipeline(this);
-        // Normal buffer (desktop only — mobile skips to avoid GL state issues)
-        const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
-        if (!isMobile) {
-            this._normalBuffer = createNormalBuffer(this);
-            if (this._fogPipeline && this._normalBuffer) {
-                bindNormalBuffer(this._fogPipeline, this._normalBuffer);
-            }
+        // Normal buffer — 1x1 on mobile (keeps GPU sampler valid), full on desktop
+        this._normalBuffer = createNormalBuffer(this);
+        if (this._fogPipeline && this._normalBuffer) {
+            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
         }
     }
 

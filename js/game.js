@@ -224,14 +224,11 @@ class GameScene extends Phaser.Scene {
         this._setLoadProgress(85, 'Setting up fog of war...');
         // --- Fog of War (WebGL shader pipeline) ---
         this._fogPipeline = setupFogPipeline(this);
-        // Normal buffer for per-pixel directional lighting (desktop only)
-        const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
-        if (!isMobile) {
-            this._normalBuffer = createNormalBuffer(this);
-            this._normalTimer = 0;
-            if (this._fogPipeline && this._normalBuffer) {
-                bindNormalBuffer(this._fogPipeline, this._normalBuffer);
-            }
+        // Normal buffer — full-size on desktop, 1x1 on mobile (keeps GPU sampler valid)
+        this._normalBuffer = createNormalBuffer(this);
+        this._normalTimer = 0;
+        if (this._fogPipeline && this._normalBuffer) {
+            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
         }
 
         // --- Fire particles ---

@@ -442,12 +442,16 @@ function updateFogLights(pipeline, scene, lights, normalStrength) {
 // --------------------------------------------------------
 
 // Create a normal buffer RenderTexture for a scene
+// On mobile: 1x1 pixel (just to keep the sampler valid — some GPUs
+// sample uNormalSampler even inside if(false) branches)
 function createNormalBuffer(scene) {
-    const w = scene.scale.width;
-    const h = scene.scale.height;
+    const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
+    const w = isMobile ? 1 : scene.scale.width;
+    const h = isMobile ? 1 : scene.scale.height;
     const rt = scene.make.renderTexture({ x: 0, y: 0, width: w, height: h, add: false });
-    rt.fill(0x8080FF);
+    rt.fill(0x8080FF); // default flat normal (128,128,255) = vec3(0,0,1)
     rt._scale = 1;
+    rt._ready = true; // 1x1 is always ready
     return rt;
 }
 
