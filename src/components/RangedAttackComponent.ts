@@ -54,92 +54,113 @@ export class RangedAttackComponent extends ex.Component {
     });
     proj.entityType = 'projectile';
 
+    const projType = this.projectileType;
+
     if (ismagic) {
-      // Magic orb — larger, glowing purple with inner bright core
-      proj.graphics.use(new ex.Circle({
-        radius: 5,
-        color: ex.Color.fromHex('#9933DD'),
-      }));
-      // Inner bright core
-      const core = new ex.Actor({
-        pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5),
-      });
-      core.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromHex('#DDAAFF') }));
+      // Magic orb — bright pulsing core + outer glow (matches original)
+      proj.graphics.use(new ex.Circle({ radius: 5, color: ex.Color.fromHex('#AA44FF') }));
+      // Bright inner core
+      const core = new ex.Actor({ pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5) });
+      core.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromHex('#FFDDFF') }));
       core.z = 101;
       scene.add(core);
-      // Core follows projectile
+      // Outer glow halo
+      const glow = new ex.Actor({ pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5) });
+      glow.graphics.use(new ex.Circle({ radius: 10, color: ex.Color.fromRGB(170, 68, 255, 0.15) }));
+      glow.z = 99;
+      scene.add(glow);
+      // Pulsing scale (like original tweens)
+      let pulseT = 0;
       proj.on('preupdate', () => {
+        pulseT += 0.15;
+        const s = 1.0 + Math.sin(pulseT) * 0.3;
+        proj.scale = ex.vec(s, s);
         core.pos = proj.pos.clone();
-        if (proj.isKilled()) core.kill();
+        glow.pos = proj.pos.clone();
+        glow.graphics.opacity = 0.15 + Math.sin(pulseT * 1.5) * 0.1;
+        if (proj.isKilled()) { core.kill(); glow.kill(); }
       });
     } else {
-      // Arrow — elongated rectangle that rotates with direction
-      proj.graphics.use(new ex.Rectangle({
-        width: 8, height: 2,
-        color: ex.Color.fromHex('#DDBB44'),
-      }));
+      // Arrow — rotated line with arrowhead shape
+      proj.graphics.use(new ex.Rectangle({ width: 8, height: 2, color: ex.Color.fromHex('#FFCC88') }));
       proj.rotation = Math.atan2(dir.y, dir.x);
     }
 
     proj.vel = dir.scale(this.projectileSpeed);
     proj.z = 100;
 
-    // Trail particles
-    const projType = this.projectileType;
+    // Trailing particles (matches original: follow proj, tinted, shrinking)
     let trailTimer = 0;
-    proj.on('preupdate', (_evt: any) => {
+    proj.on('preupdate', () => {
       if (!proj.scene) return;
-      trailTimer += 16; // approximate frame time
-      if (trailTimer > (projType === 'magic' ? 30 : 50)) {
+      trailTimer += 16;
+      const freq = ismagic ? 30 : 50;
+      if (trailTimer > freq) {
         trailTimer = 0;
-        const colors = projType === 'magic'
-          ? ['#AA44FF', '#CC66FF', '#8822DD', '#DD88FF']
-          : ['#CCAA44', '#AA8833'];
-        const trail = new ex.Actor({
-          pos: proj.pos.clone(), anchor: ex.vec(0.5, 0.5),
-        });
-        const sz = projType === 'magic' ? 2 + Math.random() * 3 : 1;
-        trail.graphics.use(new ex.Circle({ radius: sz,
-          color: ex.Color.fromHex(colors[Math.floor(Math.random() * colors.length)]) }));
-        trail.graphics.opacity = 0.6;
+        const tints = ismagic
+          ? ['#AA44FF', '#8800FF', '#DD88FF']  // original magic tints
+          : ['#FFCC88', '#AA8855', '#FF8844']; // original arrow tints
+        // Main trail particle — circle that shrinks and fades
+        const trail = new ex.Actor({ pos: proj.pos.clone(), anchor: ex.vec(0.5, 0.5) });
+        const startSize = ismagic ? 3 + Math.random() * 2 : 2 + Math.random();
+        trail.graphics.use(new ex.Circle({ radius: startSize,
+          color: ex.Color.fromHex(tints[Math.floor(Math.random() * tints.length)]) }));
+        trail.graphics.opacity = 0.8;
         trail.z = proj.z - 0.1;
-        trail.vel = ex.vec((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15);
-        trail.actions.fade(0, projType === 'magic' ? 250 : 120).die();
+        trail.vel = ex.vec((Math.random() - 0.5) * (ismagic ? 20 : 8),
+                           (Math.random() - 0.5) * (ismagic ? 20 : 8));
+        // Shrink + fade (like original scale start→0, alpha start→0)
+        const life = ismagic ? 400 : 200;
+        trail.actions.scaleTo(ex.vec(0.1, 0.1), ex.vec(2, 2)).die();
+        trail.actions.fade(0, life);
         proj.scene.add(trail);
 
-        // Magic sparks
-        if (projType === 'magic' && Math.random() < 0.4) {
-          const spark = new ex.Actor({
-            pos: proj.pos.add(ex.vec((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 10)),
-            anchor: ex.vec(0.5, 0.5),
-          });
-          spark.graphics.use(new ex.Rectangle({ width: 1, height: 1, color: ex.Color.fromHex('#FFAAFF') }));
-          spark.z = proj.z + 0.1;
-          spark.vel = ex.vec((Math.random() - 0.5) * 50, (Math.random() - 0.5) * 50);
-          spark.actions.fade(0, 100).die();
-          proj.scene.add(spark);
+        // Extra magic particles (quantity: 2 in original)
+        if (ismagic) {
+          const extra = new ex.Actor({ pos: proj.pos.clone(), anchor: ex.vec(0.5, 0.5) });
+          extra.graphics.use(new ex.Circle({ radius: 1 + Math.random() * 2,
+            color: ex.Color.fromHex(tints[Math.floor(Math.random() * tints.length)]) }));
+          extra.graphics.opacity = 0.6;
+          extra.z = proj.z - 0.2;
+          extra.vel = ex.vec((Math.random() - 0.5) * 15, (Math.random() - 0.5) * 15);
+          extra.actions.fade(0, 300).die();
+          proj.scene.add(extra);
         }
       }
     });
 
-    // Impact explosion
+    // Impact explosion (matches original's expanding splash)
     const spawnImpact = (pos: ex.Vector) => {
       if (!proj.scene) return;
+      const scn = proj.scene;
+
+      if (ismagic) {
+        // Expanding AOE circle (like original's splash with blendMode ADD)
+        const splash = new ex.Actor({ pos: pos.clone(), anchor: ex.vec(0.5, 0.5) });
+        splash.graphics.use(new ex.Circle({ radius: 20, color: ex.Color.fromRGB(170, 68, 255, 0.4) }));
+        splash.z = 102;
+        splash.actions.scaleTo(ex.vec(2.5, 2.5), ex.vec(5, 5));
+        splash.actions.fade(0, 380).die();
+        scn.add(splash);
+      }
+
+      // Burst particles
       const impactColors = ismagic
-        ? ['#AA44FF', '#CC66FF', '#FF88FF', '#DDAAFF']
-        : ['#FFAA44', '#FFDD44', '#FF8800'];
-      for (let i = 0; i < (ismagic ? 8 : 4); i++) {
-        const p = new ex.Actor({
-          pos: pos.add(ex.vec((Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4)),
-          anchor: ex.vec(0.5, 0.5),
-        });
-        const sz = ismagic ? 2 + Math.random() * 4 : 1 + Math.random() * 2;
+        ? ['#AA44FF', '#CC66FF', '#FF88FF', '#DDAAFF', '#8800FF']
+        : ['#FFCC88', '#FF8844', '#FFAA44'];
+      const count = ismagic ? 12 : 5;
+      for (let i = 0; i < count; i++) {
+        const angle = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+        const spd = 30 + Math.random() * (ismagic ? 60 : 30);
+        const p = new ex.Actor({ pos: pos.clone(), anchor: ex.vec(0.5, 0.5) });
+        const sz = ismagic ? 2 + Math.random() * 3 : 1 + Math.random();
         p.graphics.use(new ex.Circle({ radius: sz,
           color: ex.Color.fromHex(impactColors[Math.floor(Math.random() * impactColors.length)]) }));
-        p.z = 102;
-        p.vel = ex.vec((Math.random() - 0.5) * 80, (Math.random() - 0.5) * 80);
+        p.z = 103;
+        p.vel = ex.vec(Math.cos(angle) * spd, Math.sin(angle) * spd);
+        p.actions.scaleTo(ex.vec(0.1, 0.1), ex.vec(3, 3));
         p.actions.fade(0, 200 + Math.random() * 200).die();
-        proj.scene.add(p);
+        scn.add(p);
       }
     };
 
