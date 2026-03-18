@@ -124,18 +124,18 @@ export class AssetLoader {
   // Map of which directions actually exist for each enemy animation
   // (MCP generates partial directions — not always all 8)
   private static readonly ANIM_DIRS: Record<string, string[]> = {
-    'SHADOW_WISP:walking':     ['south', 'south-west', 'west'],
-    'SHADOW_WISP:cross-punch': ['south', 'south-west', 'west', 'north', 'north-west'],
-    'SHADOW_BEAST:walking':    ['south', 'south-west', 'north-west'],
-    'SHADOW_BEAST:cross-punch':['south', 'south-west', 'west', 'north', 'north-west'],
-    'SHADOW_LORD:walking':     ['south', 'south-west', 'north-west'],
-    'SHADOW_LORD:cross-punch': ['south', 'south-west', 'west', 'north-west'],
-    'FOG_CRAWLER:walking':     ['east', 'north', 'west'],
-    'FOG_CRAWLER:cross-punch': ['south', 'east', 'north', 'north-west'],
-    'SHADOW_ARCHER:walking':   ['south', 'south-west', 'west', 'east', 'north-east'],
+    'SHADOW_WISP:walking':     ['south', 'south-west', 'south-east', 'west', 'east', 'north', 'north-east', 'north-west'],
+    'SHADOW_WISP:cross-punch': ['south', 'south-west', 'south-east', 'west', 'north', 'north-east', 'north-west'],
+    'SHADOW_BEAST:walking':    ['south', 'south-west', 'south-east', 'west', 'east', 'north-east', 'north-west'],
+    'SHADOW_BEAST:cross-punch':['south', 'south-west', 'south-east', 'west', 'east', 'north', 'north-east', 'north-west'],
+    'SHADOW_LORD:walking':     ['south', 'south-west', 'south-east', 'east', 'north-east', 'north-west'],
+    'SHADOW_LORD:cross-punch': ['south', 'south-west', 'west', 'east', 'north-east', 'north-west'],
+    'FOG_CRAWLER:walking':     ['south', 'south-west', 'south-east', 'west', 'east', 'north'],
+    'FOG_CRAWLER:cross-punch': ['south', 'south-east', 'east', 'north', 'north-east', 'north-west'],
+    'SHADOW_ARCHER:walking':   ['south', 'south-west', 'south-east', 'west', 'east', 'north-east', 'north-west'],
     'SHADOW_ARCHER:fireball':  ['south', 'south-west', 'west', 'north-east'],
-    'VOID_MAGE:walking':       ['south', 'south-west', 'west', 'north', 'north-west'],
-    'VOID_MAGE:fireball':      ['south-west', 'north', 'north-west'],
+    'VOID_MAGE:walking':       ['south', 'south-west', 'south-east', 'west', 'east', 'north', 'north-east', 'north-west'],
+    'VOID_MAGE:fireball':      ['south-west', 'east', 'north', 'north-east', 'north-west'],
   };
 
   // Mirror map: if a direction doesn't exist, use the closest available
