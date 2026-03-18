@@ -2,7 +2,11 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.21.2';
+const GAME_VERSION = '0.22.0';
+
+// Localhost dev mode — boosted resources and damage for testing
+const IS_DEV = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+const DEV_MULT = IS_DEV ? 10 : 1;
 
 const CONFIG = {
     // World
@@ -26,7 +30,7 @@ const CONFIG = {
     STONE_HITS: 4,
     METAL_PER_DEPOSIT: 2,
     METAL_HITS: 5,
-    FUEL_PER_WOOD: 15,
+    FUEL_PER_WOOD: IS_DEV ? 150 : 15,
 
     // Enemies
     SPAWN_INTERVAL: 14000,
@@ -85,6 +89,9 @@ const WEAPONS = {
     IRON_SWORD:   { name: 'Iron Sword',   damage: 30, range: 60, speed: 400, tier: 2, color: 0xC0C0C0, cost: { wood: 5, stone: 10, metal: 8 }, spriteFrame: 12, attackType: 'swing',  arcDeg: 115 },
     FLAME_BLADE:  { name: 'Flame Blade',  damage: 38, range: 65, speed: 350, tier: 3, color: 0xFF6600, shadowBonus: 1.5, cost: { wood: 5, stone: 5, metal: 15 }, spriteFrame: 68, attackType: 'swing',  arcDeg: 115 },
 };
+
+// Dev mode: 10x weapon damage
+if (IS_DEV) { for (const w of Object.values(WEAPONS)) w.damage *= 10; }
 
 const ENEMIES = {
     SHADOW_WISP:    { name: 'Shadow Wisp',    hp: 14,  damage: 5,  speed: 104, xp: 5,  size: 12, color: 0x4444AA, gold: 1 },
@@ -171,7 +178,9 @@ const OBJECTIVES_PER_SESSION = 4;
 function createGameState() {
     return {
         hp: CONFIG.PLAYER_MAX_HP,
-        resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
+        resources: IS_DEV
+            ? { wood: 1000, stone: 1000, metal: 1000, gold: 1000 }
+            : { wood: 5, stone: 0, metal: 0, gold: 0 },
         fuelAdded: 0,        // cumulative wood put into fire
         fireLevel: 1,        // current fire camp level
         weapon: 'WOODEN_CLUB',

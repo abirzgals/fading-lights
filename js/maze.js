@@ -575,6 +575,11 @@ class MazeScene extends Phaser.Scene {
     _initTorchLight(worldW, worldH) {
         // WebGL fog shader pipeline (shared with overworld)
         this._fogPipeline = setupFogPipeline(this);
+        // Normal buffer for dungeon objects
+        this._normalBuffer = createNormalBuffer(this);
+        if (this._fogPipeline && this._normalBuffer) {
+            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
+        }
     }
 
     _updateTorchLight() {
@@ -607,9 +612,12 @@ class MazeScene extends Phaser.Scene {
                 tintR: 1.0, tintG: 0.55, tintB: 0.2, tintA: 0.15 });
         }
 
-        // Wall torches
+        // Wall torches — with elliptical wobble
         for (const torch of this._wallTorches) {
-            const ws = toScreen(torch.x, torch.y);
+            const seed = torch.x * 5.7 + torch.y * 11.3;
+            const wobX = Math.sin(t * 0.004 + seed) * 3 + Math.sin(t * 0.009 + seed * 0.6) * 1.5;
+            const wobY = Math.cos(t * 0.005 + seed * 1.2) * 2 + Math.cos(t * 0.011 + seed * 0.4) * 1;
+            const ws = toScreen(torch.x + wobX, torch.y + wobY);
             if (ws.x < -100 || ws.x > this.scale.width + 100 || ws.y < -100 || ws.y > this.scale.height + 100) continue;
             const tFlicker = 1.0 + Math.sin(t * 0.012 + torch.x) * 0.06;
             lights.push({ sx: ws.x, sy: ws.y, radius: 65 * tFlicker,
@@ -617,7 +625,7 @@ class MazeScene extends Phaser.Scene {
                 tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.18 });
         }
 
-        updateFogLights(this._fogPipeline, this, lights);
+        updateFogLights(this._fogPipeline, this, lights, 10.0);
     }
 
     // ----------------------------------------------------------
@@ -721,9 +729,8 @@ class MazeScene extends Phaser.Scene {
         // --- Enemy AI ---
         this._updateEnemies(dt);
 
-        // --- Shadows (player is light source) ---
-        this._shadowTimer += delta;
-        if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateMazeShadows(); }
+        // --- Shadows every frame (texture shadows are cheap) ---
+        this._updateMazeShadows();
 
         // --- Heart pickups on ground ---
         this.children.each(child => {
@@ -948,50 +955,40 @@ class MazeScene extends Phaser.Scene {
     }
 
     _updateMazeShadows() {
-        const g = this._shadowGfx;
-        if (!g) return;
-        g.clear();
-        const p = this.player;
-        const lightX = p.x, lightY = p.y;
-        const TORCH_R = 145; // matches torch light radius
-
-        const cam = this.cameras.main;
-        const m = 80;
-        const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
-        const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
-
-        const drawShadow = (baseX, baseY, objW, objH) => {
-            if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
-            const dx = baseX - lightX, dy = baseY - lightY;
-            const dist = Math.sqrt(dx * dx + dy * dy);
-            if (dist < 4 || dist > TORCH_R) return;
-            const angle = Math.atan2(dy, dx);
-            const shadowLen = Math.min(objH * 1.0, objH * 300 / dist);
-            const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
-            const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
-            const alpha = Math.max(0.04, 0.35 * (1 - dist / TORCH_R));
-            const halfW = objW * 0.3, halfH = shadowLen * 0.5;
-            const cos = Math.cos(angle), sin = Math.sin(angle);
-            const pts = [];
-            for (let i = 0; i < 12; i++) {
-                const t = (i / 12) * Math.PI * 2;
-                const ex = Math.cos(t) * halfW, ey = Math.sin(t) * halfH;
-                pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
-            }
-            g.fillStyle(0x000000, alpha);
-            g.beginPath();
-            g.moveTo(pts[0], pts[1]);
-            for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
-            g.closePath();
-            g.fillPath();
-        };
-
-        // Enemies cast shadows from the player's torch light
-        for (const e of this.mazeEnemies.children.entries) {
-            if (!e.active) continue;
-            const sz = e.getData('size') || 14;
-            drawShadow(e.x, e.y + sz * 0.3, sz * 1.2, sz * 1.5);
+        // Light sources: player torch + wall torches + remote players
+        const t = this.time.now;
+        const lights = [];
+        const r = this._torchRadius || 145;
+        lights.push({ x: this.player.x, y: this.player.y, radius: r });
+        for (const torch of this._wallTorches) {
+            // Same wobble as fog lighting for consistent shadows
+            const seed = torch.x * 5.7 + torch.y * 11.3;
+            const wobX = Math.sin(t * 0.004 + seed) * 3 + Math.sin(t * 0.009 + seed * 0.6) * 1.5;
+            const wobY = Math.cos(t * 0.005 + seed * 1.2) * 2 + Math.cos(t * 0.011 + seed * 0.4) * 1;
+            lights.push({ x: torch.x + wobX, y: torch.y + wobY, radius: 65 });
         }
+        for (const [, remote] of this.remotePlayers) {
+            if (!remote.sprite || !remote.sprite.active) continue;
+            lights.push({ x: remote.sprite.x, y: remote.sprite.y, radius: r });
+        }
+
+        // Collect remote player sprites for texture shadows
+        const remoteSprites = [];
+        for (const [, remote] of this.remotePlayers) {
+            if (remote.sprite && remote.sprite.active) remoteSprites.push(remote.sprite);
+        }
+
+        // Boss sprite if alive
+        const sprites = [this.player, ...remoteSprites];
+        if (this._boss && this._boss.active) sprites.push(this._boss);
+
+        updateAllShadows(this, {
+            lights,
+            sprites,
+            groups: [this.mazeEnemies],
+            graphics: this._shadowGfx,
+            statics: [],
+        });
     }
 
     _drawEnemyHpBars() {
@@ -1107,6 +1104,7 @@ class MazeScene extends Phaser.Scene {
             if (e === this._boss) {
                 this._onBossDeath(e);
             }
+            if (e._shadow) { e._shadow.destroy(); e._shadow = null; }
             e.destroy();
         }
     }
@@ -1524,12 +1522,10 @@ class MazeScene extends Phaser.Scene {
         const cy = this.cameras.main.height / 2;
 
         const lines = [
-            { y: cy - 70, text: '✨  THE ARTIFACT IS YOURS  ✨',      color: '#FFD700', size: '20px' },
-            { y: cy - 30, text: 'Deep beneath the ruined lair,',       color: '#FFEEAA', size: '12px' },
-            { y: cy - 12, text: 'you have claimed what the darkness',   color: '#FFEEAA', size: '12px' },
-            { y: cy +  6, text: 'sought to bury forever.',             color: '#FFEEAA', size: '12px' },
-            { y: cy + 32, text: `${this._killCount} creatures slain · The light endures.`, color: '#CC88FF', size: '10px' },
-            { y: cy + 56, text: 'G A M E   C O M P L E T E',         color: '#88CCFF', size: '14px' },
+            { y: cy - 40, text: '✨  THE SUN IS FREED  ✨',            color: '#FFD700', size: '20px' },
+            { y: cy,      text: 'You found the sun and returned it to the sky.',  color: '#FFEEAA', size: '12px' },
+            { y: cy + 28, text: `${this._killCount} creatures slain · The light endures.`, color: '#CC88FF', size: '10px' },
+            { y: cy + 52, text: 'G A M E   C O M P L E T E',         color: '#88CCFF', size: '14px' },
         ];
 
         const texts = lines.map(l => this.add.text(cx, l.y, l.text, {
@@ -1561,11 +1557,8 @@ class MazeScene extends Phaser.Scene {
                             text-shadow: 0 0 20px rgba(255,200,0,0.5);">
                     ✨ VICTORY ✨
                 </div>
-                <div style="color: #FFEEAA; font-size: 13px; margin-bottom: 8px;">
-                    The Ancient Artifact is yours.
-                </div>
-                <div style="color: #CC88FF; font-size: 11px; margin-bottom: 24px;">
-                    ${this._killCount} creatures slain · Survived ${Math.floor(gameState.time)}s
+                <div style="color: #FFEEAA; font-size: 13px; margin-bottom: 24px;">
+                    The sun rises once more. · ${this._killCount} slain · ${Math.floor(gameState.time)}s
                 </div>
                 <button style="padding: 12px 40px; background: rgba(255,200,0,0.2);
                     border: 1px solid rgba(255,200,0,0.5); border-radius: 8px;

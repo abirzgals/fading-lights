@@ -224,6 +224,12 @@ class GameScene extends Phaser.Scene {
         this._setLoadProgress(85, 'Setting up fog of war...');
         // --- Fog of War (WebGL shader pipeline) ---
         this._fogPipeline = setupFogPipeline(this);
+        // Normal buffer for per-pixel directional lighting
+        this._normalBuffer = createNormalBuffer(this);
+        this._normalTimer = 0;
+        if (this._fogPipeline && this._normalBuffer) {
+            bindNormalBuffer(this._fogPipeline, this._normalBuffer);
+        }
 
         // --- Fire particles ---
         // (created per bonfire in createBonfire)
@@ -336,6 +342,14 @@ class GameScene extends Phaser.Scene {
             audioEngine.stopFootsteps();
             if (network.peerCount > 0) network.broadcastReliable({ t: 'lv', scene: 'MazeScene' });
             this.scene.start('MazeScene');
+        });
+        // --- Toggle physics debug bodies (C key) — works on localhost always ---
+        this.input.keyboard.on('keydown-C', () => {
+            if ((!window._debugMode && !IS_DEV) || this._chatOpen) return;
+            this.physics.world.drawDebug = !this.physics.world.drawDebug;
+            if (!this.physics.world.drawDebug) this.physics.world.debugGraphic.clear();
+            this.showFloatingText(this.player.x, this.player.y - 30,
+                this.physics.world.drawDebug ? 'COLLIDERS ON' : 'COLLIDERS OFF', '#00FF88');
         });
         // --- Spawn Shadow Mind (Groq AI enemy) for testing ---
         this.input.keyboard.on('keydown-N', () => {
@@ -963,6 +977,7 @@ class GameScene extends Phaser.Scene {
                 }
                 if (nearRock) {
                     this._occupiedTiles.delete(`${ttx},${tty}`);
+                    if (tree._shadow) { tree._shadow.destroy(); tree._shadow = null; }
                     tree.destroy();
                 }
             }
@@ -1016,6 +1031,7 @@ class GameScene extends Phaser.Scene {
             const dx = stone.x - this._secondCampWorldX;
             const dy = stone.y - this._secondCampWorldY;
             if (dx * dx + dy * dy < (5 * T) * (5 * T)) {
+                if (stone._shadow) { stone._shadow.destroy(); stone._shadow = null; }
                 stone.destroy();
             }
         }
@@ -1108,7 +1124,8 @@ class GameScene extends Phaser.Scene {
                     const tty = Math.floor(tree.y / T);
                     if (Math.abs(ttx - tpx) <= 2 && Math.abs(tty - tpy) <= 2) {
                         this._occupiedTiles.delete(`${ttx},${tty}`);
-                        tree.destroy();
+                        if (tree._shadow) { tree._shadow.destroy(); tree._shadow = null; }
+                    tree.destroy();
                     }
                 }
                 for (const stone of [...this.stones.children.entries]) {
@@ -1116,7 +1133,8 @@ class GameScene extends Phaser.Scene {
                     const sty = Math.floor(stone.y / T);
                     if (Math.abs(stx - tpx) <= 2 && Math.abs(sty - tpy) <= 2) {
                         this._occupiedTiles.delete(`${stx},${sty}`);
-                        stone.destroy();
+                        if (stone._shadow) { stone._shadow.destroy(); stone._shadow = null; }
+                stone.destroy();
                     }
                 }
             }
@@ -1661,20 +1679,11 @@ class GameScene extends Phaser.Scene {
             'font-family:monospace;color:#fff;text-align:center;',
         ].join('');
         overlay.innerHTML = `
-            <div style="color:#FFD700;font-size:1.8em;margin-bottom:18px;letter-spacing:2px;">— THE LAIR IS BROKEN —</div>
-            <div style="color:#FFEECC;font-size:1em;margin-bottom:8px;max-width:540px;line-height:1.7em;">
-                From the smoldering ruins of the Shadow Lair you wrench a burning torch —<br>
-                ancient, eternal, untouched by the dark.
+            <div style="color:#FFD700;font-size:1.8em;margin-bottom:24px;letter-spacing:2px;">— THE LAIR IS BROKEN —</div>
+            <div style="color:#FFEECC;font-size:1.1em;margin-bottom:32px;max-width:540px;line-height:1.7em;">
+                The darkness stole the sun. Time to go down and take it back.
             </div>
-            <div style="color:#FFDDAA;font-size:1em;margin-bottom:8px;max-width:540px;line-height:1.7em;">
-                But the lair had a belly. Deeper passages, sealed for centuries,<br>
-                where the shadow once hoarded its power — and its <em style="color:#FFD700">treasures</em>.
-            </div>
-            <div style="color:#CCAAFF;font-size:1em;margin-bottom:24px;max-width:540px;line-height:1.7em;">
-                You descend, torch in hand, into stone corridors that have not known<br>
-                light since before your world was born. Something still moves down there.
-            </div>
-            <div style="color:#88CCFF;font-size:1.5em;letter-spacing:3px;margin-top:10px;
+            <div style="color:#88CCFF;font-size:1.5em;letter-spacing:3px;
                         animation: pulse 2s ease-in-out infinite; cursor:pointer;">
                 ⚡  Click to descend  ⚡
             </div>
@@ -2158,9 +2167,21 @@ class GameScene extends Phaser.Scene {
         this._updateChatBubbles();
         this.updateNetwork(dt);
         this._updateTreeSway(time);
-        // Throttle shadows to ~15fps
+        // Texture shadows every frame (cheap — just sprite repositioning)
+        this._updateShadows(false);
+        // Tree shadows throttled to ~15fps
         this._shadowTimer += delta;
-        if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateShadows(); }
+        if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateShadows(true); }
+        // Normal buffer throttled to ~30fps (half-res reduces draw cost)
+        this._normalTimer += delta;
+        if (this._normalTimer > 33 && this._normalBuffer) {
+            this._normalTimer = 0;
+            const objs = [];
+            for (const t of this.trees.children.entries) if (t.active) objs.push(t);
+            for (const s of this.stones.children.entries) if (s.active) objs.push(s);
+            for (const m of this.metals.children.entries) if (m.active) objs.push(m);
+            updateNormalBuffer(this._normalBuffer, this, objs);
+        }
         this.updateDepthSort();
         this._drawDebug();
     }
@@ -2168,108 +2189,37 @@ class GameScene extends Phaser.Scene {
     // --------------------------------------------------------
     // Y-based depth sorting — sprites lower on screen drawn in front
     // --------------------------------------------------------
-    _updateShadows() {
-        const g = this._shadowGfx;
-        if (!g) return;
-        g.clear();
-
-        const cam = this.cameras.main;
-        const m = 100;
-        const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
-        const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
-
-        // Find nearest lit bonfire to camera center for shadow direction
-        const camCX = cam.scrollX + cam.width * 0.5;
-        const camCY = cam.scrollY + cam.height * 0.5;
-        let lightX = camCX, lightY = camCY;
-        let lightDist = Infinity;
-        for (const bf of this.bonfires) {
-            if (!bf.getData('lit')) continue;
-            const d = Phaser.Math.Distance.Between(camCX, camCY, bf.x, bf.y);
-            if (d < lightDist) { lightDist = d; lightX = bf.x; lightY = bf.y; }
-        }
-
-        // Build list of active light sources with their radii
+    _updateShadows(includeStatics) {
+        // Build light sources — same wobble as fog for consistent shadow movement
+        const t = this.time.now;
         const lights = [];
         for (const bf of this.bonfires) {
             if (!bf.getData('lit')) continue;
-            lights.push({ x: bf.x, y: bf.y, r: this.getLightRadius(bf) });
+            const seed = bf.x * 7.3 + bf.y * 13.1;
+            const wobbleX = Math.sin(t * 0.003 + seed) * 4 + Math.sin(t * 0.007 + seed * 0.5) * 2;
+            const wobbleY = Math.cos(t * 0.004 + seed * 1.3) * 3 + Math.cos(t * 0.009 + seed * 0.7) * 1.5;
+            lights.push({ x: bf.x + wobbleX, y: bf.y + wobbleY, radius: this.getLightRadius(bf) });
         }
-        // Also include outpost buildings (they extend light)
         for (const b of this.buildingsGroup.children.entries) {
             if (!b.active || b.getData('type') !== 'outpost') continue;
-            lights.push({ x: b.x, y: b.y, r: 120 });
+            lights.push({ x: b.x, y: b.y, radius: 120 });
         }
-        if (lights.length === 0) return;
+        if (lights.length === 0) { if (this._shadowGfx) this._shadowGfx.clear(); return; }
 
-        // Find nearest light to an object and check if within range
-        const findLight = (ox, oy) => {
-            let best = null, bestD = Infinity;
-            for (const l of lights) {
-                const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
-                if (d < l.r && d < bestD) { best = l; bestD = d; }
-            }
-            return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.r } : null;
-        };
-
-        // Draw a rotated ellipse shadow stretched away from the light source
-        const drawShadow = (baseX, baseY, objW, objH) => {
-            if (baseX < cl || baseX > cr || baseY < ct || baseY > cb) return;
-            const light = findLight(baseX, baseY);
-            if (!light) return; // outside all light radii — no shadow
-
-            const dx = baseX - light.lx;
-            const dy = baseY - light.ly;
-            const dist = light.dist;
-            if (dist < 2) return;
-
-            const angle = Math.atan2(dy, dx);
-            // Shadow length: longer near light, fades at edge of radius
-            const shadowLen = Math.min(objH * 1.2, objH * 400 / dist);
-            const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
-            const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
-            // Fade shadow as object approaches edge of light radius
-            const edgeFade = 1 - (dist / light.radius);
-            const alpha = Math.max(0.04, 0.3 * edgeFade);
-
-            const halfW = objW * 0.3;
-            const halfH = shadowLen * 0.5;
-            const cos = Math.cos(angle);
-            const sin = Math.sin(angle);
-            const pts = [];
-            for (let i = 0; i < 16; i++) {
-                const t = (i / 16) * Math.PI * 2;
-                const ex = Math.cos(t) * halfW;
-                const ey = Math.sin(t) * halfH;
-                pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
-            }
-            g.fillStyle(0x000000, alpha);
-            g.beginPath();
-            g.moveTo(pts[0], pts[1]);
-            for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
-            g.closePath();
-            g.fillPath();
-        };
-
-        // Trees
-        for (const tree of this.trees.children.entries) {
-            if (!tree.active) continue;
-            drawShadow(tree.x, tree.y, tree.width || 48, tree.height || 64);
+        // Collect remote player sprites
+        const sprites = [this.player];
+        for (const [, rp] of this.remotePlayers) {
+            if (rp.sprite && rp.sprite.active) sprites.push(rp.sprite);
         }
-        // Player
-        const p = this.player;
-        drawShadow(p.x, p.y + (p.height || 48) * 0.3, 20, 32);
-        // Enemies
-        for (const e of this.enemies.children.entries) {
-            if (!e.active) continue;
-            const sz = e.getData('size') || 14;
-            drawShadow(e.x, e.y + sz * 0.3, sz * 1.2, sz * 1.5);
+
+        const opts = { lights, sprites, groups: [this.enemies, this.allies] };
+
+        // Tree texture shadows only on throttled ticks (cleanup off-screen to save memory)
+        if (includeStatics) {
+            opts.throttledGroups = [this.trees];
         }
-        // Allies
-        for (const a of this.allies.children.entries) {
-            if (!a.active) continue;
-            drawShadow(a.x, a.y + 10, 18, 28);
-        }
+
+        updateAllShadows(this, opts);
     }
 
     _updateTreeSway(time) {
@@ -3047,6 +2997,7 @@ class GameScene extends Phaser.Scene {
                 this._setGridWalkable(ox + dx * T, oy + T * 2);
             }
         }
+        if (obj._shadow) { obj._shadow.destroy(); obj._shadow = null; }
         obj.destroy();
 
         // Track destroyed resources so rejoining players get the right map state
@@ -3192,7 +3143,11 @@ class GameScene extends Phaser.Scene {
         const maxFuel = bonfire.getData('maxFuel');
         if (fuel >= maxFuel) return;
 
-        const spend = Math.min(1, gameState.resources.wood);
+        // Don't waste wood — only spend what's needed to fill
+        const fuelNeeded = maxFuel - fuel;
+        const maxWood = IS_DEV ? 10 : Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD);
+        const spend = Math.min(IS_DEV ? 10 : 1, gameState.resources.wood, maxWood);
+        if (spend <= 0) return;
         gameState.resources.wood -= spend;
         bonfire.setData('fuel', Math.min(maxFuel, fuel + CONFIG.FUEL_PER_WOOD * spend));
         this.showFloatingText(bonfire.x, bonfire.y - 20, `+${spend} FUEL`, '#FF8800');
@@ -3205,9 +3160,9 @@ class GameScene extends Phaser.Scene {
         }
 
         // Track per-camp fuel added and level
-        const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + 1;
+        const campFuelAdded = (bonfire.getData('campFuelAdded') || 0) + spend;
         bonfire.setData('campFuelAdded', campFuelAdded);
-        this._trackObjective('fuel_added', 1);
+        this._trackObjective('fuel_added', spend);
         if (bonfire.getData('isMain')) gameState.fuelAdded = campFuelAdded;
 
         // Check fire level up
@@ -3264,17 +3219,22 @@ class GameScene extends Phaser.Scene {
     updateFogOfWar() {
         if (!this._fogPipeline) return;
         const cam = this.cameras.main;
+        const t = this.time.now;
         const toScreen = (wx, wy) => ({
             x: (wx - cam.scrollX) * cam.zoom,
             y: (wy - cam.scrollY) * cam.zoom,
         });
         const lights = [];
 
-        // Bonfires
+        // Bonfires — light point wobbles in elliptical pattern for life-like flickering
         for (const bonfire of this.bonfires) {
             const radius = this.getLightRadius(bonfire);
             if (radius <= 0) continue;
-            const s = toScreen(bonfire.x, bonfire.y);
+            // Elliptical wobble: unique per bonfire using position as seed
+            const seed = bonfire.x * 7.3 + bonfire.y * 13.1;
+            const wobbleX = Math.sin(t * 0.003 + seed) * 4 + Math.sin(t * 0.007 + seed * 0.5) * 2;
+            const wobbleY = Math.cos(t * 0.004 + seed * 1.3) * 3 + Math.cos(t * 0.009 + seed * 0.7) * 1.5;
+            const s = toScreen(bonfire.x + wobbleX, bonfire.y + wobbleY);
             lights.push({ sx: s.x, sy: s.y, radius,
                 intensity: 1.0, softness: 0.5,
                 tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12 });
@@ -3295,7 +3255,7 @@ class GameScene extends Phaser.Scene {
                 tintR: 0, tintG: 0, tintB: 0, tintA: 0 });
         }
 
-        updateFogLights(this._fogPipeline, this, lights);
+        updateFogLights(this._fogPipeline, this, lights, 8.0);
     }
 
     // --------------------------------------------------------
@@ -4774,6 +4734,8 @@ class GameScene extends Phaser.Scene {
         // Clean up Groq debug label if present
         const groqLabel = enemy.getData('groqLabel');
         if (groqLabel) groqLabel.destroy();
+        // Clean up texture shadow
+        if (enemy._shadow) { enemy._shadow.destroy(); enemy._shadow = null; }
 
         enemy.destroy();
     }
@@ -4818,6 +4780,7 @@ class GameScene extends Phaser.Scene {
             drop.body.setAllowGravity(false);
         }
 
+        if (enemy._shadow) { enemy._shadow.destroy(); enemy._shadow = null; }
         enemy.destroy();
     }
 

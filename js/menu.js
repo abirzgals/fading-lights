@@ -36,6 +36,17 @@ class MenuScene extends Phaser.Scene {
         this.load.image('tree_oak', 'assets/pixelart/tree_oak.png');
         this.load.image('tree_dead', 'assets/pixelart/tree_dead.png');
         this.load.image('tree_birch', 'assets/pixelart/tree_birch.png');
+        // Normal maps for per-pixel directional lighting
+        this.load.image('dark_tree_n', 'assets/normals/dark-tree_n.png');
+        this.load.image('tree_pine_n', 'assets/normals/tree_pine_n.png');
+        this.load.image('tree_oak_n', 'assets/normals/tree_oak_n.png');
+        this.load.image('tree_dead_n', 'assets/normals/tree_dead_n.png');
+        this.load.image('tree_birch_n', 'assets/normals/tree_birch_n.png');
+        this.load.image('pa_stone_n', 'assets/normals/stone_deposit_n.png');
+        this.load.image('pa_metal_n', 'assets/normals/metal_ore_n.png');
+        this.load.image('dungeon_pillar_n', 'assets/normals/pillar_n.png');
+        this.load.image('dungeon_chest_n', 'assets/normals/chest_n.png');
+        this.load.image('dungeon_bones_n', 'assets/normals/bones_n.png');
         this.load.image('pa_stone', 'assets/pixelart/stone_deposit.png');
         this.load.image('pa_metal', 'assets/pixelart/metal_ore.png');
         this.load.image('pa_rock_wall', 'assets/pixelart/rock_wall.png');

@@ -3,6 +3,28 @@
 // ============================================================
 
 // --------------------------------------------------------
+// FPS counter — small overlay in top-right corner
+// --------------------------------------------------------
+(function initFpsCounter() {
+    const el = document.createElement('div');
+    el.id = 'fps-counter';
+    el.style.cssText = 'position:fixed;top:4px;right:8px;color:#8f8;font:bold 11px monospace;z-index:99999;pointer-events:none;opacity:0.7;text-shadow:0 0 2px #000';
+    document.body.appendChild(el);
+    let frames = 0, lastTime = performance.now();
+    const tick = () => {
+        frames++;
+        const now = performance.now();
+        if (now - lastTime >= 1000) {
+            el.textContent = frames + ' fps';
+            frames = 0;
+            lastTime = now;
+        }
+        requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+})();
+
+// --------------------------------------------------------
 // Floating damage/heal text
 // --------------------------------------------------------
 function showFloatingText(scene, x, y, msg, color) {
@@ -66,35 +88,130 @@ function playAttackAnimation(scene, player, weapon) {
 }
 
 // --------------------------------------------------------
-// Shadow casting system
+// Unified Shadow System — texture-based silhouette + ellipse shadows
+// Called from ANY scene with just data, zero scene-specific logic here.
 // --------------------------------------------------------
-function drawDirectionalShadow(g, baseX, baseY, objW, objH, lightX, lightY, lightRadius) {
-    const dx = baseX - lightX, dy = baseY - lightY;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    if (dist < 2 || dist > lightRadius) return;
 
-    const angle = Math.atan2(dy, dx);
-    const shadowLen = Math.min(objH * 1.2, objH * 400 / dist);
-    const cx = baseX + Math.cos(angle) * shadowLen * 0.5;
-    const cy = baseY + Math.sin(angle) * shadowLen * 0.5;
-    const edgeFade = 1 - (dist / lightRadius);
-    const alpha = Math.max(0.04, 0.3 * edgeFade);
+/**
+ * updateAllShadows(scene, opts) — single entry point for all shadow rendering.
+ *
+ * @param {Phaser.Scene} scene
+ * @param {Object} opts
+ * @param {Array<{x,y,radius}>} opts.lights       — active light sources in world coords
+ * @param {Array<Phaser.GameObjects.Sprite>} [opts.sprites]  — individual sprites (player, boss)
+ * @param {Array<Phaser.GameObjects.Group>}  [opts.groups]   — sprite groups (enemies, allies)
+ * @param {Phaser.GameObjects.Graphics}      [opts.graphics] — for ellipse shadows (trees etc)
+ * @param {Array<{x,y,w,h}>}                [opts.statics]  — static objects for ellipse shadows
+ */
+function updateAllShadows(scene, opts) {
+    const lights = opts.lights || [];
+    if (lights.length === 0) return;
 
-    const halfW = objW * 0.3;
-    const halfH = shadowLen * 0.5;
-    const cos = Math.cos(angle), sin = Math.sin(angle);
-    const pts = [];
-    for (let i = 0; i < 16; i++) {
-        const t = (i / 16) * Math.PI * 2;
-        const ex = Math.cos(t) * halfW, ey = Math.sin(t) * halfH;
-        pts.push(cx + ex * -sin + ey * cos, cy + ex * cos + ey * sin);
+    const cam = scene.cameras.main;
+    const m = 100;
+    const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+    const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+
+    // Find nearest light to a position
+    const findLight = (ox, oy) => {
+        let best = null, bestD = Infinity;
+        for (const l of lights) {
+            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
+            if (d < l.radius && d < bestD) { best = l; bestD = d; }
+        }
+        return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.radius } : null;
+    };
+
+    // --- Texture-based shadows for sprites ---
+    // cleanup=true: destroy shadow sprites when off-screen (for large groups like trees)
+    const updateSprite = (sprite, cleanup) => {
+        if (!sprite || !sprite.active) {
+            if (sprite && sprite._shadow) {
+                sprite._shadow.destroy(); sprite._shadow = null;
+            }
+            return;
+        }
+        if (sprite.x < cl || sprite.x > cr || sprite.y < ct || sprite.y > cb) {
+            if (sprite._shadow) {
+                if (cleanup) { sprite._shadow.destroy(); sprite._shadow = null; }
+                else sprite._shadow.setVisible(false);
+            }
+            return;
+        }
+
+        const light = findLight(sprite.x, sprite.y);
+        if (!light) {
+            if (sprite._shadow) sprite._shadow.setVisible(false);
+            return;
+        }
+
+        // Lazy-create shadow sprite on first use
+        if (!sprite._shadow) {
+            const sh = scene.add.sprite(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name);
+            sh.setTint(0x000000);
+            sh.setOrigin(0.5, 1); // anchor at bottom center (feet)
+            sh.setDepth(0.5);
+            sprite._shadow = sh;
+        }
+
+        const shadow = sprite._shadow;
+        // Sync texture & frame
+        const fName = sprite.frame ? sprite.frame.name : undefined;
+        if (shadow.texture.key !== sprite.texture.key || shadow.frame.name !== fName) {
+            shadow.setTexture(sprite.texture.key, fName);
+        }
+        shadow.setFlipX(sprite.flipX);
+        shadow.setFlipY(false);
+
+        const dist = light.dist;
+        if (dist < 3) { shadow.setVisible(false); return; }
+        shadow.setVisible(true);
+
+        // Shadow stretches AWAY from light source
+        const dx = sprite.x - light.lx, dy = sprite.y - light.ly;
+        const angle = Math.atan2(dy, dx);
+        // Shadow length: closer to light = longer shadow
+        const shadowLen = Math.min(1.2, 400 / (dist + 50));
+
+        // Ground contact point — use physics body bottom if available
+        let feetY;
+        if (sprite.body) {
+            // Body bottom edge = actual ground contact
+            feetY = sprite.body.y + sprite.body.height;
+        } else {
+            const sprH = sprite.displayHeight || sprite.height || 48;
+            feetY = sprite.y + sprH * 0.35;
+        }
+
+        // Shadow origin at ground contact, stretching away from light
+        shadow.setPosition(sprite.x, feetY);
+        shadow.setRotation(angle + Math.PI * 0.5); // point away from light
+        shadow.setScale((sprite.scaleX || 1), shadowLen * 0.45);
+
+        // Alpha fades at light edge
+        const edgeFade = 1 - (dist / light.radius);
+        shadow.setAlpha(Math.max(0.05, 0.35 * edgeFade));
+        shadow.setDepth(sprite.depth - 0.1);
+    };
+
+    // Update individual sprites (every frame, no cleanup)
+    if (opts.sprites) {
+        for (const s of opts.sprites) updateSprite(s, false);
     }
-    g.fillStyle(0x000000, alpha);
-    g.beginPath();
-    g.moveTo(pts[0], pts[1]);
-    for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
-    g.closePath();
-    g.fillPath();
+
+    // Update groups — every frame (enemies, allies)
+    if (opts.groups) {
+        for (const group of opts.groups) {
+            for (const s of group.children.entries) updateSprite(s, false);
+        }
+    }
+
+    // Throttled groups — trees etc (cleanup off-screen shadow sprites to save memory)
+    if (opts.throttledGroups) {
+        for (const group of opts.throttledGroups) {
+            for (const s of group.children.entries) updateSprite(s, true);
+        }
+    }
 }
 
 // --------------------------------------------------------
@@ -104,6 +221,7 @@ const FOG_FRAG_SHADER = `
 precision mediump float;
 
 uniform sampler2D uMainSampler;
+uniform sampler2D uNormalSampler;
 varying vec2 outTexCoord;
 
 uniform vec2 uResolution;
@@ -117,12 +235,22 @@ uniform float uTintR[16];
 uniform float uTintG[16];
 uniform float uTintB[16];
 uniform float uTintA[16];
+uniform float uNormalStrength;
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
     // Flip Y — Phaser PostFX textures have inverted Y in WebGL
     vec2 fragPixel = vec2(outTexCoord.x, 1.0 - outTexCoord.y) * uResolution;
     int lightCount = int(uLightCount);
+
+    // Sample normal buffer — RGB encodes surface direction
+    // Default (128,128,255) = (0,0,1) = flat surface facing up = no directional bias
+    // Sample normal buffer — flip Y (RT texture stored bottom-up in WebGL)
+    vec4 normalSample = texture2D(uNormalSampler, vec2(outTexCoord.x, 1.0 - outTexCoord.y));
+    vec3 surfNormal = normalize(normalSample.rgb * 2.0 - 1.0);
+    surfNormal.xy = -surfNormal.xy; // flip both — RT coords are inverted relative to light coords
+    // How much this pixel has real normal data (vs default flat 128,128,255)
+    float hasNormal = step(0.01, abs(surfNormal.x) + abs(surfNormal.y));
 
     float darkness = 1.0;
     vec3 warmTint = vec3(0.0);
@@ -135,7 +263,8 @@ void main() {
         float softness = uLightSoftness[i];
 
         vec2 lightPos = vec2(uLightX[i], uLightY[i]);
-        float dist = distance(fragPixel, lightPos);
+        vec2 toLight = lightPos - fragPixel;
+        float dist = length(toLight);
         if (dist >= radius) continue;
 
         float t = dist / radius;
@@ -149,6 +278,14 @@ void main() {
             falloff = mix(0.3, 0.0, (t - 0.75) / 0.25);
         }
 
+        // Per-pixel normal map directional lighting
+        // Light shines from its position with a virtual height (2.5D)
+        vec3 lightDir = normalize(vec3(toLight, radius * 0.4));
+        float nDotL = max(dot(surfNormal, lightDir), 0.0);
+        // Blend: pixels with normal data get directional shading,
+        // flat pixels (no normal map) get uniform falloff
+        falloff *= mix(1.0, nDotL * 1.5, hasNormal * uNormalStrength);
+
         darkness *= (1.0 - falloff);
 
         float tintFalloff = smoothstep(1.0, 0.0, t);
@@ -157,7 +294,9 @@ void main() {
 
     darkness = clamp(darkness, 0.0, 1.0);
     vec3 darkColor = vec3(2.0/255.0, 1.0/255.0, 5.0/255.0);
-    vec3 finalColor = mix(sceneColor.rgb, darkColor, darkness) + warmTint;
+    vec3 foggedColor = mix(sceneColor.rgb, darkColor, darkness);
+    float foggedLum = dot(foggedColor, vec3(0.299, 0.587, 0.114));
+    vec3 finalColor = foggedColor + warmTint * foggedLum * 2.0;
     gl_FragColor = vec4(finalColor, sceneColor.a);
 }
 `;
@@ -165,12 +304,37 @@ void main() {
 class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
     constructor(game) {
         super({ game, name: 'FogOfWarPipeline', fragShader: FOG_FRAG_SHADER });
+        this._normalGlTex = null;
     }
 
-    setLights(lights, resolution) {
+    // Bind the normal buffer GL texture for use in the shader
+    setNormalBuffer(glTexture) {
+        this._normalGlTex = glTexture;
+    }
+
+    // Override onDraw to bind the normal buffer as texture unit 1
+    onDraw(renderTarget) {
+        if (this._normalRT) {
+            try {
+                const gl = this.renderer.gl;
+                // Re-extract GL texture each frame (RT may be recreated on resize)
+                const src = this._normalRT.texture.source[0];
+                const glTex = src.glTexture?.webGLTexture || src.glTexture;
+                if (glTex) {
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, glTex);
+                    this.set1i('uNormalSampler', 1);
+                }
+            } catch (e) { /* skip this frame */ }
+        }
+        this.bindAndDraw(renderTarget);
+    }
+
+    setLights(lights, resolution, normalStrength) {
         const count = Math.min(lights.length, 16);
         this.set1f('uLightCount', count);
         this.set2f('uResolution', resolution.x, resolution.y);
+        this.set1f('uNormalStrength', normalStrength || 3.0);
 
         const lx = new Float32Array(16);
         const ly = new Float32Array(16);
@@ -230,13 +394,68 @@ function setupFogPipeline(scene) {
 }
 
 // Collect lights and push to pipeline (shared helper)
-function updateFogLights(pipeline, scene, lights) {
+function updateFogLights(pipeline, scene, lights, normalStrength) {
     if (!pipeline) return;
     try {
-        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
+        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height }, normalStrength);
     } catch (e) {
         // Silently ignore shader errors
     }
+}
+
+// --------------------------------------------------------
+// Normal buffer — per-pixel normal maps for directional lighting
+// --------------------------------------------------------
+
+// Create a normal buffer RenderTexture for a scene
+function createNormalBuffer(scene) {
+    const w = scene.scale.width;
+    const h = scene.scale.height;
+    const rt = scene.make.renderTexture({ x: 0, y: 0, width: w, height: h, add: false });
+    rt.fill(0x8080FF);
+    rt._scale = 1;
+    return rt;
+}
+
+// Update the normal buffer with visible objects' normal maps
+// objects: array of sprites or groups to render normals for
+function updateNormalBuffer(normalRT, scene, objects) {
+    if (!normalRT) return;
+    const cam = scene.cameras.main;
+    const m = 50;
+    const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
+    const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
+
+    // Clear to default flat normal (128,128,255 = vec3(0,0,1))
+    normalRT.fill(0x8080FF);
+
+    for (const obj of objects) {
+        if (!obj.active) continue;
+        if (obj.x < cl || obj.x > cr || obj.y < ct || obj.y > cb) continue;
+
+        // Find normal map key: sprite texture key + '_n'
+        const normalKey = obj.texture.key + '_n';
+        if (!scene.textures.exists(normalKey)) continue;
+
+        // Get sprite's actual top-left visual position (handles origin, offset, etc.)
+        const s = normalRT._scale || 1;
+        const tl = obj.getTopLeft();
+        const sx = (tl.x - cam.scrollX) * cam.zoom * s;
+        const sy = (tl.y - cam.scrollY) * cam.zoom * s;
+
+        // Draw normal map at sprite's screen position (scaled to RT size)
+        normalRT.drawFrame(normalKey, undefined, sx, sy);
+    }
+}
+
+// Bind the normal buffer to the fog pipeline — called once at setup,
+// then the pipeline re-binds every frame in onDraw
+function bindNormalBuffer(pipeline, normalRT) {
+    if (!pipeline || !normalRT) return;
+    // Defer binding until the RT is actually rendered (GL texture created)
+    // Store the RT reference — the pipeline will extract the GL texture on first draw
+    pipeline._normalRT = normalRT;
+    console.log('[NormalBuffer] deferred bind registered');
 }
 
 // --------------------------------------------------------

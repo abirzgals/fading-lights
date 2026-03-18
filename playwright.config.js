@@ -10,6 +10,6 @@ module.exports = defineConfig({
   webServer: {
     command: 'npx http-server . -p 8080 --silent',
     port: 8080,
-    reuseExistingServer: false,
+    reuseExistingServer: true,
   },
 });
