@@ -121,11 +121,37 @@ export class AssetLoader {
   private static _animCache: Record<string, Record<string, ex.ImageSource[]>> = {};
   private static _animInitialized = false;
 
+  // Map of which directions actually exist for each enemy animation
+  // (MCP generates partial directions — not always all 8)
+  private static readonly ANIM_DIRS: Record<string, string[]> = {
+    'SHADOW_WISP:walking':     ['south', 'south-west', 'west'],
+    'SHADOW_WISP:cross-punch': ['south', 'south-west', 'west', 'north', 'north-west'],
+    'SHADOW_BEAST:walking':    ['south', 'south-west', 'north-west'],
+    'SHADOW_BEAST:cross-punch':['south', 'south-west', 'west', 'north', 'north-west'],
+    'SHADOW_LORD:walking':     ['south', 'south-west', 'north-west'],
+    'SHADOW_LORD:cross-punch': ['south', 'south-west', 'west', 'north-west'],
+    'FOG_CRAWLER:walking':     ['east', 'north', 'west'],
+    'FOG_CRAWLER:cross-punch': ['south', 'east', 'north', 'north-west'],
+    'SHADOW_ARCHER:walking':   ['south', 'south-west', 'west', 'east', 'north-east'],
+    'SHADOW_ARCHER:fireball':  ['south', 'south-west', 'west', 'north-east'],
+    'VOID_MAGE:walking':       ['south', 'south-west', 'west', 'north', 'north-west'],
+    'VOID_MAGE:fireball':      ['south-west', 'north', 'north-west'],
+  };
+
+  // Mirror map: if a direction doesn't exist, use this one instead
+  private static readonly DIR_MIRRORS: Record<string, string> = {
+    'north': 'south',
+    'north-east': 'south-west',
+    'east': 'west',
+    'south-east': 'south-west',
+    'north-west': 'south-west',
+  };
+
   private static _initAnimFrames(): void {
     if (this._animInitialized) return;
     this._animInitialized = true;
 
-    const dirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
+    const allDirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
     const enemyAnims: Record<string, string[]> = {
       SHADOW_WISP: ['walking', 'cross-punch'],
       SHADOW_BEAST: ['walking', 'cross-punch'],
@@ -139,40 +165,54 @@ export class AssetLoader {
       const folder = type.toLowerCase();
       for (const animName of anims) {
         const key = `${type}:${animName}`;
+        const existingDirs = this.ANIM_DIRS[key] ?? [];
         const result: Record<string, ex.ImageSource[]> = {};
-        for (const dir of dirs) {
+
+        // Create frames for existing directions
+        for (const dir of existingDirs) {
           const frames: ex.ImageSource[] = [];
           for (let i = 0; i < 6; i++) {
             frames.push(new ex.ImageSource(`/assets/enemies/${folder}/animations/${animName}/${dir}/frame_00${i}.png`));
           }
           result[dir] = frames;
         }
+
+        // Mirror missing directions to closest existing one
+        for (const dir of allDirs) {
+          if (result[dir]) continue;
+          // Try mirror, then fallback to 'south'
+          const mirror = this.DIR_MIRRORS[dir];
+          if (mirror && result[mirror]) {
+            result[dir] = result[mirror];
+          } else if (result['south']) {
+            result[dir] = result['south'];
+          }
+        }
+
         this._animCache[key] = result;
       }
     }
   }
 
-  /** Get pre-created animation frames. Starts loading them lazily. */
+  /** Get pre-created animation frames (pre-loaded by the Loader) */
   static getEnemyAnimFrames(enemyType: string, animName: string): Record<string, ex.ImageSource[]> {
     this._initAnimFrames();
-    const frames = this._animCache[`${enemyType}:${animName}`] ?? {};
-    // Lazy-load: start loading each frame that isn't loaded yet
-    for (const dirFrames of Object.values(frames)) {
-      for (const img of dirFrames) {
-        if (!img.isLoaded()) {
-          img.load().catch(() => {}); // silently skip missing frames
+    return this._animCache[`${enemyType}:${animName}`] ?? {};
+  }
+
+  /** Get ALL animation ImageSources for the Loader — only existing files */
+  static allAnimResources(): ex.Loadable<any>[] {
+    this._initAnimFrames();
+    // Collect unique ImageSources (mirrored dirs share same refs — use Set to deduplicate)
+    const seen = new Set<ex.ImageSource>();
+    for (const dirFrames of Object.values(this._animCache)) {
+      for (const frames of Object.values(dirFrames)) {
+        for (const img of frames) {
+          seen.add(img);
         }
       }
     }
-    return frames;
-  }
-
-  /** Get ALL animation ImageSources for the Loader — skip missing files gracefully */
-  static allAnimResources(): ex.Loadable<any>[] {
-    // Don't pre-load animation frames in the Loader — load on demand
-    // This avoids 404 errors for missing directions
-    // AnimatedSpriteComponent handles missing frames gracefully (fallback to rotation)
-    return [];
+    return [...seen];
   }
 
   // Menu background
