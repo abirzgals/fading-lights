@@ -3,10 +3,34 @@ class GameScene extends Phaser.Scene {
 
     create() {
         window._currentScene = 'GameScene';
+
+        // Show loading screen during heavy world generation
+        const loadingEl = document.createElement('div');
+        loadingEl.id = 'game-loading';
+        loadingEl.style.cssText = `
+            position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+            z-index: 99999; background: #020105;
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            font-family: monospace; color: #FF8800;
+        `;
+        loadingEl.innerHTML = `
+            <div style="font-size: 18px; margin-bottom: 20px; letter-spacing: 3px;">GENERATING WORLD</div>
+            <div style="width: 200px; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden;">
+                <div id="load-bar" style="width: 0%; height: 100%; background: linear-gradient(90deg, #FF6600, #FFAA00); border-radius: 3px; transition: width 0.2s;"></div>
+            </div>
+            <div id="load-status" style="color: rgba(255,255,255,0.4); font-size: 10px; margin-top: 8px;">Initializing...</div>
+        `;
+        document.body.appendChild(loadingEl);
+        const loadBar = document.getElementById('load-bar');
+        const loadStatus = document.getElementById('load-status');
+        this._setLoadProgress = (pct, msg) => {
+            if (loadBar) loadBar.style.width = pct + '%';
+            if (loadStatus) loadStatus.textContent = msg;
+        };
+
         // Show HUD, restore all parts (maze may have hidden some)
         showFullHUD();
         document.getElementById('game-over-screen').style.display = 'none';
-        this.cameras.main.fadeIn(1500, 0, 0, 0);
         mobileControls.show();
 
         // Ensure menu music is stopped, start in-game music
@@ -56,7 +80,9 @@ class GameScene extends Phaser.Scene {
         this.enemyHpGraphics = this.add.graphics().setDepth(5050);
 
         // --- World Generation ---
+        this._setLoadProgress(10, 'Generating terrain...');
         this.generateWorld(centerTile);
+        this._setLoadProgress(50, 'Planting trees...');
 
         // --- Wind sway on trees (store params, animate only visible ones in update) ---
         if (this._hasPixelArtTree) {
@@ -77,6 +103,8 @@ class GameScene extends Phaser.Scene {
         for (const m of this.metals.children.entries) if (m.active) m.setDepth(m.y);
         if (this.rockWalls) for (const r of this.rockWalls.children.entries) if (r.active) r.setDepth(r.y);
         if (this.metalMines) for (const m of this.metalMines.children.entries) if (m.active) m.setDepth(m.y);
+
+        this._setLoadProgress(65, 'Setting up bonfires...');
 
         // Throttle timers for expensive per-frame operations
         this._fogTimer = 0;
@@ -110,6 +138,7 @@ class GameScene extends Phaser.Scene {
         this.buildSpots = [];
         this._createBuildSpots(cx, cy);
 
+        this._setLoadProgress(75, 'Spawning player...');
         // --- Player (use pixel art if available, else tshirt color) ---
         const playerTexKey = getPlayerTextureKey(network.playerColor);
         const playerTex = this._hasPixelArtPlayer ? (this._charPrefix + '_south')
@@ -192,6 +221,7 @@ class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.player, true, 0.08, 0.08);
         this.cameras.main.setBackgroundColor('#000000');
 
+        this._setLoadProgress(85, 'Setting up fog of war...');
         // --- Fog of War (off-screen canvas) ---
         this.fogCanvas = document.createElement('canvas');
         this.fogCanvas.width = this.scale.width;
@@ -474,6 +504,7 @@ class GameScene extends Phaser.Scene {
         this.floatingTexts = [];
 
         // --- Objectives ---
+        this._setLoadProgress(95, 'Preparing objectives...');
         this._initObjectives();
 
         // Show and auto-hide hint
@@ -6009,6 +6040,18 @@ class GameScene extends Phaser.Scene {
             stroke: '#000000',
             strokeThickness: 2,
         }).setDepth(5100).setScrollFactor(0);
+
+        // Remove loading screen, fade in game
+        this._setLoadProgress(100, 'Ready!');
+        this.time.delayedCall(200, () => {
+            const el = document.getElementById('game-loading');
+            if (el) {
+                el.style.transition = 'opacity 0.5s';
+                el.style.opacity = '0';
+                setTimeout(() => el.remove(), 500);
+            }
+            this.cameras.main.fadeIn(1000, 0, 0, 0);
+        });
     }
 
     // Build full world state for periodic sync
