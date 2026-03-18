@@ -15,7 +15,8 @@
         frames++;
         const now = performance.now();
         if (now - lastTime >= 1000) {
-            el.textContent = frames + ' fps';
+            const rend = el.dataset.renderer || '?';
+            el.textContent = frames + ' fps ' + rend;
             frames = 0;
             lastTime = now;
         }
@@ -318,9 +319,9 @@ void main() {
     }
 
     darkness = clamp(darkness, 0.0, 1.0);
-    vec3 foggedColor = sceneColor.rgb * (1.0 - darkness); // pure black outside light
+    vec3 foggedColor = sceneColor.rgb * (1.0 - darkness);
     vec3 finalColor = foggedColor + warmTint * (1.0 - darkness);
-    gl_FragColor = vec4(finalColor, sceneColor.a);
+    gl_FragColor = vec4(finalColor, 1.0); // force full alpha — no bleed-through
 }
 `;
 
@@ -400,21 +401,25 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
 // Setup fog pipeline on a scene (shared by both GameScene and MazeScene)
 function setupFogPipeline(scene) {
     try {
-        if (scene.renderer.type !== Phaser.WEBGL) return null;
-        // Register the pipeline class (idempotent — safe to call multiple times)
+        if (scene.renderer.type !== Phaser.WEBGL) {
+            console.warn('[Fog] Canvas renderer — no WebGL fog available');
+            return null;
+        }
         if (!scene.renderer.pipelines.getPostPipeline('FogOfWarPipeline')) {
             scene.renderer.pipelines.addPostPipeline('FogOfWarPipeline', FogOfWarPipeline);
         }
         scene.cameras.main.setPostPipeline(FogOfWarPipeline);
         const pipelines = scene.cameras.main.getPostPipeline(FogOfWarPipeline);
-        // getPostPipeline may return array or single instance
         const pipeline = Array.isArray(pipelines) ? pipelines[0] : pipelines;
         if (pipeline) {
             console.log('[Fog] WebGL shader pipeline active');
+            // Show renderer info in FPS counter
+            const fps = document.getElementById('fps-counter');
+            if (fps) fps.dataset.renderer = 'WebGL';
             return pipeline;
         }
     } catch (e) {
-        console.warn('[Fog] WebGL pipeline failed, using no fog:', e.message);
+        console.warn('[Fog] WebGL pipeline failed:', e.message);
     }
     return null;
 }
