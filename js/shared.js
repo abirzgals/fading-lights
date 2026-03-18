@@ -126,7 +126,7 @@ function updateAllShadows(scene, opts) {
     const findLightPadded = (ox, oy) => {
         for (const l of lights) {
             const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
-            if (d < l.radius * 1.15) return true; // 15% padding
+            if (d < l.radius * 1.3) return true; // 30% padding — hide only in guaranteed blackness
         }
         return false;
     };
@@ -333,13 +333,13 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
         if (this._normalRT) {
             try {
                 const gl = this.renderer.gl;
-                // Re-extract GL texture each frame (RT may be recreated on resize)
                 const src = this._normalRT.texture.source[0];
                 const glTex = src.glTexture?.webGLTexture || src.glTexture;
                 if (glTex) {
                     gl.activeTexture(gl.TEXTURE1);
                     gl.bindTexture(gl.TEXTURE_2D, glTex);
                     this.set1i('uNormalSampler', 1);
+                    gl.activeTexture(gl.TEXTURE0); // MUST restore — bindAndDraw needs TEXTURE0
                 }
             } catch (e) { /* skip this frame */ }
         }
