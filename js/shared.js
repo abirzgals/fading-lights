@@ -337,18 +337,20 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
 
     // Override onDraw to bind the normal buffer as texture unit 1
     onDraw(renderTarget) {
-        if (this._normalRT) {
+        if (this._normalRT && this._normalRT._ready) {
             try {
                 const gl = this.renderer.gl;
-                const src = this._normalRT.texture.source[0];
-                const glTex = src.glTexture?.webGLTexture || src.glTexture;
-                if (glTex) {
-                    gl.activeTexture(gl.TEXTURE1);
-                    gl.bindTexture(gl.TEXTURE_2D, glTex);
-                    this.set1i('uNormalSampler', 1);
-                    gl.activeTexture(gl.TEXTURE0); // MUST restore — bindAndDraw needs TEXTURE0
+                if (!this._normalGlTex) {
+                    const src = this._normalRT.texture.source[0];
+                    this._normalGlTex = src.glTexture?.webGLTexture || src.glTexture || null;
                 }
-            } catch (e) { /* skip this frame */ }
+                if (this._normalGlTex) {
+                    gl.activeTexture(gl.TEXTURE1);
+                    gl.bindTexture(gl.TEXTURE_2D, this._normalGlTex);
+                    this.set1i('uNormalSampler', 1);
+                    gl.activeTexture(gl.TEXTURE0);
+                }
+            } catch (e) { /* skip */ }
         }
         this.bindAndDraw(renderTarget);
     }
@@ -448,8 +450,10 @@ function createNormalBuffer(scene) {
 // Only draws normals for objects within a light radius (dark areas = wasted draw calls)
 function updateNormalBuffer(normalRT, scene, objects, lights) {
     if (!normalRT) return;
-    // Skip on mobile — too expensive
+    // Skip on mobile — too expensive and can corrupt GL state
     if (typeof mobileControls !== 'undefined' && mobileControls.isMobile) return;
+    // Skip if WebGL not available
+    if (scene.renderer.type !== Phaser.WEBGL) return;
     if (!lights || lights.length === 0) return;
 
     const cam = scene.cameras.main;
@@ -483,15 +487,17 @@ function updateNormalBuffer(normalRT, scene, objects, lights) {
         normalRT.drawFrame(normalKey, undefined, sx, sy);
         if (++drawn >= 20) break; // cap draw calls per frame
     }
+    // Signal pipeline that normal buffer has valid data
+    if (drawn > 0) normalRT._ready = true;
 }
 
 // Bind the normal buffer to the fog pipeline — called once at setup,
 // then the pipeline re-binds every frame in onDraw
 function bindNormalBuffer(pipeline, normalRT) {
     if (!pipeline || !normalRT) return;
-    // Defer binding until the RT is actually rendered (GL texture created)
-    // Store the RT reference — the pipeline will extract the GL texture on first draw
     pipeline._normalRT = normalRT;
+    pipeline._normalReady = false;
+    pipeline._normalGlTex = null;
     console.log('[NormalBuffer] deferred bind registered');
 }
 
