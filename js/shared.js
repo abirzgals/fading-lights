@@ -3,26 +3,6 @@
 // ============================================================
 
 // --------------------------------------------------------
-// FPS counter
-// --------------------------------------------------------
-(function() {
-    const el = document.createElement('div');
-    el.id = 'fps-counter';
-    el.style.cssText = 'position:fixed;top:4px;right:8px;color:#8f8;font:bold 11px monospace;z-index:99999;pointer-events:none;opacity:0.7;text-shadow:0 0 2px #000';
-    document.body.appendChild(el);
-    let frames = 0, last = performance.now();
-    (function tick() {
-        frames++;
-        const now = performance.now();
-        if (now - last >= 1000) {
-            el.textContent = frames + ' fps ' + (el.dataset.renderer || '');
-            frames = 0; last = now;
-        }
-        requestAnimationFrame(tick);
-    })();
-})();
-
-// --------------------------------------------------------
 // Floating damage/heal text
 // --------------------------------------------------------
 function showFloatingText(scene, x, y, msg, color) {
@@ -115,87 +95,6 @@ function drawDirectionalShadow(g, baseX, baseY, objW, objH, lightX, lightY, ligh
     for (let i = 2; i < pts.length; i += 2) g.lineTo(pts[i], pts[i + 1]);
     g.closePath();
     g.fillPath();
-}
-
-// --------------------------------------------------------
-// Unified Shadow System — texture-based silhouette shadows
-// --------------------------------------------------------
-function updateAllShadows(scene, opts) {
-    const lights = opts.lights || [];
-    if (lights.length === 0) return;
-    const cam = scene.cameras.main;
-    const m = 100;
-    const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
-    const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
-
-    const findLight = (ox, oy) => {
-        let best = null, bestD = Infinity;
-        for (const l of lights) {
-            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
-            if (d < l.radius && d < bestD) { best = l; bestD = d; }
-        }
-        return best ? { lx: best.x, ly: best.y, dist: bestD, radius: best.radius } : null;
-    };
-    const findLightPadded = (ox, oy) => {
-        for (const l of lights) {
-            const d = Math.sqrt((ox - l.x) ** 2 + (oy - l.y) ** 2);
-            if (d < l.radius * 1.3) return true;
-        }
-        return false;
-    };
-
-    const updateSprite = (sprite, cleanup) => {
-        if (!sprite || !sprite.active) {
-            if (sprite && sprite._shadow) { sprite._shadow.destroy(); sprite._shadow = null; }
-            return;
-        }
-        if (sprite.x < cl || sprite.x > cr || sprite.y < ct || sprite.y > cb) {
-            if (sprite._shadow) {
-                if (cleanup) { sprite._shadow.destroy(); sprite._shadow = null; }
-                else sprite._shadow.setVisible(false);
-            }
-            if (cleanup) { sprite.setVisible(false); if (sprite.body) sprite.body.enable = false; }
-            return;
-        }
-        const light = findLight(sprite.x, sprite.y);
-        if (!light) {
-            if (sprite._shadow) sprite._shadow.setVisible(false);
-            if (cleanup && !findLightPadded(sprite.x, sprite.y)) {
-                sprite.setVisible(false); if (sprite.body) sprite.body.enable = false;
-            }
-            return;
-        }
-        if (!sprite.visible) { sprite.setVisible(true); if (sprite.body) sprite.body.enable = true; }
-
-        if (!sprite._shadow) {
-            const sh = scene.add.sprite(sprite.x, sprite.y, sprite.texture.key, sprite.frame.name);
-            sh.setTint(0x000000); sh.setOrigin(0.5, 1); sh.setDepth(0.5);
-            sprite._shadow = sh;
-        }
-        const shadow = sprite._shadow;
-        const fName = sprite.frame ? sprite.frame.name : undefined;
-        if (shadow.texture.key !== sprite.texture.key || shadow.frame.name !== fName)
-            shadow.setTexture(sprite.texture.key, fName);
-        shadow.setFlipX(sprite.flipX); shadow.setFlipY(false);
-
-        const dist = light.dist;
-        if (dist < 3) { shadow.setVisible(false); return; }
-        shadow.setVisible(true);
-        const dx = sprite.x - light.lx, dy = sprite.y - light.ly;
-        const angle = Math.atan2(dy, dx);
-        const shadowLen = Math.min(1.2, 400 / (dist + 50));
-        let feetY = sprite.body ? sprite.body.y + sprite.body.height : sprite.y + (sprite.displayHeight || 48) * 0.35;
-        shadow.setPosition(sprite.x, feetY);
-        shadow.setRotation(angle + Math.PI * 0.5);
-        shadow.setScale((sprite.scaleX || 1), shadowLen * 0.45);
-        const edgeFade = 1 - (dist / light.radius);
-        shadow.setAlpha(Math.max(0.05, 0.35 * edgeFade));
-        shadow.setDepth(sprite.depth - 0.1);
-    };
-
-    if (opts.sprites) for (const s of opts.sprites) updateSprite(s, false);
-    if (opts.groups) for (const g of opts.groups) for (const s of g.children.entries) updateSprite(s, false);
-    if (opts.throttledGroups) for (const g of opts.throttledGroups) for (const s of g.children.entries) updateSprite(s, true);
 }
 
 // --------------------------------------------------------
@@ -322,8 +221,6 @@ function setupFogPipeline(scene) {
         const pipeline = Array.isArray(pipelines) ? pipelines[0] : pipelines;
         if (pipeline) {
             console.log('[Fog] WebGL shader pipeline active');
-            const fps = document.getElementById('fps-counter');
-            if (fps) fps.dataset.renderer = 'WebGL';
             return pipeline;
         }
     } catch (e) {

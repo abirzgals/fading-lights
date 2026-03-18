@@ -527,7 +527,6 @@ class MenuScene extends Phaser.Scene {
                     codeInput.value = codeInput.value.toUpperCase();
                 });
             }
-
         }, 500);
     }
 
