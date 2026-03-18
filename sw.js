@@ -1,4 +1,5 @@
-const SW_VERSION = '0.23.5';
+// Version injected from index.html via query param — single source of truth is config.js
+const SW_VERSION = new URL(self.location).searchParams.get('v') || '0';
 const CACHE_NAME = 'fading-light-' + SW_VERSION;
 const ASSETS = [
     './',

@@ -2,7 +2,7 @@
 // GAME CONFIGURATION & DATA
 // ============================================================
 
-const GAME_VERSION = '0.23.6';
+const GAME_VERSION = '0.23.7';
 
 // Dev mode detection (localhost) — does NOT affect rendering, only gameplay convenience
 const IS_DEV = location.hostname === 'localhost' || location.hostname === '127.0.0.1';

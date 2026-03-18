@@ -125,7 +125,7 @@
                     for (const r of regs) await r.unregister();
                 }
                 // Register (or re-register) the SW
-                const reg = await navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' });
+                const reg = await navigator.serviceWorker.register('sw.js?v=' + GAME_VERSION, { updateViaCache: 'none' });
                 reg.update();
                 let refreshing = false;
                 navigator.serviceWorker.addEventListener('controllerchange', () => {
