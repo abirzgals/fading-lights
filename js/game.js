@@ -164,12 +164,6 @@ class GameScene extends Phaser.Scene {
         this.player.darknessTick = 0;
         this.player.invincible = 0;
 
-        // Physics colliders — player vs all static obstacles
-        this.physics.add.collider(this.player, this.trees);
-        this.physics.add.collider(this.player, this.stones);
-        this.physics.add.collider(this.player, this.metals);
-        this.physics.add.collider(this.player, this.buildingsGroup);
-
         // --- Player weapon sprite (from spritesheet) ---
         this._weaponSprite = null;
         this._weaponKey = null;  // track current weapon to detect changes
@@ -1195,9 +1189,6 @@ class GameScene extends Phaser.Scene {
         // Store for enemy spawning (free spaces)
         this._pathTiles = pathTiles;
         this._clearings = clearings;
-
-        // Rock walls collider
-        this.physics.add.collider(this.player, this.rockWalls);
 
         // Build walkability grid for pathfinding (true = walkable)
         this._walkGrid = new Uint8Array(worldSize * worldSize);
