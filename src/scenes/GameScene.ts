@@ -368,8 +368,8 @@ export class GameScene extends ex.Scene {
 
   private updateFog(): void {
     const lights: FogLight[] = [];
-    // Device pixel ratio — shader works in physical pixels, coords are in CSS pixels
-    const dpr = window.devicePixelRatio || 1;
+    // Pass CSS screen coords — PostProcessor handles DPR scaling internally
+    const zoom = this.camera.zoom;
 
     for (const bf of this.bonfires) {
       const fuelFrac = this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL;
@@ -380,8 +380,8 @@ export class GameScene extends ex.Scene {
       const wobY = Math.cos(t * 0.004 + seed * 1.3) * 3;
       const screen = this.engine.worldToScreenCoordinates(bf.pos.add(ex.vec(wobX, wobY)));
       lights.push({
-        x: screen.x * dpr, y: screen.y * dpr,
-        radius: radius * this.camera.zoom * dpr,
+        x: screen.x, y: screen.y,
+        radius: radius * zoom,
         intensity: 1.0, softness: 0.5,
         tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12,
       });
@@ -389,8 +389,8 @@ export class GameScene extends ex.Scene {
 
     const ps = this.engine.worldToScreenCoordinates(this.player.pos);
     lights.push({
-      x: ps.x * dpr, y: ps.y * dpr,
-      radius: 60 * this.camera.zoom * dpr,
+      x: ps.x, y: ps.y,
+      radius: 60 * zoom,
       intensity: 0.85, softness: 0.5,
       tintR: 0, tintG: 0, tintB: 0, tintA: 0,
     });

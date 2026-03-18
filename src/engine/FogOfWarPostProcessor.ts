@@ -143,15 +143,18 @@ export class FogOfWarPostProcessor implements ex.PostProcessor {
 
   /**
    * Set the active lights for this frame.
-   * Call this every frame before rendering (e.g. in onPreDraw).
-   *
-   * Only the first 16 lights are used. If you have more, sort by
-   * relevance (distance to camera, importance) before passing them in.
-   *
-   * @param lights Array of FogLight objects in screen-space pixel coords.
+   * Pass coordinates in CSS screen-space pixels (from worldToScreenCoordinates).
+   * PostProcessor handles DPR scaling internally — caller doesn't need to know.
    */
   setLights(lights: FogLight[]): void {
-    this._lights = lights;
+    // Scale from CSS pixels to physical pixels (shader's u_resolution is physical)
+    const dpr = window.devicePixelRatio || 1;
+    this._lights = lights.map(l => ({
+      ...l,
+      x: l.x * dpr,
+      y: l.y * dpr,
+      radius: l.radius * dpr,
+    }));
   }
 
   /**
