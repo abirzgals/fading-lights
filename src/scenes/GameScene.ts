@@ -9,6 +9,7 @@ import { LightSourceComponent } from '../components/LightSourceComponent';
 import { CONFIG, ENEMIES, WEAPONS } from '../config';
 import { EnemyType, Direction } from '../types';
 import { audioEngine } from '../engine/AudioEngine';
+import { AIBrainComponent } from '../components/AIBrainComponent';
 
 const T = CONFIG.TILE_SIZE;
 const WORLD_TILES = CONFIG.WORLD_TILES;
@@ -340,33 +341,140 @@ export class GameScene extends ex.Scene {
   private updateEnemyAI(dt: number): void {
     for (const e of this.enemies) {
       if (e.isKilled()) continue;
+      const ai = e.findComponent(AIBrainComponent);
+      if (!ai) continue;
+
       const dist = e.pos.distance(this.player.pos);
-      const speed = (e as any)._speed || 60;
-      if (dist < T * 10) {
-        const dir = this.player.pos.sub(e.pos).normalize();
-        e.vel = ex.vec(dir.x * speed, dir.y * speed);
-        if (dist < CONFIG.ENEMY_MELEE_RANGE + 20) {
-          const dmg = (e as any)._damage || 5;
-          this.hp = Math.max(0, this.hp - dmg * dt);
+      ai.attackTimer = Math.max(0, ai.attackTimer - dt * 1000);
+      ai.wanderTimer -= dt;
+
+      // State transitions
+      if (dist < ai.sightRange || ai.aggroFlag) {
+        if (ai.isRanged) {
+          // Ranged enemies: keep distance and orbit
+          if (dist < ai.attackRange * 0.6) {
+            ai.state = 'FLEE'; // too close, back off
+          } else if (dist < ai.attackRange) {
+            ai.state = 'ORBIT'; // in range, orbit and shoot
+          } else {
+            ai.state = 'CHASE';
+          }
+        } else {
+          // Melee enemies: chase and attack
+          if (dist < CONFIG.ENEMY_MELEE_RANGE + 20) {
+            ai.state = 'ATTACK';
+          } else {
+            ai.state = 'CHASE';
+          }
         }
       } else {
-        e.vel = ex.vec(0, 0);
+        ai.state = 'WANDER';
+      }
+
+      // Execute state
+      const speed = ai.speed;
+      switch (ai.state) {
+        case 'WANDER': {
+          if (ai.wanderTimer <= 0) {
+            ai.wanderAngle = Math.random() * Math.PI * 2;
+            ai.wanderTimer = 1 + Math.random() * 2;
+          }
+          e.vel = ex.vec(Math.cos(ai.wanderAngle) * speed * 0.3, Math.sin(ai.wanderAngle) * speed * 0.3);
+          break;
+        }
+        case 'CHASE': {
+          const dir = this.player.pos.sub(e.pos).normalize();
+          e.vel = ex.vec(dir.x * speed, dir.y * speed);
+          break;
+        }
+        case 'ATTACK': {
+          e.vel = ex.vec(0, 0);
+          if (ai.attackTimer <= 0) {
+            ai.attackTimer = ai.attackCooldown;
+            this.hp = Math.max(0, this.hp - ai.damage);
+            ai.aggroFlag = true;
+          }
+          break;
+        }
+        case 'ORBIT': {
+          // Circle around player at attack range
+          const orbitDir = e.pos.sub(this.player.pos).normalize();
+          const tangent = ex.vec(-orbitDir.y, orbitDir.x); // perpendicular
+          e.vel = tangent.scale(speed * 0.5);
+          // Shoot when cooldown ready
+          if (ai.attackTimer <= 0 && dist < ai.attackRange) {
+            ai.attackTimer = ai.attackCooldown;
+            this.spawnEnemyProjectile(e, ai);
+          }
+          break;
+        }
+        case 'FLEE': {
+          const awayDir = e.pos.sub(this.player.pos).normalize();
+          e.vel = ex.vec(awayDir.x * speed * 0.8, awayDir.y * speed * 0.8);
+          break;
+        }
+        default:
+          e.vel = ex.vec(0, 0);
       }
     }
   }
 
+  private spawnEnemyProjectile(enemy: GameEntity, ai: AIBrainComponent): void {
+    const dir = this.player.pos.sub(enemy.pos).normalize();
+    const projSpeed = ai.enemyType === 'VOID_MAGE' ? 160 : 220;
+    const ismagic = ai.enemyType === 'VOID_MAGE';
+
+    const proj = new GameEntity({
+      pos: enemy.pos.clone(), anchor: ex.vec(0.5, 0.5),
+    });
+    proj.entityType = 'enemy_projectile';
+    proj.graphics.use(new ex.Circle({
+      radius: ismagic ? 4 : 2,
+      color: ismagic ? ex.Color.fromHex('#AA44FF') : ex.Color.fromHex('#CCAA44'),
+    }));
+    proj.vel = dir.scale(projSpeed);
+    proj.z = 100;
+    this.add(proj);
+
+    // Check hit on player each frame
+    const scene = this;
+    proj.on('preupdate', () => {
+      if (proj.pos.distance(scene.player.pos) < 16) {
+        scene.hp = Math.max(0, scene.hp - ai.damage);
+        proj.kill();
+      }
+      // Lifetime
+      if (proj.pos.distance(enemy.pos) > 500) proj.kill();
+    });
+  }
+
   private updateSpawning(dt: number): void {
     this.spawnTimer += dt;
-    if (this.spawnTimer > 8 && this.enemies.filter(e => !e.isKilled()).length < CONFIG.MAX_ENEMIES) {
+    const aliveCount = this.enemies.filter(e => !e.isKilled()).length;
+    if (this.spawnTimer > 8 && aliveCount < CONFIG.MAX_ENEMIES) {
       this.spawnTimer = 0;
       const angle = Math.random() * Math.PI * 2;
       const dist = 300 + Math.random() * 200;
-      const types: EnemyType[] = ['SHADOW_WISP', 'SHADOW_STALKER', 'SHADOW_ARCHER'];
+
+      // All 7 types — weighted by difficulty
+      const types: EnemyType[] = [
+        'SHADOW_WISP', 'SHADOW_WISP', 'SHADOW_WISP',   // common
+        'SHADOW_STALKER', 'SHADOW_STALKER',              // uncommon
+        'FOG_CRAWLER',                                    // uncommon
+        'SHADOW_ARCHER',                                  // rare
+        'VOID_MAGE',                                      // rare
+        'SHADOW_BEAST',                                   // rare
+      ];
+      const type = types[Math.floor(Math.random() * types.length)];
+
       this.createEnemy(
         this.player.pos.x + Math.cos(angle) * dist,
         this.player.pos.y + Math.sin(angle) * dist,
-        types[Math.floor(Math.random() * types.length)]
+        type
       );
+
+      // Enemy roar sound (30% chance)
+      if (Math.random() < 0.3) audioEngine.playEnemyRoar();
     }
   }
 
@@ -572,14 +680,46 @@ export class GameScene extends ex.Scene {
       pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5),
     });
     enemy.entityType = 'enemy';
-    enemy.graphics.use(new ex.Circle({
-      radius: def.size / 2,
-      color: ex.Color.fromRGB((def.color >> 16) & 0xFF, (def.color >> 8) & 0xFF, def.color & 0xFF),
-    }));
+
+    // Visual — different shapes for different enemy types
+    const r = (def.color >> 16) & 0xFF, g = (def.color >> 8) & 0xFF, b = def.color & 0xFF;
+    const color = ex.Color.fromRGB(r, g, b);
+
+    if (type === 'SHADOW_ARCHER' || type === 'VOID_MAGE') {
+      // Triangle for ranged enemies
+      const size = def.size;
+      const polygon = new ex.Polygon({
+        points: [ex.vec(0, -size / 2), ex.vec(size / 2, size / 2), ex.vec(-size / 2, size / 2)],
+        color,
+      });
+      enemy.graphics.use(polygon);
+    } else if (type === 'SHADOW_BEAST' || type === 'SHADOW_LORD') {
+      // Large square for big enemies
+      enemy.graphics.use(new ex.Rectangle({ width: def.size, height: def.size, color }));
+    } else if (type === 'FOG_CRAWLER') {
+      // Diamond shape for crawlers
+      const s = def.size / 2;
+      const polygon = new ex.Polygon({
+        points: [ex.vec(0, -s), ex.vec(s, 0), ex.vec(0, s), ex.vec(-s, 0)],
+        color,
+      });
+      enemy.graphics.use(polygon);
+    } else {
+      // Circle for basic enemies
+      enemy.graphics.use(new ex.Circle({ radius: def.size / 2, color }));
+    }
+
     enemy.addComponent(new HealthComponent(def.hp));
-    (enemy as any)._speed = def.speed;
-    (enemy as any)._damage = def.damage;
-    (enemy as any)._type = type;
+    enemy.addComponent(new AIBrainComponent(type, def.speed, def.damage, {
+      ranged: def.ranged,
+      attackRange: def.attackRange ?? 30,
+      attackCooldown: def.attackCooldown ?? 1000,
+    }));
+
+    // Fade in
+    enemy.graphics.opacity = 0;
+    enemy.actions.fade(1, 600);
+
     this.add(enemy);
     this.enemies.push(enemy);
     return enemy;
