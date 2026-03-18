@@ -14,6 +14,7 @@ import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
+import { BotAI } from '../ai/BotAI';
 import { setGridSystem } from '../components/GridOccupancyComponent';
 
 const T = CONFIG.TILE_SIZE;
@@ -26,6 +27,8 @@ const T = CONFIG.TILE_SIZE;
 export class GameScene extends ex.Scene {
   private fog!: FogOfWarPostProcessor;
   private level!: LevelData;
+  private botAI: BotAI | null = null;
+  private botEnabled = false;
 
   // Game state (will move to GameStateComponent later)
   private hp: number = 1000;
@@ -51,6 +54,21 @@ export class GameScene extends ex.Scene {
     audioEngine.startMusic();
     audioEngine.startFireCrackle();
 
+    // Bot AI — toggle with backtick key
+    this.botAI = new BotAI({
+      player: this.level.player,
+      grid: this.level.grid,
+      getEntities: () => this.level.entities,
+      getEnemies: () => this.level.enemies,
+      getBonfires: () => this.level.bonfires,
+    });
+    engine.input.keyboard.on('press', (evt: ex.KeyEvent) => {
+      if (evt.key === ex.Keys.Backquote) {
+        this.botEnabled = !this.botEnabled;
+        console.log(`[Bot] ${this.botEnabled ? 'ENABLED' : 'DISABLED'}`);
+      }
+    });
+
     console.log(`[GameScene] initialized — ${this.level.entities.length} entities, ${this.level.enemies.length} enemies`);
   }
 
@@ -67,15 +85,27 @@ export class GameScene extends ex.Scene {
 
   // ======== PLAYER INPUT ========
 
-  private handlePlayerInput(engine: ex.Engine, _dt: number): void {
+  private handlePlayerInput(engine: ex.Engine, dt: number): void {
     const player = this.level.player;
     let vx = 0, vy = 0;
-    const kb = engine.input.keyboard;
-    if (kb.isHeld(ex.Keys.W) || kb.isHeld(ex.Keys.Up)) vy = -1;
-    if (kb.isHeld(ex.Keys.S) || kb.isHeld(ex.Keys.Down)) vy = 1;
-    if (kb.isHeld(ex.Keys.A) || kb.isHeld(ex.Keys.Left)) vx = -1;
-    if (kb.isHeld(ex.Keys.D) || kb.isHeld(ex.Keys.Right)) vx = 1;
-    if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+    let shouldAttack = false;
+
+    if (this.botEnabled && this.botAI) {
+      // Bot AI controls
+      const cmd = this.botAI.update(dt);
+      vx = cmd.vx;
+      vy = cmd.vy;
+      shouldAttack = cmd.attack;
+    } else {
+      // Human controls
+      const kb = engine.input.keyboard;
+      if (kb.isHeld(ex.Keys.W) || kb.isHeld(ex.Keys.Up)) vy = -1;
+      if (kb.isHeld(ex.Keys.S) || kb.isHeld(ex.Keys.Down)) vy = 1;
+      if (kb.isHeld(ex.Keys.A) || kb.isHeld(ex.Keys.Left)) vx = -1;
+      if (kb.isHeld(ex.Keys.D) || kb.isHeld(ex.Keys.Right)) vx = 1;
+      if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
+      shouldAttack = kb.wasPressed(ex.Keys.Space);
+    }
 
     const speed = CONFIG.PLAYER_SPEED;
     const gc = this.level.grid.applyGridCollision(
@@ -85,8 +115,8 @@ export class GameScene extends ex.Scene {
     if (gc.vx !== 0 || gc.vy !== 0) audioEngine.startFootsteps();
     else audioEngine.stopFootsteps();
 
-    // Attack with SPACE
-    if (kb.wasPressed(ex.Keys.Space)) {
+    // Attack
+    if (shouldAttack) {
       audioEngine.playAttack();
       const melee = player.get(MeleeAttackComponent) as MeleeAttackComponent | null;
       if (melee?.canAttack) {
@@ -309,7 +339,8 @@ export class GameScene extends ex.Scene {
       <span style="color:#CC8844">Metal ${this.resources.metal}</span> ·
       <span style="color:#FFD700">Gold ${this.resources.gold}</span><br>
       <span style="color:#AA66FF">Kills ${this.kills}</span> ·
-      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span>`;
+      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span>
+      ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}`;
   }
   onDeactivate(): void { if (this.hudEl) this.hudEl.remove(); }
 }
