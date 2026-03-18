@@ -4,71 +4,117 @@ import { AssetLoader } from '../engine/AssetLoader';
 import { audioEngine } from '../engine/AudioEngine';
 
 /**
- * Main menu scene — atmospheric dark forest with fire particles.
- * Shows title, name input, start button.
+ * Main menu — atmospheric pixel art forest with campfire, particles, fog.
  */
 export class MenuScene extends ex.Scene {
   private hudEl!: HTMLDivElement;
 
   onInitialize(engine: ex.Engine): void {
-    // Dark background
-    const bg = new ex.Actor({
-      pos: ex.vec(engine.halfDrawWidth, engine.halfDrawHeight),
-      width: engine.drawWidth, height: engine.drawHeight,
-      color: ex.Color.fromHex('#020105'),
-      anchor: ex.vec(0.5, 0.5),
-    });
-    bg.z = -10;
-    this.add(bg);
+    const W = engine.drawWidth;
+    const H = engine.drawHeight;
 
-    // Menu background image if loaded
+    // Background — use menu_bg.png if available, else dark gradient
     if (AssetLoader.menuBg.isLoaded()) {
-      const bgImg = new ex.Actor({
-        pos: ex.vec(engine.halfDrawWidth, engine.halfDrawHeight),
-        anchor: ex.vec(0.5, 0.5),
+      const bgActor = new ex.Actor({
+        pos: ex.vec(W / 2, H / 2), anchor: ex.vec(0.5, 0.5),
       });
-      bgImg.graphics.use(AssetLoader.menuBg.toSprite());
-      bgImg.z = -5;
-      this.add(bgImg);
+      const sprite = AssetLoader.menuBg.toSprite();
+      // Scale to fill screen
+      const scaleX = W / sprite.width;
+      const scaleY = H / sprite.height;
+      const scale = Math.max(scaleX, scaleY);
+      bgActor.scale = ex.vec(scale, scale);
+      bgActor.graphics.use(sprite);
+      bgActor.z = -10;
+      this.add(bgActor);
+    } else {
+      const bg = new ex.Actor({
+        pos: ex.vec(W / 2, H / 2), width: W, height: H,
+        color: ex.Color.fromHex('#020105'), anchor: ex.vec(0.5, 0.5),
+      });
+      bg.z = -10;
+      this.add(bg);
     }
 
-    // Fire particles at bottom center
-    const fireX = engine.halfDrawWidth;
-    const fireY = engine.drawHeight * 0.65;
+    // Dark vignette overlay
+    const vignette = new ex.Actor({
+      pos: ex.vec(W / 2, H / 2), width: W, height: H,
+      color: ex.Color.fromRGB(0, 0, 0, 0.4), anchor: ex.vec(0.5, 0.5),
+    });
+    vignette.z = -5;
+    this.add(vignette);
+
+    // Campfire position
+    const fireX = W / 2;
+    const fireY = H * 0.62;
     const scene = this;
+
+    // Fire particles — multiple layers for richness
     const fireTimer = new ex.Timer({
-      interval: 60,
-      repeats: true,
+      interval: 40, repeats: true,
       fcn: () => {
-        const colors = ['#FF6600', '#FFDD44', '#FF4400', '#FFAA22'];
-        const spark = new ex.Actor({
-          pos: ex.vec(fireX + (Math.random() - 0.5) * 30, fireY + (Math.random() - 0.5) * 10),
-          width: 2 + Math.random() * 4, height: 2 + Math.random() * 4,
-          color: ex.Color.fromHex(colors[Math.floor(Math.random() * colors.length)]),
-          anchor: ex.vec(0.5, 0.5),
-        });
-        spark.z = 10;
-        spark.vel = ex.vec((Math.random() - 0.5) * 15, -30 - Math.random() * 40);
-        spark.actions.fade(0, 400 + Math.random() * 400).die();
-        scene.add(spark);
+        // Main flames
+        const colors = ['#FF5500', '#FF8800', '#FFAA22', '#FFDD44', '#FF3300'];
+        for (let i = 0; i < 2; i++) {
+          const spark = new ex.Actor({
+            pos: ex.vec(fireX + (Math.random() - 0.5) * 20, fireY + (Math.random() - 0.5) * 6),
+            width: 2 + Math.random() * 5, height: 2 + Math.random() * 5,
+            color: ex.Color.fromHex(colors[Math.floor(Math.random() * colors.length)]),
+            anchor: ex.vec(0.5, 0.5),
+          });
+          spark.z = 10;
+          spark.vel = ex.vec((Math.random() - 0.5) * 12, -25 - Math.random() * 35);
+          spark.actions.fade(0, 300 + Math.random() * 500).die();
+          scene.add(spark);
+        }
+        // Occasional ember flying up
+        if (Math.random() < 0.15) {
+          const ember = new ex.Actor({
+            pos: ex.vec(fireX + (Math.random() - 0.5) * 10, fireY),
+            width: 1, height: 1,
+            color: ex.Color.fromHex('#FFCC00'),
+            anchor: ex.vec(0.5, 0.5),
+          });
+          ember.z = 15;
+          ember.vel = ex.vec((Math.random() - 0.5) * 30, -50 - Math.random() * 60);
+          ember.actions.fade(0, 1000 + Math.random() * 1500).die();
+          scene.add(ember);
+        }
       },
     });
     this.add(fireTimer);
     fireTimer.start();
 
-    // Warm glow around fire
+    // Ground glow
     const glow = new ex.Actor({
-      pos: ex.vec(fireX, fireY - 10),
-      anchor: ex.vec(0.5, 0.5),
+      pos: ex.vec(fireX, fireY + 10), anchor: ex.vec(0.5, 0.5),
     });
     glow.graphics.use(new ex.Circle({
-      radius: 60,
-      color: ex.Color.fromRGB(255, 100, 0, 0.08),
+      radius: 80, color: ex.Color.fromRGB(255, 80, 0, 0.06),
     }));
-    glow.z = 5;
+    glow.z = 6;
     this.add(glow);
 
-    // HTML overlay for menu UI
+    // Floating fireflies
+    const fireflyTimer = new ex.Timer({
+      interval: 500, repeats: true,
+      fcn: () => {
+        const ff = new ex.Actor({
+          pos: ex.vec(Math.random() * W, Math.random() * H),
+          width: 2, height: 2,
+          color: ex.Color.fromHex('#88AA44'),
+          anchor: ex.vec(0.5, 0.5),
+        });
+        ff.z = 8;
+        ff.vel = ex.vec((Math.random() - 0.5) * 10, (Math.random() - 0.5) * 8);
+        ff.actions.fade(0, 2000 + Math.random() * 3000).die();
+        scene.add(ff);
+      },
+    });
+    this.add(fireflyTimer);
+    fireflyTimer.start();
+
+    // HTML overlay for menu
     this.hudEl = document.createElement('div');
     this.hudEl.id = 'menu-overlay';
     this.hudEl.style.cssText = `
@@ -77,57 +123,81 @@ export class MenuScene extends ex.Scene {
       font-family: monospace; color: #fff; z-index: 999; pointer-events: none;
     `;
     this.hudEl.innerHTML = `
-      <div style="font-size: 32px; color: #FFD700; letter-spacing: 4px; margin-bottom: 8px;
-                  text-shadow: 0 0 20px rgba(255,200,0,0.5);">THE FADING LIGHT</div>
-      <div style="font-size: 12px; color: #888; margin-bottom: 40px;">Survive the eternal darkness</div>
-      <div style="pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 12px;">
-        <input id="player-name" type="text" placeholder="Your name..." maxlength="16"
-          style="background: rgba(255,255,255,0.1); border: 1px solid rgba(255,200,0,0.3);
-                 color: #FFD700; font-family: monospace; font-size: 14px; padding: 8px 16px;
-                 text-align: center; border-radius: 4px; width: 200px; outline: none;" />
+      <div style="font-size: 36px; color: #FFD700; letter-spacing: 5px; margin-bottom: 10px;
+                  text-shadow: 0 0 30px rgba(255,200,0,0.5), 0 0 60px rgba(255,100,0,0.2);
+                  animation: titleGlow 3s ease-in-out infinite;">
+        THE FADING LIGHT
+      </div>
+      <div style="font-size: 12px; color: #777; margin-bottom: 50px; letter-spacing: 2px;">
+        Survive the eternal darkness
+      </div>
+      <div style="pointer-events: auto; display: flex; flex-direction: column; align-items: center; gap: 14px;">
+        <input id="player-name" type="text" placeholder="Enter your name..." maxlength="16"
+          style="background: rgba(255,255,255,0.08); border: 1px solid rgba(255,200,0,0.25);
+                 color: #FFD700; font-family: monospace; font-size: 14px; padding: 10px 20px;
+                 text-align: center; border-radius: 6px; width: 220px; outline: none;
+                 transition: border-color 0.3s;" />
         <button id="start-btn" style="
-          background: rgba(255,200,0,0.15); border: 1px solid rgba(255,200,0,0.4);
-          color: #FFD700; font-family: monospace; font-size: 16px; letter-spacing: 3px;
-          padding: 12px 40px; border-radius: 6px; cursor: pointer;
-          text-shadow: 0 0 10px rgba(255,200,0,0.3);
+          background: rgba(255,200,0,0.12); border: 1px solid rgba(255,200,0,0.35);
+          color: #FFD700; font-family: monospace; font-size: 18px; letter-spacing: 4px;
+          padding: 14px 50px; border-radius: 8px; cursor: pointer;
+          text-shadow: 0 0 15px rgba(255,200,0,0.3);
+          transition: all 0.3s;
         ">START GAME</button>
       </div>
-      <div style="position: fixed; bottom: 8px; right: 12px; font-size: 10px; color: #444;">
+      <div style="position: fixed; bottom: 10px; right: 14px; font-size: 10px; color: #333;">
         v${GAME_VERSION}
       </div>
-      <div style="position: fixed; bottom: 8px; left: 12px; font-size: 9px; color: #555;">
-        WASD move · SPACE attack · E interact
+      <div style="position: fixed; bottom: 10px; left: 14px; font-size: 9px; color: #444;">
+        WASD move · SPACE / LMB attack · E / RMB interact · TAB crafting · B build
       </div>
+      <style>
+        @keyframes titleGlow {
+          0%, 100% { text-shadow: 0 0 30px rgba(255,200,0,0.5), 0 0 60px rgba(255,100,0,0.2); }
+          50% { text-shadow: 0 0 40px rgba(255,200,0,0.7), 0 0 80px rgba(255,100,0,0.3); }
+        }
+        #start-btn:hover {
+          background: rgba(255,200,0,0.25) !important;
+          border-color: rgba(255,200,0,0.6) !important;
+          transform: scale(1.02);
+        }
+        #player-name:focus {
+          border-color: rgba(255,200,0,0.5) !important;
+        }
+      </style>
     `;
     document.body.appendChild(this.hudEl);
 
-    // Start button click
-    const startBtn = document.getElementById('start-btn');
-    startBtn?.addEventListener('click', () => {
-      const nameInput = document.getElementById('player-name') as HTMLInputElement;
-      const playerName = nameInput?.value.trim() || 'Wanderer';
-      (window as any).__playerName = playerName;
-
-      // Fade out menu
-      this.hudEl.style.transition = 'opacity 1s';
-      this.hudEl.style.opacity = '0';
-      this.hudEl.style.pointerEvents = 'none';
-
-      audioEngine.stopLoop('menu_music', 1200);
-
-      setTimeout(() => {
-        this.hudEl.remove();
-        engine.goToScene('game');
-      }, 1000);
+    // Enter key starts game
+    const nameInput = document.getElementById('player-name') as HTMLInputElement;
+    nameInput?.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.startGame(engine);
     });
 
-    // Start menu music
+    // Start button
+    document.getElementById('start-btn')?.addEventListener('click', () => this.startGame(engine));
+
+    // Menu music
     audioEngine.startMenuMusic();
   }
 
-  onDeactivate(): void {
-    if (this.hudEl && this.hudEl.parentNode) {
+  private startGame(engine: ex.Engine): void {
+    const nameInput = document.getElementById('player-name') as HTMLInputElement;
+    (window as any).__playerName = nameInput?.value.trim() || 'Wanderer';
+
+    this.hudEl.style.transition = 'opacity 1.2s';
+    this.hudEl.style.opacity = '0';
+    this.hudEl.style.pointerEvents = 'none';
+
+    audioEngine.stopLoop('menu_music', 1200);
+
+    setTimeout(() => {
       this.hudEl.remove();
-    }
+      engine.goToScene('game');
+    }, 1200);
+  }
+
+  onDeactivate(): void {
+    if (this.hudEl?.parentNode) this.hudEl.remove();
   }
 }

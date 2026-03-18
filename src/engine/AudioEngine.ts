@@ -83,10 +83,11 @@ export class AudioEngine {
     const loop = this.loops.get(name);
     if (!loop || !this.ctx) return;
 
+    // Remove from map immediately so startLoop can re-create if needed
+    this.loops.delete(name);
     loop.gain.gain.linearRampToValueAtTime(0, this.ctx.currentTime + fadeMs / 1000);
     setTimeout(() => {
-      try { loop.source.stop(); } catch (e) { /* already stopped */ }
-      this.loops.delete(name);
+      try { loop.source.stop(); } catch (_e) { /* already stopped */ }
     }, fadeMs);
   }
 
@@ -110,7 +111,7 @@ export class AudioEngine {
   startFireCrackle() { this.startLoop('fire_crackle', '/audio/fire_crackle.mp3', 0.4, 1000); }
   startFootsteps() { this.startLoop('footsteps', '/audio/footsteps.mp3', 0.3, 200); }
   startAmbient() { this.startLoop('ambient', '/audio/rain.mp3', 0.15, 2000); }
-  stopFootsteps() { this.stopLoop('footsteps', 200); }
+  stopFootsteps() { this.stopLoop('footsteps', 100); }
   stopMusic() { this.stopLoop('music', 1000); }
 }
 

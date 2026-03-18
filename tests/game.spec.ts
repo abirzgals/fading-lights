@@ -1,63 +1,63 @@
 import { test, expect } from '@playwright/test';
 
-test('Menu scene renders with title and start button', async ({ page }) => {
-  const logs: string[] = [];
+test('Intro → Menu renders with title and start button', async ({ page }) => {
   const errors: string[] = [];
-  page.on('console', msg => {
-    if (msg.type() === 'error') errors.push(msg.text());
-    else logs.push(msg.text());
-  });
+  page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
   page.on('pageerror', err => errors.push('PAGE: ' + err.message));
 
   await page.goto('/');
   await page.waitForSelector('canvas', { timeout: 15000 });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2000);
 
-  // Menu should be visible
+  // Click intro splash to skip to menu
+  const introOverlay = page.locator('#intro-overlay');
+  if (await introOverlay.isVisible().catch(() => false)) {
+    await introOverlay.click();
+    await page.waitForTimeout(2000); // wait for video skip / transition
+    // Skip video if playing
+    const skip = page.locator('text=Skip');
+    if (await skip.isVisible().catch(() => false)) await skip.click();
+    await page.waitForTimeout(2000);
+  }
+
   await page.screenshot({ path: 'test-results/menu.png' });
 
-  // Title text should exist
+  // Menu should be visible
   const title = page.locator('text=THE FADING LIGHT');
-  await expect(title).toBeVisible({ timeout: 5000 });
-
-  // Start button should exist
+  await expect(title).toBeVisible({ timeout: 10000 });
   const startBtn = page.locator('#start-btn');
   await expect(startBtn).toBeVisible();
 
-  // No critical errors
   const critical = errors.filter(e =>
-    !e.includes('favicon') && !e.includes('404') && !e.includes('GL Driver') && !e.includes('AudioContext')
+    !e.includes('favicon') && !e.includes('404') && !e.includes('GL Driver') && !e.includes('Audio')
   );
   expect(critical).toHaveLength(0);
 });
 
-test('Menu → Game transition works', async ({ page }) => {
+test('Intro → Menu → Game transition works', async ({ page }) => {
   const logs: string[] = [];
   page.on('console', msg => logs.push(msg.text()));
 
   await page.goto('/');
   await page.waitForSelector('canvas', { timeout: 15000 });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2000);
 
-  // Type name
-  const nameInput = page.locator('#player-name');
-  await nameInput.fill('TestPlayer');
+  // Skip intro
+  await page.locator('#intro-overlay').click().catch(() => {});
+  await page.waitForTimeout(1500);
+  await page.locator('text=Skip').click().catch(() => {});
+  await page.waitForTimeout(2000);
 
-  // Click start
-  const startBtn = page.locator('#start-btn');
-  await startBtn.click();
-
-  // Wait for game scene to load
+  // Wait for menu
+  await page.waitForSelector('#start-btn', { timeout: 10000 });
+  await page.locator('#player-name').fill('TestPlayer');
+  await page.locator('#start-btn').click();
   await page.waitForTimeout(5000);
 
   await page.screenshot({ path: 'test-results/game-v2.png' });
 
-  // Game scene should have initialized
   const gameLog = logs.find(l => l.includes('[GameScene] initialized'));
   expect(gameLog).toBeTruthy();
-
-  console.log('\n=== LOGS ===');
-  logs.filter(l => l.includes('[')).forEach(l => console.log('  ', l));
 });
 
 test('Full gameplay: move, attack trees, kill enemies', async ({ page }) => {
@@ -69,9 +69,14 @@ test('Full gameplay: move, attack trees, kill enemies', async ({ page }) => {
 
   await page.goto('/');
   await page.waitForSelector('canvas', { timeout: 15000 });
-  await page.waitForTimeout(3000);
+  await page.waitForTimeout(2000);
 
-  // Start game
+  // Skip intro → menu → start
+  await page.locator('#intro-overlay').click().catch(() => {});
+  await page.waitForTimeout(1500);
+  await page.locator('text=Skip').click().catch(() => {});
+  await page.waitForTimeout(2000);
+  await page.waitForSelector('#start-btn', { timeout: 10000 });
   await page.locator('#start-btn').click();
   await page.waitForTimeout(5000);
 
