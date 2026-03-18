@@ -14,6 +14,7 @@ import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
+import { BonfireAnimComponent } from '../components/BonfireAnimComponent';
 
 /**
  * Entity factory — creates game entities by assembling components.
@@ -176,12 +177,8 @@ export class EntityFactory {
     bf.entityType = 'bonfire';
     bf.z = 3;
 
-    // Bonfire pixel art sprite
-    if (AssetLoader.bonfireSprite.isLoaded()) {
-      bf.graphics.use(AssetLoader.bonfireSprite.toSprite());
-    } else {
-      bf.graphics.use(new ex.Rectangle({ width: 20, height: 10, color: ex.Color.fromHex('#5a3a1a') }));
-    }
+    // Animated bonfire with pulsing fire
+    bf.addComponent(new BonfireAnimComponent() as any);
     bf.addComponent(new LightSourceComponent({
       radius: CONFIG.BONFIRE_BASE_RADIUS, intensity: 1.0, softness: 0.5,
       tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12,
