@@ -2172,15 +2172,26 @@ class GameScene extends Phaser.Scene {
         // Tree shadows throttled to ~15fps
         this._shadowTimer += delta;
         if (this._shadowTimer > 66) { this._shadowTimer = 0; this._updateShadows(true); }
-        // Normal buffer throttled to ~30fps (half-res reduces draw cost)
+        // Normal buffer throttled to ~10fps (only objects near lights)
         this._normalTimer += delta;
-        if (this._normalTimer > 33 && this._normalBuffer) {
+        if (this._normalTimer > 100 && this._normalBuffer) {
             this._normalTimer = 0;
-            const objs = [];
-            for (const t of this.trees.children.entries) if (t.active) objs.push(t);
-            for (const s of this.stones.children.entries) if (s.active) objs.push(s);
-            for (const m of this.metals.children.entries) if (m.active) objs.push(m);
-            updateNormalBuffer(this._normalBuffer, this, objs);
+            // Collect active lights for culling
+            const nLights = [];
+            for (const bf of this.bonfires) {
+                if (!bf.getData('lit')) continue;
+                nLights.push({ x: bf.x, y: bf.y, radius: this.getLightRadius(bf) });
+            }
+            for (const b of this.buildingsGroup.children.entries) {
+                if (!b.active || b.getData('type') !== 'outpost') continue;
+                nLights.push({ x: b.x, y: b.y, radius: 120 });
+            }
+            if (nLights.length > 0) {
+                const objs = this.trees.children.entries
+                    .concat(this.stones.children.entries)
+                    .concat(this.metals.children.entries);
+                updateNormalBuffer(this._normalBuffer, this, objs, nLights);
+            }
         }
         this.updateDepthSort();
         this._drawDebug();

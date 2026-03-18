@@ -206,8 +206,9 @@ function updateAllShadows(scene, opts) {
         }
     }
 
-    // Throttled groups — trees etc (cleanup off-screen shadow sprites to save memory)
-    if (opts.throttledGroups) {
+    // Throttled groups — trees etc (skip on mobile — too many sprites)
+    const isMobile = typeof mobileControls !== 'undefined' && mobileControls.isMobile;
+    if (opts.throttledGroups && !isMobile) {
         for (const group of opts.throttledGroups) {
             for (const s of group.children.entries) updateSprite(s, true);
         }
@@ -418,33 +419,43 @@ function createNormalBuffer(scene) {
 }
 
 // Update the normal buffer with visible objects' normal maps
-// objects: array of sprites or groups to render normals for
-function updateNormalBuffer(normalRT, scene, objects) {
+// Only draws normals for objects within a light radius (dark areas = wasted draw calls)
+function updateNormalBuffer(normalRT, scene, objects, lights) {
     if (!normalRT) return;
+    // Skip on mobile — too expensive
+    if (typeof mobileControls !== 'undefined' && mobileControls.isMobile) return;
+    if (!lights || lights.length === 0) return;
+
     const cam = scene.cameras.main;
     const m = 50;
     const cl = cam.scrollX - m, cr = cam.scrollX + cam.width + m;
     const ct = cam.scrollY - m, cb = cam.scrollY + cam.height + m;
 
-    // Clear to default flat normal (128,128,255 = vec3(0,0,1))
+    // Clear to default flat normal
     normalRT.fill(0x8080FF);
 
+    let drawn = 0;
     for (const obj of objects) {
         if (!obj.active) continue;
         if (obj.x < cl || obj.x > cr || obj.y < ct || obj.y > cb) continue;
 
-        // Find normal map key: sprite texture key + '_n'
+        // Only draw normals for objects within a light radius
+        let inLight = false;
+        for (const l of lights) {
+            const dx = obj.x - l.x, dy = obj.y - l.y;
+            if (dx * dx + dy * dy < l.radius * l.radius) { inLight = true; break; }
+        }
+        if (!inLight) continue;
+
         const normalKey = obj.texture.key + '_n';
         if (!scene.textures.exists(normalKey)) continue;
 
-        // Get sprite's actual top-left visual position (handles origin, offset, etc.)
         const s = normalRT._scale || 1;
         const tl = obj.getTopLeft();
         const sx = (tl.x - cam.scrollX) * cam.zoom * s;
         const sy = (tl.y - cam.scrollY) * cam.zoom * s;
-
-        // Draw normal map at sprite's screen position (scaled to RT size)
         normalRT.drawFrame(normalKey, undefined, sx, sy);
+        if (++drawn >= 20) break; // cap draw calls per frame
     }
 }
 
