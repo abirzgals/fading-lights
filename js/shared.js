@@ -107,26 +107,34 @@ uniform sampler2D uMainSampler;
 varying vec2 outTexCoord;
 
 uniform vec2 uResolution;
-uniform int uLightCount;
-uniform vec2 uLightPos[16];
-uniform vec3 uLightParams[16];
-uniform vec4 uLightTint[16];
+uniform float uLightCount;
+uniform float uLightX[16];
+uniform float uLightY[16];
+uniform float uLightRadius[16];
+uniform float uLightIntensity[16];
+uniform float uLightSoftness[16];
+uniform float uTintR[16];
+uniform float uTintG[16];
+uniform float uTintB[16];
+uniform float uTintA[16];
 
 void main() {
     vec4 sceneColor = texture2D(uMainSampler, outTexCoord);
     vec2 fragPixel = outTexCoord * uResolution;
+    int lightCount = int(uLightCount);
 
     float darkness = 0.97;
     vec3 warmTint = vec3(0.0);
 
     for (int i = 0; i < 16; i++) {
-        if (i >= uLightCount) break;
+        if (i >= lightCount) break;
 
-        float radius = uLightParams[i].x;
-        float intensity = uLightParams[i].y;
-        float softness = uLightParams[i].z;
+        float radius = uLightRadius[i];
+        float intensity = uLightIntensity[i];
+        float softness = uLightSoftness[i];
 
-        float dist = distance(fragPixel, uLightPos[i]);
+        vec2 lightPos = vec2(uLightX[i], uLightY[i]);
+        float dist = distance(fragPixel, lightPos);
         if (dist >= radius) continue;
 
         float t = dist / radius;
@@ -142,9 +150,8 @@ void main() {
 
         darkness *= (1.0 - falloff);
 
-        vec4 lt = uLightTint[i];
         float tintFalloff = smoothstep(1.0, 0.0, t);
-        warmTint += lt.rgb * lt.a * tintFalloff;
+        warmTint += vec3(uTintR[i], uTintG[i], uTintB[i]) * uTintA[i] * tintFalloff;
     }
 
     darkness = clamp(darkness, 0.0, 0.97);
@@ -161,46 +168,74 @@ class FogOfWarPipeline extends Phaser.Renderer.WebGL.Pipelines.PostFXPipeline {
 
     setLights(lights, resolution) {
         const count = Math.min(lights.length, 16);
-        this.set1i('uLightCount', count);
+        this.set1f('uLightCount', count);
         this.set2f('uResolution', resolution.x, resolution.y);
 
-        const pos = new Float32Array(32);
-        const params = new Float32Array(48);
-        const tint = new Float32Array(64);
+        const lx = new Float32Array(16);
+        const ly = new Float32Array(16);
+        const lr = new Float32Array(16);
+        const li = new Float32Array(16);
+        const ls = new Float32Array(16);
+        const tr = new Float32Array(16);
+        const tg = new Float32Array(16);
+        const tb = new Float32Array(16);
+        const ta = new Float32Array(16);
 
         for (let i = 0; i < count; i++) {
             const l = lights[i];
-            pos[i * 2] = l.sx;
-            pos[i * 2 + 1] = l.sy;
-            params[i * 3] = l.radius;
-            params[i * 3 + 1] = l.intensity;
-            params[i * 3 + 2] = l.softness;
-            tint[i * 4] = l.tintR;
-            tint[i * 4 + 1] = l.tintG;
-            tint[i * 4 + 2] = l.tintB;
-            tint[i * 4 + 3] = l.tintA;
+            lx[i] = l.sx;
+            ly[i] = l.sy;
+            lr[i] = l.radius;
+            li[i] = l.intensity;
+            ls[i] = l.softness;
+            tr[i] = l.tintR;
+            tg[i] = l.tintG;
+            tb[i] = l.tintB;
+            ta[i] = l.tintA;
         }
 
-        this.set2fv('uLightPos', pos);
-        this.set3fv('uLightParams', params);
-        this.set4fv('uLightTint', tint);
+        this.set1fv('uLightX', lx);
+        this.set1fv('uLightY', ly);
+        this.set1fv('uLightRadius', lr);
+        this.set1fv('uLightIntensity', li);
+        this.set1fv('uLightSoftness', ls);
+        this.set1fv('uTintR', tr);
+        this.set1fv('uTintG', tg);
+        this.set1fv('uTintB', tb);
+        this.set1fv('uTintA', ta);
     }
 }
 
 // Setup fog pipeline on a scene (shared by both GameScene and MazeScene)
 function setupFogPipeline(scene) {
-    if (scene.renderer.type === Phaser.WEBGL) {
-        scene.renderer.pipelines.addPostPipeline('FogOfWarPipeline', FogOfWarPipeline);
-        scene.cameras.main.setPostPipeline('FogOfWarPipeline');
-        return scene.cameras.main.getPostPipeline('FogOfWarPipeline');
+    try {
+        if (scene.renderer.type !== Phaser.WEBGL) return null;
+        // Register the pipeline class (idempotent — safe to call multiple times)
+        if (!scene.renderer.pipelines.getPostPipeline('FogOfWarPipeline')) {
+            scene.renderer.pipelines.addPostPipeline('FogOfWarPipeline', FogOfWarPipeline);
+        }
+        scene.cameras.main.setPostPipeline(FogOfWarPipeline);
+        const pipelines = scene.cameras.main.getPostPipeline(FogOfWarPipeline);
+        // getPostPipeline may return array or single instance
+        const pipeline = Array.isArray(pipelines) ? pipelines[0] : pipelines;
+        if (pipeline) {
+            console.log('[Fog] WebGL shader pipeline active');
+            return pipeline;
+        }
+    } catch (e) {
+        console.warn('[Fog] WebGL pipeline failed, using no fog:', e.message);
     }
-    return null; // Canvas fallback — scene should use old method
+    return null;
 }
 
 // Collect lights and push to pipeline (shared helper)
 function updateFogLights(pipeline, scene, lights) {
     if (!pipeline) return;
-    pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
+    try {
+        pipeline.setLights(lights, { x: scene.scale.width, y: scene.scale.height });
+    } catch (e) {
+        // Silently ignore shader errors
+    }
 }
 
 // --------------------------------------------------------

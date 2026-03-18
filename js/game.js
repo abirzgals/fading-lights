@@ -5971,15 +5971,17 @@ class GameScene extends Phaser.Scene {
 
         // Remove loading screen, fade in game
         this._setLoadProgress(100, 'Ready!');
-        this.time.delayedCall(200, () => {
+        // Use setTimeout instead of time.delayedCall for reliability
+        setTimeout(() => {
             const el = document.getElementById('game-loading');
             if (el) {
                 el.style.transition = 'opacity 0.5s';
                 el.style.opacity = '0';
+                el.style.pointerEvents = 'none';
                 setTimeout(() => el.remove(), 500);
             }
-            this.cameras.main.fadeIn(1000, 0, 0, 0);
-        });
+            try { this.cameras.main.fadeIn(1000, 0, 0, 0); } catch(e) {}
+        }, 300);
     }
 
     // Build full world state for periodic sync
