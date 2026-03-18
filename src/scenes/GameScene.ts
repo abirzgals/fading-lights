@@ -144,14 +144,39 @@ export class GameScene extends ex.Scene {
     const isClearing = (tx: number, ty: number) => clearings.some(cl => (tx - cl.x) ** 2 + (ty - cl.y) ** 2 < cl.r ** 2);
     const isPath = (tx: number, ty: number) => pathTiles.has(`${tx},${ty}`);
 
-    // Draw roads
+    // Draw roads with Wang tile transitions (same as original)
+    const WANG_TO_FRAME = [6,7,10,9,2,11,4,15,5,14,1,8,3,0,13,12];
     const gs = AssetLoader.groundTileset.isLoaded()
       ? ex.SpriteSheet.fromImageSource({ image: AssetLoader.groundTileset, grid: { rows: 4, columns: 4, spriteWidth: 32, spriteHeight: 32 } })
       : null;
+
+    // Build render set (path tiles + 1-tile border for transitions)
+    const renderSet = new Set<string>();
     for (const key of pathTiles) {
       const [tx, ty] = key.split(',').map(Number);
+      for (let dx = -1; dx <= 1; dx++)
+        for (let dy = -1; dy <= 1; dy++)
+          renderSet.add(`${tx + dx},${ty + dy}`);
+    }
+
+    for (const key of renderSet) {
+      const [tx, ty] = key.split(',').map(Number);
+      // Wang corner sampling: NW, NE, SW, SE
+      const nw = pathTiles.has(`${tx},${ty}`) ? 1 : 0;
+      const ne = pathTiles.has(`${tx + 1},${ty}`) ? 1 : 0;
+      const sw = pathTiles.has(`${tx},${ty + 1}`) ? 1 : 0;
+      const se = pathTiles.has(`${tx + 1},${ty + 1}`) ? 1 : 0;
+      const wangIdx = nw * 8 + ne * 4 + sw * 2 + se;
+      if (wangIdx === 0) continue; // all corners empty = no tile
+
       const road = new ex.Actor({ pos: ex.vec(tx * T + T / 2, ty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
-      road.graphics.use(gs ? gs.getSprite(2, 1)! : new ex.Rectangle({ width: T, height: T, color: ex.Color.fromHex('#3a2a1a') }));
+      if (gs) {
+        const frameIdx = WANG_TO_FRAME[wangIdx];
+        const col = frameIdx % 4, row = Math.floor(frameIdx / 4);
+        road.graphics.use(gs.getSprite(col, row)!);
+      } else {
+        road.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromHex('#3a2a1a') }));
+      }
       road.z = -8;
       this.add(road);
     }
