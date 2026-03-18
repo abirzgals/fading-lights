@@ -1,4 +1,7 @@
 node_modules/
-server/
+dist/
+test-results/
+*.log
+.vite/
 .DS_Store
 js/groq-config.js

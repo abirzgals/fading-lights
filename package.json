@@ -1,24 +1,18 @@
 {
-  "name": "fading-lights",
-  "version": "1.0.0",
-  "main": "sw.js",
+  "name": "fading-lights-v2",
+  "version": "2.0.0",
+  "type": "module",
   "scripts": {
-    "test": "playwright test --config=playwright.config.js --reporter=list"
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
   },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/abirzgals/fading-lights.git"
+  "dependencies": {
+    "excalibur": "^0.30.0"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "bugs": {
-    "url": "https://github.com/abirzgals/fading-lights/issues"
-  },
-  "homepage": "https://github.com/abirzgals/fading-lights#readme",
-  "description": "",
   "devDependencies": {
     "@playwright/test": "^1.58.2",
-    "http-server": "^14.1.1"
+    "typescript": "^5.7.0",
+    "vite": "^6.0.0"
   }
 }
