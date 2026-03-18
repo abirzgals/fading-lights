@@ -130,21 +130,25 @@ export class AnimatedSpriteComponent extends ex.Component {
 
   private applyFrame(actor: ex.Actor): void {
     let img: ex.ImageSource | undefined;
+    let useAnim = false;
 
     if (this.currentAnim === 'attack' && this.attackAnim) {
       const frames = this.attackAnim.directions[this.currentDir];
-      if (frames && this.animFrame < frames.length) {
+      if (frames && this.animFrame < frames.length && frames[0]?.isLoaded()) {
         img = frames[this.animFrame];
+        useAnim = true;
       }
     } else if (this.currentAnim === 'walk' && this.walkAnim) {
       const frames = this.walkAnim.directions[this.currentDir];
-      if (frames && this.animFrame < frames.length) {
+      if (frames && this.animFrame < frames.length && frames[0]?.isLoaded()) {
         img = frames[this.animFrame];
+        useAnim = true;
       }
     }
 
-    if (!img) {
-      // Static rotation
+    // If no animation frame available for this direction,
+    // always fall back to the correct static rotation (all 8 exist)
+    if (!useAnim || !img?.isLoaded()) {
       img = this.rotations[this.currentDir];
     }
 
