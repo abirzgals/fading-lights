@@ -824,8 +824,7 @@ class GameScene extends Phaser.Scene {
             const tileDist = 3 + Math.floor(rng() * 3); // 3-5 tiles from center
             const stx = Math.round(cx + Math.cos(angle) * tileDist);
             const sty = Math.round(cy + Math.sin(angle) * tileDist);
-            // Only skip if a tree/building is there — allow placement on paths near camp
-            if (this._occupiedTiles.has(`${stx},${sty}`)) continue;
+            if (this._occupiedTiles.has(`${stx},${sty}`) || isPath(stx, sty)) continue;
             const sx = stx * T + 16;
             const sy = sty * T + 16;
             const stone = this.stones.create(sx, sy, this._stoneKey);

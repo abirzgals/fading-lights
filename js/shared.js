@@ -145,8 +145,11 @@ function updateAllShadows(scene, opts) {
                 if (cleanup) { sprite._shadow.destroy(); sprite._shadow = null; }
                 else sprite._shadow.setVisible(false);
             }
-            // Off-screen cleanup objects: hide to skip rendering
-            if (cleanup) sprite.setVisible(false);
+            // Off-screen cleanup objects: hide sprite + disable physics
+            if (cleanup) {
+                sprite.setVisible(false);
+                if (sprite.body) sprite.body.enable = false;
+            }
             return;
         }
 
@@ -154,13 +157,17 @@ function updateAllShadows(scene, opts) {
         if (!light) {
             if (sprite._shadow) sprite._shadow.setVisible(false);
             // Static objects in darkness: hide completely (shader makes them black anyway)
-            if (cleanup) {
-                sprite.setVisible(!findLightPadded(sprite.x, sprite.y) ? false : true);
+            if (cleanup && !findLightPadded(sprite.x, sprite.y)) {
+                sprite.setVisible(false);
+                if (sprite.body) sprite.body.enable = false;
             }
             return;
         }
-        // In light — ensure visible
-        sprite.setVisible(true);
+        // In light — ensure visible and physics active
+        if (!sprite.visible) {
+            sprite.setVisible(true);
+            if (sprite.body) sprite.body.enable = true;
+        }
 
         // Lazy-create shadow sprite on first use
         if (!sprite._shadow) {
