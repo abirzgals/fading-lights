@@ -117,6 +117,48 @@ export class AssetLoader {
     },
   };
 
+  // Enemy animation frames (walking + attack, 6 frames × 8 directions)
+  private static _animCache: Record<string, Record<string, ex.ImageSource[]>> = {};
+
+  /** Load animation frames for an enemy type. Call after allResources loaded. */
+  static getEnemyAnimFrames(enemyType: string, animName: string): Record<string, ex.ImageSource[]> {
+    const key = `${enemyType}:${animName}`;
+    if (this._animCache[key]) return this._animCache[key];
+
+    const dirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
+    const basePath = enemyType === 'SHADOW_STALKER'
+      ? '/assets/pixelart/shadow-stalker-anim/animations'
+      : `/assets/enemies/${enemyType.toLowerCase().replace(/_/g, '_')}/animations`;
+
+    const result: Record<string, ex.ImageSource[]> = {};
+    for (const dir of dirs) {
+      const frames: ex.ImageSource[] = [];
+      for (let i = 0; i < 6; i++) {
+        frames.push(new ex.ImageSource(`${basePath}/${animName}/${dir}/frame_00${i}.png`));
+      }
+      result[dir] = frames;
+    }
+    this._animCache[key] = result;
+    return result;
+  }
+
+  /** Get all animation ImageSources for loading */
+  static allAnimResources(): ex.Loadable<any>[] {
+    const anims: ex.Loadable<any>[] = [];
+    const types = ['shadow_wisp', 'shadow_beast', 'shadow_lord', 'fog_crawler', 'shadow_archer', 'void_mage'];
+    const dirs = ['south', 'north', 'east', 'west', 'south-east', 'south-west', 'north-east', 'north-west'];
+    for (const type of types) {
+      for (const animName of ['walking', 'cross-punch']) {
+        for (const dir of dirs) {
+          for (let i = 0; i < 6; i++) {
+            anims.push(new ex.ImageSource(`/assets/enemies/${type}/animations/${animName}/${dir}/frame_00${i}.png`));
+          }
+        }
+      }
+    }
+    return anims;
+  }
+
   // Menu background
   static menuBg = new ex.ImageSource('/assets/menu_bg.png');
 

@@ -10,6 +10,7 @@ import { GridOccupancyComponent } from '../components/GridOccupancyComponent';
 import { LightSourceComponent } from '../components/LightSourceComponent';
 import { AIBrainComponent } from '../components/AIBrainComponent';
 import { SpriteRendererComponent } from '../components/SpriteRendererComponent';
+import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
@@ -57,11 +58,22 @@ export class EntityFactory {
     const enemy = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
     enemy.entityType = 'enemy';
 
-    // Sprite renderer with 8-direction rotation
-    const sprites = AssetLoader.enemySprites[type];
+    // Animated sprite with walk + attack animations
+    const sprites = AssetLoader.enemySprites[type] ?? {};
     const r = (def.color >> 16) & 0xFF, g = (def.color >> 8) & 0xFF, b = def.color & 0xFF;
-    enemy.addComponent(new SpriteRendererComponent({
-      rotations: sprites ?? {},
+    const typeKey = type.toLowerCase();
+
+    // Load animation frames (may not all exist yet — graceful fallback)
+    const walkFrames = AssetLoader.getEnemyAnimFrames(type, 'walking');
+    const attackFrames = AssetLoader.getEnemyAnimFrames(type, 'cross-punch');
+
+    enemy.addComponent(new AnimatedSpriteComponent({
+      rotations: sprites,
+      walkFrames,
+      walkFrameRate: 10,
+      attackFrames,
+      attackFrameRate: 12,
+      attackDamageFrame: 3,
       fallback: { width: def.size, height: def.size, color: ex.Color.fromRGB(r, g, b) },
     }));
 

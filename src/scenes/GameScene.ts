@@ -13,6 +13,7 @@ import { AIBrainComponent } from '../components/AIBrainComponent';
 import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
+import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { setGridSystem } from '../components/GridOccupancyComponent';
 
 const T = CONFIG.TILE_SIZE;
@@ -150,17 +151,45 @@ export class GameScene extends ex.Scene {
           const dir = player.pos.sub(e.pos).normalize();
           e.vel = ex.vec(dir.x * speed, dir.y * speed);
           break;
-        case 'ATTACK':
+        case 'ATTACK': {
           e.vel = ex.vec(0, 0);
+          const anim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
           const melee = e.get(MeleeAttackComponent) as MeleeAttackComponent | null;
-          if (melee?.canAttack) { melee.startAttack(player); ai.aggroFlag = true; }
+          if (melee?.canAttack && !anim?.isAttacking) {
+            ai.aggroFlag = true;
+            // Play attack animation — damage checked on damage frame
+            // If player dodged away by damage frame, it's a MISS!
+            if (anim) {
+              anim.playAttack(() => {
+                // Damage frame callback — check if player still in range
+                const distNow = e.pos.distance(player.pos);
+                if (distNow <= melee.range) {
+                  const playerHp = player.get(HealthComponent) as HealthComponent | null;
+                  if (playerHp) playerHp.damage(melee.damage);
+                }
+              });
+            }
+            melee.startAttack(player);
+          }
           break;
-        case 'ORBIT':
+        }
+        case 'ORBIT': {
           const orbitDir = e.pos.sub(player.pos).normalize();
           e.vel = ex.vec(-orbitDir.y * speed * 0.5, orbitDir.x * speed * 0.5);
           const ranged = e.get(RangedAttackComponent) as RangedAttackComponent | null;
-          if (ranged?.canFire && dist < ai.attackRange) ranged.fire(player, this);
+          const rangedAnim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
+          if (ranged?.canFire && dist < ai.attackRange) {
+            if (rangedAnim && !rangedAnim.isAttacking) {
+              rangedAnim.playAttack(() => {
+                // Fire projectile on damage frame
+                ranged.fire(player, this);
+              });
+            } else {
+              ranged.fire(player, this);
+            }
+          }
           break;
+        }
         case 'FLEE':
           const away = e.pos.sub(player.pos).normalize();
           e.vel = ex.vec(away.x * speed * 0.8, away.y * speed * 0.8);
