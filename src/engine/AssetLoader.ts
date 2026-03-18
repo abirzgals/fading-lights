@@ -215,6 +215,12 @@ export class AssetLoader {
     return [...seen];
   }
 
+  // Effect textures
+  static magicOrb = new ex.ImageSource('/assets/effects/magic_orb.png');
+  static arrowProj = new ex.ImageSource('/assets/effects/arrow.png');
+  static magicExplosion = new ex.ImageSource('/assets/effects/magic_explosion.png');
+  static bonfireSprite = new ex.ImageSource('/assets/effects/bonfire.png');
+
   // Menu background
   static menuBg = new ex.ImageSource('/assets/menu_bg.png');
 
@@ -263,6 +269,8 @@ export class AssetLoader {
       // Walk spritesheets
       this.maleWalkSouth, this.maleWalkNorth, this.maleWalkEast, this.maleWalkWest,
       this.maleWalkSE, this.maleWalkSW, this.maleWalkNE, this.maleWalkNW,
+      // Effects
+      this.magicOrb, this.arrowProj, this.magicExplosion, this.bonfireSprite,
       // Enemy sprites (all directions)
       ...Object.values(this.enemySprites).flatMap(dirs => Object.values(dirs)),
     ];

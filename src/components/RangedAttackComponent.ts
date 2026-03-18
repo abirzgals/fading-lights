@@ -1,5 +1,6 @@
 import * as ex from 'excalibur';
 import { GameEntity } from '../engine/GameEntity';
+import { AssetLoader } from '../engine/AssetLoader';
 import { HealthComponent } from './HealthComponent';
 
 /**
@@ -57,32 +58,34 @@ export class RangedAttackComponent extends ex.Component {
     const projType = this.projectileType;
 
     if (ismagic) {
-      // Magic orb — bright pulsing core + outer glow (matches original)
-      proj.graphics.use(new ex.Circle({ radius: 5, color: ex.Color.fromHex('#AA44FF') }));
-      // Bright inner core
-      const core = new ex.Actor({ pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5) });
-      core.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromHex('#FFDDFF') }));
-      core.z = 101;
-      scene.add(core);
+      // Magic orb with pixel art texture
+      if (AssetLoader.magicOrb.isLoaded()) {
+        proj.graphics.use(AssetLoader.magicOrb.toSprite());
+      } else {
+        proj.graphics.use(new ex.Circle({ radius: 5, color: ex.Color.fromHex('#AA44FF') }));
+      }
       // Outer glow halo
       const glow = new ex.Actor({ pos: actor.pos.clone(), anchor: ex.vec(0.5, 0.5) });
-      glow.graphics.use(new ex.Circle({ radius: 10, color: ex.Color.fromRGB(170, 68, 255, 0.15) }));
+      glow.graphics.use(new ex.Circle({ radius: 14, color: ex.Color.fromRGB(170, 68, 255, 0.12) }));
       glow.z = 99;
       scene.add(glow);
-      // Pulsing scale (like original tweens)
+      // Pulsing scale
       let pulseT = 0;
       proj.on('preupdate', () => {
         pulseT += 0.15;
-        const s = 1.0 + Math.sin(pulseT) * 0.3;
+        const s = 1.0 + Math.sin(pulseT) * 0.25;
         proj.scale = ex.vec(s, s);
-        core.pos = proj.pos.clone();
         glow.pos = proj.pos.clone();
-        glow.graphics.opacity = 0.15 + Math.sin(pulseT * 1.5) * 0.1;
-        if (proj.isKilled()) { core.kill(); glow.kill(); }
+        glow.graphics.opacity = 0.12 + Math.sin(pulseT * 1.5) * 0.08;
+        if (proj.isKilled()) { glow.kill(); }
       });
     } else {
-      // Arrow — rotated line with arrowhead shape
-      proj.graphics.use(new ex.Rectangle({ width: 8, height: 2, color: ex.Color.fromHex('#FFCC88') }));
+      // Arrow with pixel art texture
+      if (AssetLoader.arrowProj.isLoaded()) {
+        proj.graphics.use(AssetLoader.arrowProj.toSprite());
+      } else {
+        proj.graphics.use(new ex.Rectangle({ width: 8, height: 2, color: ex.Color.fromHex('#FFCC88') }));
+      }
       proj.rotation = Math.atan2(dir.y, dir.x);
     }
 
@@ -135,12 +138,17 @@ export class RangedAttackComponent extends ex.Component {
       const scn = proj.scene;
 
       if (ismagic) {
-        // Expanding AOE circle (like original's splash with blendMode ADD)
+        // Explosion texture + expanding AOE
         const splash = new ex.Actor({ pos: pos.clone(), anchor: ex.vec(0.5, 0.5) });
-        splash.graphics.use(new ex.Circle({ radius: 20, color: ex.Color.fromRGB(170, 68, 255, 0.4) }));
+        if (AssetLoader.magicExplosion.isLoaded()) {
+          splash.graphics.use(AssetLoader.magicExplosion.toSprite());
+        } else {
+          splash.graphics.use(new ex.Circle({ radius: 20, color: ex.Color.fromRGB(170, 68, 255, 0.4) }));
+        }
         splash.z = 102;
-        splash.actions.scaleTo(ex.vec(2.5, 2.5), ex.vec(5, 5));
-        splash.actions.fade(0, 380).die();
+        splash.scale = ex.vec(0.5, 0.5);
+        splash.actions.scaleTo(ex.vec(2.0, 2.0), ex.vec(4, 4));
+        splash.actions.fade(0, 400).die();
         scn.add(splash);
       }
 

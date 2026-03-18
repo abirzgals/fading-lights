@@ -176,7 +176,12 @@ export class EntityFactory {
     bf.entityType = 'bonfire';
     bf.z = 3;
 
-    bf.graphics.use(new ex.Rectangle({ width: 20, height: 10, color: ex.Color.fromHex('#5a3a1a') }));
+    // Bonfire pixel art sprite
+    if (AssetLoader.bonfireSprite.isLoaded()) {
+      bf.graphics.use(AssetLoader.bonfireSprite.toSprite());
+    } else {
+      bf.graphics.use(new ex.Rectangle({ width: 20, height: 10, color: ex.Color.fromHex('#5a3a1a') }));
+    }
     bf.addComponent(new LightSourceComponent({
       radius: CONFIG.BONFIRE_BASE_RADIUS, intensity: 1.0, softness: 0.5,
       tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12,
