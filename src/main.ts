@@ -1,5 +1,6 @@
 import * as ex from 'excalibur';
 import { GAME_VERSION } from './config';
+import { MenuScene } from './scenes/MenuScene';
 import { GameScene } from './scenes/GameScene';
 import { AssetLoader } from './engine/AssetLoader';
 
@@ -15,12 +16,14 @@ const game = new ex.Engine({
   suppressPlayButton: true,
 });
 
-// Load all assets, then start game
+// Load all assets
 const loader = new ex.Loader(AssetLoader.allResources());
 loader.suppressPlayButton = true;
 
+game.addScene('menu', new MenuScene());
 game.addScene('game', new GameScene());
+
 game.start(loader).then(() => {
   console.log('[Assets] loaded');
-  game.goToScene('game');
+  game.goToScene('menu');
 });

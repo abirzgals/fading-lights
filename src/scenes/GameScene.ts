@@ -418,6 +418,25 @@ export class GameScene extends ex.Scene {
     }
     p.addComponent(new HealthComponent(CONFIG.PLAYER_MAX_HP));
     this.add(p);
+
+    // Name label above player
+    const playerName = (window as any).__playerName || 'Wanderer';
+    const nameLabel = new ex.Label({
+      text: playerName,
+      pos: ex.vec(x, y - 28),
+      font: new ex.Font({
+        family: 'monospace', size: 8,
+        color: ex.Color.White, textAlign: ex.TextAlign.Center,
+      }),
+    });
+    nameLabel.z = 9999;
+    this.add(nameLabel);
+    // Follow player
+    this.on('preupdate', () => {
+      nameLabel.pos = p.pos.add(ex.vec(0, -28));
+      nameLabel.z = p.z + 0.1;
+    });
+
     return p;
   }
 
