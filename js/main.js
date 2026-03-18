@@ -22,7 +22,7 @@ const game = new Phaser.Game({
             debug: false,
         }
     },
-    scene: IS_DEV ? [MenuScene, GameScene, MazeScene] : [IntroScene, MenuScene, GameScene, MazeScene],
+    scene: [IntroScene, MenuScene, GameScene, MazeScene],
     render: {
         pixelArt: true,
         antialias: false,

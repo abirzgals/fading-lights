@@ -528,19 +528,6 @@ class MenuScene extends Phaser.Scene {
                 });
             }
 
-            // Dev mode: auto-start game immediately (skip menu)
-            if (IS_DEV) {
-                window._debugMode = true;
-                window._charVariant = window._charVariant || 'male';
-                network.playerName = network.playerName || 'Dev';
-                network.playerColor = network.playerColor || network.getRandomColor();
-                // Hide menu HTML overlay
-                const overlay = document.getElementById('name-input-overlay');
-                if (overlay) overlay.style.display = 'none';
-                gameState = createGameState();
-                this.scene.start('GameScene');
-                return;
-            }
         }, 500);
     }
 
