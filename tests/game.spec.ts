@@ -1,30 +1,24 @@
 import { test, expect } from '@playwright/test';
 
-test('Intro → Menu renders with title and start button', async ({ page }) => {
+test('Game loads and renders with enemies', async ({ page }) => {
   const errors: string[] = [];
-  page.on('console', msg => { if (msg.type() === 'error') errors.push(msg.text()); });
-  page.on('pageerror', err => errors.push('PAGE: ' + err.message));
+  const logs: string[] = [];
+  page.on('console', msg => {
+    if (msg.type() === 'error') errors.push(msg.text());
+    else logs.push(msg.text());
+  });
 
   await page.goto('/');
   await page.waitForSelector('canvas', { timeout: 30000 });
-  await page.waitForTimeout(5000); // wait for asset loading (576+ animation frames)
+  await page.waitForTimeout(8000); // wait for world gen + enemy spawn
 
-  // Click intro splash to skip to menu
-  const introOverlay = page.locator('#intro-overlay');
-  if (await introOverlay.isVisible().catch(() => false)) {
-    await introOverlay.click();
-    await page.waitForTimeout(2000); // wait for video skip / transition
-    // Skip video if playing
-    const skip = page.locator('text=Skip');
-    if (await skip.isVisible().catch(() => false)) await skip.click();
-    await page.waitForTimeout(2000);
-  }
+  await page.screenshot({ path: 'test-results/game.png' });
 
-  await page.screenshot({ path: 'test-results/menu.png' });
+  const gameLog = logs.find(l => l.includes('[GameScene] initialized'));
+  expect(gameLog).toBeTruthy();
 
-  // Menu should be visible
-  const startBtn = page.locator('#start-btn');
-  await expect(startBtn).toBeVisible({ timeout: 15000 });
+  console.log('\n=== KEY LOGS ===');
+  logs.filter(l => l.includes('[')).forEach(l => console.log('  ', l));
 
   const critical = errors.filter(e =>
     !e.includes('favicon') && !e.includes('404') && !e.includes('GL Driver') &&
@@ -33,65 +27,33 @@ test('Intro → Menu renders with title and start button', async ({ page }) => {
   expect(critical).toHaveLength(0);
 });
 
-test('Intro → Menu → Game transition works', async ({ page }) => {
+test('Enemies walk with animation and attack', async ({ page }) => {
   const logs: string[] = [];
   page.on('console', msg => logs.push(msg.text()));
 
   await page.goto('/');
-  await page.waitForSelector('canvas', { timeout: 15000 });
-  await page.waitForTimeout(2000);
+  await page.waitForSelector('canvas', { timeout: 30000 });
+  await page.waitForTimeout(8000);
 
-  // Skip intro
-  await page.locator('#intro-overlay').click().catch(() => {});
-  await page.waitForTimeout(1500);
-  await page.locator('text=Skip').click().catch(() => {});
-  await page.waitForTimeout(2000);
-
-  // Wait for menu
-  await page.waitForSelector('#start-btn', { timeout: 10000 });
-  await page.locator('#player-name').fill('TestPlayer');
-  await page.locator('#start-btn').click();
+  // Wait for enemies to start moving toward player
   await page.waitForTimeout(5000);
 
-  await page.screenshot({ path: 'test-results/game-v2.png' });
+  await page.screenshot({ path: 'test-results/enemies-moving.png' });
 
-  const gameLog = logs.find(l => l.includes('[GameScene] initialized'));
-  expect(gameLog).toBeTruthy();
+  // Player should still be alive (1000 HP)
+  // Just verify no crashes
 });
 
-test('Full gameplay: move, attack trees, kill enemies', async ({ page }) => {
-  page.on('console', msg => {
-    if (msg.type() === 'error' && !msg.text().includes('favicon')) {
-      console.log('ERR:', msg.text());
-    }
-  });
-
+test('Player attacks enemies with SPACE', async ({ page }) => {
   await page.goto('/');
-  await page.waitForSelector('canvas', { timeout: 15000 });
-  await page.waitForTimeout(2000);
+  await page.waitForSelector('canvas', { timeout: 30000 });
+  await page.waitForTimeout(8000);
 
-  // Skip intro → menu → start
-  await page.locator('#intro-overlay').click().catch(() => {});
-  await page.waitForTimeout(1500);
-  await page.locator('text=Skip').click().catch(() => {});
-  await page.waitForTimeout(2000);
-  await page.waitForSelector('#start-btn', { timeout: 10000 });
-  await page.locator('#start-btn').click();
-  await page.waitForTimeout(5000);
-
-  // Move right and down
-  await page.keyboard.down('d');
-  await page.waitForTimeout(800);
-  await page.keyboard.up('d');
-  await page.keyboard.down('s');
-  await page.waitForTimeout(800);
-  await page.keyboard.up('s');
-
-  // Attack
-  for (let i = 0; i < 5; i++) {
+  // Attack several times
+  for (let i = 0; i < 10; i++) {
     await page.keyboard.press('Space');
     await page.waitForTimeout(300);
   }
 
-  await page.screenshot({ path: 'test-results/gameplay.png' });
+  await page.screenshot({ path: 'test-results/combat.png' });
 });

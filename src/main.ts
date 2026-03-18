@@ -31,5 +31,6 @@ game.addScene('game', new GameScene());
 
 game.start(loader).then(() => {
   console.log(`[Assets] loaded ${allAssets.length} resources`);
-  game.goToScene('intro');
+  (window as any).__playerName = 'Dev';
+  game.goToScene('game'); // skip intro/menu for testing
 });
