@@ -137,6 +137,9 @@ export class GameScene extends ex.Scene {
         availableBuildSpots: this.buildSpots
           .filter(s => s.state === 'unlocked')
           .map(s => ({ type: s.type, wx: s.wx, wy: s.wy, cost: BUILDINGS[s.type].cost })),
+        drops: this.drops
+          .filter(d => !d.isKilled() && !(d as any)._flyingToPlayer)
+          .map(d => ({ x: d.pos.x, y: d.pos.y, type: (d as any).dropType as string })),
       });
       const cmd = this.botAI.update(dt);
       vx = cmd.vx;

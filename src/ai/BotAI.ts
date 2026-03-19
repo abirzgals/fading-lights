@@ -41,14 +41,22 @@ export interface BotBuildSpot {
 }
 
 /** Game state passed in from GameScene each tick */
+/** Drop on the ground the bot can pick up */
+export interface BotDrop {
+  x: number;
+  y: number;
+  type: string; // 'wood' | 'stone' | 'metal' | 'gold'
+}
+
 export interface BotGameState {
   bonfireFuel: number;
   bonfireMaxFuel: number;
   resources: { wood: number; stone: number; metal: number; gold: number };
   campLevel: number;
   campFuelAdded: number;
-  /** Unlocked but unbuilt spots the bot can work toward */
   availableBuildSpots: BotBuildSpot[];
+  /** Drops on the ground the bot can walk to */
+  drops: BotDrop[];
 }
 
 interface BotContext {
@@ -76,6 +84,12 @@ interface BotContext {
   canLevelUp: boolean;
   /** How many wood logs needed to reach next fire level */
   woodForLevelUp: number;
+  /** Nearest useful drop on the ground (needed resource type) */
+  nearestNeededDrop: BotDrop | null;
+  nearestNeededDropDist: number;
+  /** Any nearest drop regardless of type */
+  nearestDrop: BotDrop | null;
+  nearestDropDist: number;
   /** Build spot the bot can afford right now */
   affordableBuildSpot: BotBuildSpot | null;
   /** Build spot the bot should gather resources for */
@@ -144,6 +158,7 @@ export class BotAI {
     campLevel: 0,
     campFuelAdded: 0,
     availableBuildSpots: [],
+    drops: [],
   };
 
   private readonly tree: TreeNode;
@@ -176,6 +191,7 @@ export class BotAI {
     mine: 1.5,
     feed: 1.5,
     build: 2.0,
+    pickup: 0.5,
     flee: 0.8,
     kite: 0.4,
     dodge: 0.2,
@@ -278,6 +294,7 @@ export class BotAI {
       chop: 'Chopping wood',
       mine: 'Mining',
       build: 'Building',
+      pickup: 'Picking up',
       kill: 'Fighting!',
       flee: 'Retreating!',
       dodge: 'Dodging!',
@@ -485,19 +502,33 @@ export class BotAI {
             _treePath: `Build ${ctx.affordableBuildSpot!.type}`,
           }),
         },
-        // === GATHER FOR BUILDING ===
+        // === GATHER FOR BUILDING — pick up drops first, then chop/mine ===
         {
           name: 'Gather for Build',
           check: (ctx) => {
             if (ctx.hpRatio < 0.4) return false;
-            if (!ctx.gatherBuildSpot || !ctx.gatherNeed) return false;
-            return ctx.nearestResource !== null;
+            return ctx.gatherBuildSpot !== null && ctx.gatherNeed !== null;
           },
-          goal: (ctx) => ({
-            type: 'chop', target: ctx.nearestResource!,
-            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-            _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
-          }),
+          children: [
+            {
+              name: 'Pick Up for Build',
+              check: (ctx) => ctx.nearestNeededDrop !== null && ctx.nearestNeededDropDist < 200,
+              goal: (ctx) => ({
+                type: 'pickup',
+                x: ctx.nearestNeededDrop!.x, y: ctx.nearestNeededDrop!.y,
+                _treePath: `Pick up ${ctx.nearestNeededDrop!.type} for ${ctx.gatherBuildSpot!.type}`,
+              }),
+            },
+            {
+              name: 'Chop/Mine for Build',
+              check: (ctx) => ctx.nearestResource !== null,
+              goal: (ctx) => ({
+                type: 'chop', target: ctx.nearestResource!,
+                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+                _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
+              }),
+            },
+          ],
         },
         // === LEVEL UP FIRE — after buildings are built ===
         {
@@ -520,6 +551,16 @@ export class BotAI {
               }),
             },
           ],
+        },
+        // === PICK UP NEARBY DROPS ===
+        {
+          name: 'Pick Up Drops',
+          check: (ctx) => ctx.nearestDrop !== null && ctx.nearestDropDist < 120,
+          goal: (ctx) => ({
+            type: 'pickup',
+            x: ctx.nearestDrop!.x, y: ctx.nearestDrop!.y,
+            _treePath: `Pick up ${ctx.nearestDrop!.type}`,
+          }),
         },
         // === NEED WOOD → GATHER for fire ===
         {
@@ -679,22 +720,48 @@ export class BotAI {
       woodForLevelUp = Math.max(0, Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD));
     }
 
-    // Build spot analysis
+    // Drop analysis — find nearest drops, prioritize needed types
+    let nearestDrop: BotDrop | null = null;
+    let nearestDropDist = Infinity;
+    let nearestNeededDrop: BotDrop | null = null;
+    let nearestNeededDropDist = Infinity;
+    // Figure out what resource types are needed (for building or fire)
+    const neededTypes = new Set<string>();
+    neededTypes.add('wood'); // always useful for fire
+    for (const spot of this.gameState.availableBuildSpots) {
+      for (const [r, amt] of Object.entries(spot.cost)) {
+        if (((this.gameState.resources as any)[r] ?? 0) < (amt ?? 0)) neededTypes.add(r);
+      }
+    }
+    for (const drop of this.gameState.drops) {
+      const d = Math.hypot(p.pos.x - drop.x, p.pos.y - drop.y);
+      if (d < nearestDropDist) { nearestDropDist = d; nearestDrop = drop; }
+      if (neededTypes.has(drop.type) && d < nearestNeededDropDist) {
+        nearestNeededDropDist = d; nearestNeededDrop = drop;
+      }
+    }
+
+    // Build spot analysis — count drops on ground as future resources
     const res = this.gameState.resources;
+    // Count drops by type for affordability check
+    const dropCounts: Record<string, number> = {};
+    for (const drop of this.gameState.drops) {
+      dropCounts[drop.type] = (dropCounts[drop.type] ?? 0) + 1;
+    }
     let affordableBuildSpot: BotBuildSpot | null = null;
     let gatherBuildSpot: BotBuildSpot | null = null;
     let gatherNeed: { type: string; amount: number } | null = null;
 
     for (const spot of this.gameState.availableBuildSpots) {
-      // Check if we can afford it
+      // Check affordability: inventory + nearby drops on ground
       let canAfford = true;
       let missingType = '';
       let missingAmt = 0;
       for (const [r, amt] of Object.entries(spot.cost)) {
-        const have = (res as any)[r] ?? 0;
+        const have = ((res as any)[r] ?? 0) + (dropCounts[r] ?? 0);
         if (have < (amt ?? 0)) {
           canAfford = false;
-          if (!missingType) { missingType = r; missingAmt = (amt ?? 0) - have; }
+          if (!missingType) { missingType = r; missingAmt = (amt ?? 0) - ((res as any)[r] ?? 0); }
         }
       }
       if (canAfford) {
@@ -720,6 +787,8 @@ export class BotAI {
       bestEnemy, enemyNearCamp, projectileAttacker,
       nearestResource, nearestResourceDist,
       woodNeeded, hasEnoughWood,
+      nearestNeededDrop, nearestNeededDropDist: nearestNeededDropDist,
+      nearestDrop, nearestDropDist: nearestDropDist,
       canLevelUp, woodForLevelUp,
       affordableBuildSpot, gatherBuildSpot, gatherNeed,
       evasion, dt,
@@ -899,6 +968,13 @@ export class BotAI {
             vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }
         }
+        break;
+      }
+
+      case 'pickup': {
+        // Walk to drop — auto-pickup happens in GameScene.runDropPickup()
+        const dir = this.moveToWithPathfinding(goal.x!, goal.y!);
+        vx = dir.x; vy = dir.y;
         break;
       }
 
