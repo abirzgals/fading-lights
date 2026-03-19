@@ -173,7 +173,7 @@ export class AnimatedSpriteComponent extends ex.Component {
       });
       const frames: ex.Graphic[] = [];
       for (let i = 0; i < grid.columns; i++) {
-        const sprite = sheet.getSprite(0, i);
+        const sprite = sheet.getSprite(i, 0); // (column, row) — horizontal strip
         if (sprite) frames.push(sprite);
       }
       if (frames.length > 0) dirs[dir] = frames;
