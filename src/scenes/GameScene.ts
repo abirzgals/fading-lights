@@ -217,6 +217,8 @@ export class GameScene extends ex.Scene {
               const res = nearRes.get(ResourceComponent) as ResourceComponent | null;
               if (hp && res) {
                 hp.damage(10);
+                // Hit sparks — color based on resource type
+                this.spawnHitSparks(nearRes.pos.x, nearRes.pos.y, res.resourceType);
                 if (!hp.alive) {
                   // Spawn drops on the ground
                   for (let i = 0; i < res.dropAmount; i++) {
@@ -292,6 +294,38 @@ export class GameScene extends ex.Scene {
   }
 
   /** Spawn a floating text that rises and fades */
+  /** Spawn hit sparks when attacking a resource */
+  private spawnHitSparks(x: number, y: number, resourceType: string): void {
+    const colors: Record<string, string[]> = {
+      wood: ['#8B6914', '#AA8833', '#665522', '#CCAA55'],
+      stone: ['#888888', '#AAAAAA', '#666666', '#CCCCCC'],
+      metal: ['#B87333', '#CC8844', '#FFAA44', '#DD9955'],
+    };
+    const palette = colors[resourceType] ?? colors.stone;
+    const count = 4 + Math.floor(Math.random() * 4);
+
+    for (let i = 0; i < count; i++) {
+      const spark = new ex.Actor({
+        pos: ex.vec(x + (Math.random() - 0.5) * 8, y - 4 + (Math.random() - 0.5) * 8),
+        anchor: ex.vec(0.5, 0.5),
+      });
+      const size = 1.5 + Math.random() * 2;
+      const color = palette[Math.floor(Math.random() * palette.length)];
+      spark.graphics.use(new ex.Rectangle({
+        width: size, height: size,
+        color: ex.Color.fromHex(color),
+      }));
+      spark.z = 9500;
+      // Random velocity — spray outward
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 30 + Math.random() * 60;
+      spark.vel = ex.vec(Math.cos(angle) * speed, Math.sin(angle) * speed - 30);
+      // Gravity-like deceleration + fade
+      spark.actions.fade(0, 300 + Math.random() * 200).die();
+      this.add(spark);
+    }
+  }
+
   private spawnFloatingText(x: number, y: number, text: string, color: string): void {
     const label = new ex.Label({
       text,

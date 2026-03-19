@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.26: Hit sparks on resource attacks
+
+### Summary
+Added per-hit particle sparks when the player attacks a resource node (wood, stone, metal). Each hit spawns 4-8 small rectangular particles with resource-appropriate colors that spray outward with an upward bias and fade out over 300-500ms.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - `spawnHitSparks(x, y, resourceType)` — new private method that creates a burst of `ex.Actor` particles at the hit position. Color palettes are keyed by resource type: brown/tan for wood, grey/white for stone, copper/bronze for metal. Each particle gets a random size (1.5-3.5px rectangle), a random outward velocity with a -30 upward bias, and an `actions.fade` over 300-500ms followed by `.die()`.
+  - Attack handler updated to call `spawnHitSparks` on every hit (before the kill check), so feedback fires whether or not the resource survives the hit.
+
+### Rationale
+Without per-hit feedback, chopping or mining feels unresponsive — the only visual confirmation of a hit was the resource disappearing on the final blow. The sparks give immediate tactile feedback on every swing, matching the expectation players have from similar action/survival games. Particles self-destruct via Excalibur's action system so there is no manual cleanup required.
+
+### Next Steps
+- Could add a small screen-shake or sound cue to reinforce the hit feel further.
+
+---
+
 ## 2026-03-19 — v2.6.25: Fix entities getting stuck inside colliders
 
 ### Summary
