@@ -48,7 +48,7 @@ export class NetworkSync {
   public onResourcesState: ((wood: number, stone: number, metal: number, gold: number) => void) | null = null;
   public onEnemySpawned: ((netId: number, x: number, y: number, type: EnemyType) => GameEntity | null) | null = null;
   public onEnemyKilled: ((netId: number) => void) | null = null;
-  public onDropPickup: ((x: number, y: number, type: string) => void) | null = null;
+  public onDropPickup: ((x: number, y: number, type: string, playerX: number, playerY: number) => void) | null = null;
   public onPlayerHP: ((peerId: string, hp: number, maxHp: number) => void) | null = null;
   public onFullState: ((state: any) => void) | null = null;
 
@@ -130,9 +130,14 @@ export class NetworkSync {
     this.net.send({ type: 'building_placed', x: Math.round(x), y: Math.round(y), buildingType });
   }
 
-  /** Any player: broadcast drop pickup */
-  sendDropPickup(x: number, y: number, dropType: string): void {
-    this.net.send({ type: 'drop_pickup', x: Math.round(x), y: Math.round(y), dropType });
+  /** Any player: broadcast drop pickup — includes player position for fly animation */
+  sendDropPickup(x: number, y: number, dropType: string, playerX: number, playerY: number): void {
+    this.net.send({
+      type: 'drop_pickup',
+      x: Math.round(x), y: Math.round(y),
+      dropType,
+      px: Math.round(playerX), py: Math.round(playerY),
+    });
   }
 
   /** Broadcast player HP (when damaged or healed significantly) */
@@ -324,7 +329,7 @@ export class NetworkSync {
   }
 
   private onDropPickupMsg(msg: any): void {
-    this.onDropPickup?.(msg.x, msg.y, msg.dropType);
+    this.onDropPickup?.(msg.x, msg.y, msg.dropType, msg.px, msg.py);
   }
 
   private onPlayerHPMsg(msg: any): void {

@@ -372,8 +372,8 @@ export class GameScene extends ex.Scene {
             if (type in this.resources) {
               (this.resources as any)[type] += 1;
             }
-            // Broadcast pickup to other players
-            this.netSync?.sendDropPickup(startPos.x, startPos.y, type);
+            // Broadcast pickup to other players (include player pos for fly animation)
+            this.netSync?.sendDropPickup(startPos.x, startPos.y, type, player.pos.x, player.pos.y);
             drop.kill();
           }
         });
@@ -946,12 +946,29 @@ export class GameScene extends ex.Scene {
           }
         }
       };
-      this.netSync.onDropPickup = (x, y, dropType) => {
-        // Remove nearest drop at position (another player picked it up)
+      this.netSync.onDropPickup = (x, y, dropType, playerX, playerY) => {
+        // Find nearest drop and animate it flying to the remote player
         const idx = this.drops.findIndex(d =>
-          !d.isKilled() && Math.hypot(d.pos.x - x, d.pos.y - y) < 40
+          !d.isKilled() && !(d as any)._flyingToPlayer && Math.hypot(d.pos.x - x, d.pos.y - y) < 40
         );
-        if (idx >= 0) { this.drops[idx].kill(); this.drops.splice(idx, 1); }
+        if (idx >= 0) {
+          const drop = this.drops[idx];
+          (drop as any)._flyingToPlayer = true;
+          drop.z = 9998;
+          const startPos = drop.pos.clone();
+          const flyDuration = 300;
+          let elapsed = 0;
+          drop.on('preupdate', () => {
+            elapsed += 16;
+            const t = Math.min(elapsed / flyDuration, 1);
+            drop.pos = ex.vec(
+              startPos.x + (playerX - startPos.x) * t,
+              startPos.y + (playerY - startPos.y) * t - Math.sin(t * Math.PI) * 15,
+            );
+            drop.scale = ex.vec(1 - t * 0.5, 1 - t * 0.5);
+            if (t >= 1) { drop.kill(); }
+          });
+        }
       };
       this.netSync.onFullState = (state) => {
         // Full state sync from host — one source of truth
