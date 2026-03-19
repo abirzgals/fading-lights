@@ -515,13 +515,18 @@ export class GameScene extends ex.Scene {
     const zoom = this.camera.zoom;
     const player = this.level.player;
 
-    // Update shadow light sources (world coordinates)
+    // Update shadow light sources (world coordinates with wobble — same as fog)
     const shadowLights: Array<{ x: number; y: number; radius: number }> = [];
+    const t = performance.now();
     for (const bf of this.level.bonfires) {
       const fuelFrac = this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL;
       const levelMult = 1.0 + this.campLevel * 0.5;
       const r = (CONFIG.BONFIRE_MIN_RADIUS + fuelFrac * (CONFIG.BONFIRE_BASE_RADIUS - CONFIG.BONFIRE_MIN_RADIUS)) * levelMult;
-      shadowLights.push({ x: bf.pos.x, y: bf.pos.y, radius: r });
+      // Same wobble as fog shader for consistent shadow movement
+      const seed = bf.pos.x * 7.3 + bf.pos.y * 13.1;
+      const wobbleX = Math.sin(t * 0.003 + seed) * 4 + Math.sin(t * 0.007 + seed * 0.5) * 2;
+      const wobbleY = Math.cos(t * 0.004 + seed * 1.3) * 3 + Math.cos(t * 0.009 + seed * 0.7) * 1.5;
+      shadowLights.push({ x: bf.pos.x + wobbleX, y: bf.pos.y + wobbleY, radius: r });
     }
     for (const b of this.buildings) {
       if (b.isKilled()) continue;

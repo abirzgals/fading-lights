@@ -1,27 +1,27 @@
 import * as ex from 'excalibur';
 
 /**
- * Shadow caster — renders a dark silhouette below an entity,
- * stretched away from the nearest light source.
+ * Shadow caster — renders an elliptical dark shadow below an entity,
+ * stretched away from the nearest light source (bonfire).
  *
- * Matches the original game's shadow formulas:
+ * Uses original game formulas:
  * - Shadow length = min(1.2, 400 / (dist + 50))
- * - Alpha = max(0.05, 0.35 * edgeFade)
- * - Rotated away from light, anchored at entity's feet
- * - Size matches entity's sprite dimensions
+ * - Alpha = max(0.08, 0.45 * edgeFade)
+ * - Light wobble synced with fog shader
  */
 export class ShadowCasterComponent extends ex.Component {
   public readonly type = 'ShadowCaster';
 
   private shadowActor: ex.Actor | null = null;
+  private entityWidth: number;
   private entityHeight: number;
-  private shadowGraphic: ex.Rectangle | null = null;
 
-  /** Light sources — set by GameScene each frame */
+  /** Light sources — set by GameScene each frame (with wobble) */
   static lightSources: Array<{ x: number; y: number; radius: number }> = [];
 
-  constructor(opts?: { entityHeight?: number }) {
+  constructor(opts?: { entityWidth?: number; entityHeight?: number }) {
     super();
+    this.entityWidth = opts?.entityWidth ?? 16;
     this.entityHeight = opts?.entityHeight ?? 24;
   }
 
@@ -33,23 +33,18 @@ export class ShadowCasterComponent extends ex.Component {
   private createShadow(actor: ex.Actor): void {
     if (this.shadowActor) return;
 
-    // Get entity's current graphic dimensions
-    const g = actor.graphics.current;
-    const w = g ? g.width : 16;
-    const h = g ? g.height : 24;
-
     this.shadowActor = new ex.Actor({
       pos: actor.pos.clone(),
-      anchor: ex.vec(0.5, 0.9), // bottom-center — shadow grows from feet upward
+      anchor: ex.vec(0.5, 0.5),
     });
 
-    // Dark rectangle matching entity width, squished vertically
-    this.shadowGraphic = new ex.Rectangle({
-      width: w * 0.9,
-      height: h * 0.7,
-      color: ex.Color.fromRGB(0, 0, 0, 0.35),
-    });
-    this.shadowActor.graphics.use(this.shadowGraphic);
+    // Ellipse shadow: circle scaled to oval
+    // Width = entity width, squished to ~30% height for ground perspective
+    this.shadowActor.graphics.use(new ex.Circle({
+      radius: this.entityWidth * 0.5,
+      color: ex.Color.fromRGB(0, 0, 0, 0.45),
+    }));
+
     this.shadowActor.z = -1;
     actor.scene?.add(this.shadowActor);
   }
@@ -67,20 +62,6 @@ export class ShadowCasterComponent extends ex.Component {
     if (!this.shadowActor) {
       if (actor.scene) this.createShadow(actor);
       return;
-    }
-
-    // Update shadow size if entity graphic changed
-    const g = actor.graphics.current;
-    if (g && this.shadowGraphic) {
-      const w = g.width * 0.9;
-      const h = g.height * 0.7;
-      if (Math.abs(w - this.shadowGraphic.width) > 2 || Math.abs(h - this.shadowGraphic.height) > 2) {
-        this.shadowGraphic = new ex.Rectangle({
-          width: w, height: h,
-          color: ex.Color.fromRGB(0, 0, 0, 0.35),
-        });
-        this.shadowActor.graphics.use(this.shadowGraphic);
-      }
     }
 
     // Find nearest light source
@@ -106,25 +87,31 @@ export class ShadowCasterComponent extends ex.Component {
     const dy = actor.pos.y - bestLight.y;
     const angle = Math.atan2(dy, dx);
 
-    // Shadow length: closer = longer (exact same formula as original game)
+    // Shadow length (original formula)
     const shadowLen = Math.min(1.2, 400 / (bestDist + 50));
 
-    // Feet position (ground contact)
-    const feetY = actor.pos.y + this.entityHeight * 0.35;
+    // Feet position (ground contact point)
+    const feetY = actor.pos.y + this.entityHeight * 0.3;
 
-    // Position at feet
-    this.shadowActor.pos = ex.vec(actor.pos.x, feetY);
+    // Shadow offset from feet in light-away direction
+    const offsetDist = shadowLen * this.entityHeight * 0.3;
+    const shadowX = actor.pos.x + Math.cos(angle) * offsetDist;
+    const shadowY = feetY + Math.sin(angle) * offsetDist * 0.5; // flatten Y for ground perspective
 
-    // Rotation: point away from light (+90° for anchor orientation)
-    this.shadowActor.rotation = angle + Math.PI * 0.5;
+    this.shadowActor.pos = ex.vec(shadowX, shadowY);
 
-    // Scale: X = entity width, Y = shadow stretch
-    const baseScale = actor.scale?.x ?? 1;
-    this.shadowActor.scale = ex.vec(baseScale, shadowLen * 0.5);
+    // Ellipse scale: wider along shadow direction, squished for ground
+    // Base ellipse is a circle — scale X for width, Y for ground flatness
+    const stretchX = 1.0 + shadowLen * 0.4;    // stretch along shadow dir
+    const stretchY = 0.3 + shadowLen * 0.15;    // ground perspective (flat)
+    this.shadowActor.scale = ex.vec(stretchX, stretchY);
 
-    // Alpha: 35% at light center, fading to 5% at edge (exact same as original)
+    // Rotate to point away from light
+    this.shadowActor.rotation = angle;
+
+    // Alpha: darker shadows, same edge-fade as original
     const edgeFade = 1 - (bestDist / bestLight.radius);
-    this.shadowActor.graphics.opacity = Math.max(0.05, 0.35 * edgeFade);
+    this.shadowActor.graphics.opacity = Math.max(0.08, 0.45 * edgeFade);
 
     // Z: just below parent
     this.shadowActor.z = actor.z - 0.1;
