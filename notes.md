@@ -2,6 +2,39 @@
 
 ---
 
+## 2026-03-19 — 364ffc9: v2.5.9: Player melee animation, resource drops, and auto-pickup
+
+**Commit:** 364ffc9
+
+### Summary
+Added the full melee attack loop for the player: directional axe-swing spritesheets play on attack, resources drop collectible items when destroyed, and players auto-collect drops by walking over them. Damage timing is now driven by the animation's damage frame callback, matching the pattern already used for enemy dodges.
+
+### Changes Made
+- `src/engine/AssetLoader.ts`:
+  - Loaded 8 directional male melee spritesheets (3 frames, 48x48 each)
+  - Exported `maleMeleeSheets` mapping for use in EntityFactory
+- `src/components/AnimatedSpriteComponent.ts`:
+  - Added `attackSpriteSheets` and `attackSheetGrid` options mirroring the existing walk pattern
+  - Refactored duplicate sheet-extraction logic into shared `extractSheetFrames()` helper
+- `src/entities/EntityFactory.ts`:
+  - Wired player entity with attack animation config pointing to `maleMeleeSheets`
+  - Added `createDrop()` factory method: spawns wood sticks (brown rectangles) or stone/metal (small circles) at destruction point with random scatter and bounce-in scale animation
+- `src/scenes/GameScene.ts`:
+  - Added `drops` array to track live drop entities
+  - `runDropPickup()`: each frame checks if player is within 40px of any drop; auto-collects and increments inventory
+  - `spawnFloatingText()`: renders "+N wood / stone / metal" text floating upward — triggered on resource destruction and on each individual pickup
+  - Attack integration: melee damage to both enemies and resources fires on the animation's damage frame callback (previously fired immediately on key press)
+
+### Rationale
+Damage-on-damage-frame makes combat feel responsive and fair — the hit registers at the visual peak of the swing rather than the moment the key is pressed. The drop and pickup system gives resource destruction tangible feedback and sets up the foundation for a crafting/inventory loop.
+
+### Next Steps
+- Add inventory UI panel to display collected resource counts
+- Implement crafting recipes that consume wood/stone/metal
+- Consider a pickup magnet radius that grows as the player levels up
+
+---
+
 ## 2026-03-19 — 41a5968: v2.5.8: Fix SpriteSheet.getSprite argument order in tryExtractWalkSheets
 
 **Commit:** 41a5968
