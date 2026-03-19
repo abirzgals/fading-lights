@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-20 — v2.7.3: Mobile joystick redesign + attack range tuning
+
+### Summary
+Overhauled mobile controls so the joystick spawns at the exact touch point on the left half of the screen rather than at a fixed position. Bot approach distance and player damage range were tightened so melee contact is reliable.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Joystick base and knob now appear at the touch origin on the left half of the screen and hide on release, replacing the fixed-position joystick area.
+  - Touch tracking uses touch identifier so the attack button press never resets the joystick.
+  - Left-half touch area and attack button are fully separated with no event cross-talk; attack button uses `stopPropagation`.
+  - Attack button repositioned to right side at 30% from bottom (higher and easier to reach with thumb).
+  - Resource damage range filter reverted from 60px back to 52px (was widened unnecessarily in v2.7.2).
+- `src/ai/BotAI.ts`:
+  - Bot approach/attack threshold reduced from 58px to 40px so the bot walks to true melee distance before swinging.
+- `package.json`: bumped version to 2.7.3.
+
+### Rationale
+The fixed joystick position was awkward for different hand sizes and thumb reach. Spawning the joystick at the touch origin makes control feel natural regardless of where the player rests their thumb. Touch-identifier tracking prevents the attack button from interrupting movement. The 58px bot threshold was leaving the bot slightly too far away to reliably land hits; 40px matches true melee range.
+
+### Next Steps
+- Consider a single shared `MELEE_RANGE` constant used by both GameScene and BotAI to prevent range drift between commits.
+
+---
+
 ## 2026-03-20 — v2.7.2: Widen resource attack range for diagonal + anchor offset
 
 ### Summary

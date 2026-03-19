@@ -403,7 +403,7 @@ export class GameScene extends ex.Scene {
             const fDir = facingDirs[facing] ?? { x: 0, y: 1 };
 
             const nearRes = this.level.entities
-              .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 60)
+              .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 52)
               .sort((a, b) => {
                 // Score = distance - facing bonus (dot * 30px)
                 // Lower = better. Facing direction gets 30px advantage
@@ -1159,63 +1159,89 @@ export class GameScene extends ex.Scene {
   }
 
   private setupMobileControls(): void {
-    // Only on touch devices
     if (!('ontouchstart' in window)) return;
 
     const el = document.createElement('div');
-    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:10002;pointer-events:none;';
+    el.style.cssText = 'position:fixed;inset:0;z-index:10002;pointer-events:none;';
+
+    // Joystick appears where you touch (left half of screen)
+    // Attack button fixed on right side, higher up (30% from bottom)
     el.innerHTML = `
-      <div id="joystick-area" style="position:absolute;bottom:20px;left:20px;width:120px;height:120px;
-        background:rgba(255,255,255,0.08);border-radius:50%;pointer-events:auto;
-        display:flex;align-items:center;justify-content:center;">
-        <div id="joystick-knob" style="width:40px;height:40px;background:rgba(255,255,255,0.2);
+      <div id="joystick-base" style="position:absolute;width:120px;height:120px;
+        background:rgba(255,255,255,0.08);border:1px solid rgba(255,255,255,0.15);
+        border-radius:50%;pointer-events:none;display:none;
+        align-items:center;justify-content:center;">
+        <div id="joystick-knob" style="width:44px;height:44px;background:rgba(255,255,255,0.25);
           border-radius:50%;pointer-events:none;"></div>
       </div>
-      <button id="mobile-attack" style="position:absolute;bottom:30px;right:30px;width:64px;height:64px;
-        background:rgba(255,68,68,0.3);border:2px solid rgba(255,68,68,0.5);border-radius:50%;
-        color:#ff4444;font:bold 14px monospace;pointer-events:auto;cursor:pointer;">ATK</button>
+      <div id="joystick-touch-area" style="position:absolute;left:0;top:0;width:50%;height:100%;pointer-events:auto;"></div>
+      <button id="mobile-attack" style="position:absolute;right:20px;bottom:30%;width:72px;height:72px;
+        background:rgba(255,68,68,0.25);border:2px solid rgba(255,68,68,0.5);border-radius:50%;
+        color:#ff4444;font:bold 16px monospace;pointer-events:auto;cursor:pointer;
+        -webkit-user-select:none;user-select:none;">ATK</button>
     `;
     document.body.appendChild(el);
     this.mobileControlsEl = el;
 
-    // Joystick
-    const joystickArea = document.getElementById('joystick-area')!;
+    const base = document.getElementById('joystick-base')!;
     const knob = document.getElementById('joystick-knob')!;
+    const touchArea = document.getElementById('joystick-touch-area')!;
     let joystickActive = false;
+    let joystickTouchId: number | null = null;
     let joystickCenter = { x: 0, y: 0 };
 
-    joystickArea.addEventListener('touchstart', (e) => {
+    // Joystick appears where you first touch on the LEFT HALF
+    touchArea.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      const touch = e.changedTouches[0];
       joystickActive = true;
-      const rect = joystickArea.getBoundingClientRect();
-      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+      joystickTouchId = touch.identifier;
+      joystickCenter = { x: touch.clientX, y: touch.clientY };
+      // Show joystick base at touch position
+      base.style.display = 'flex';
+      base.style.left = `${touch.clientX - 60}px`;
+      base.style.top = `${touch.clientY - 60}px`;
+      knob.style.transform = 'translate(0, 0)';
+      this.mobileJoystick = { x: 0, y: 0 };
     });
 
     document.addEventListener('touchmove', (e) => {
       if (!joystickActive) return;
-      const touch = e.touches[0];
-      const dx = (touch.clientX - joystickCenter.x) / 50;
-      const dy = (touch.clientY - joystickCenter.y) / 50;
-      const len = Math.sqrt(dx * dx + dy * dy);
-      const clampedLen = Math.min(len, 1);
-      const nx = len > 0 ? (dx / len) * clampedLen : 0;
-      const ny = len > 0 ? (dy / len) * clampedLen : 0;
-      this.mobileJoystick = { x: nx, y: ny };
-      // Move knob visual
-      knob.style.transform = `translate(${nx * 30}px, ${ny * 30}px)`;
-    });
+      // Find the joystick touch
+      for (let i = 0; i < e.touches.length; i++) {
+        const touch = e.touches[i];
+        if (touch.identifier === joystickTouchId) {
+          const dx = (touch.clientX - joystickCenter.x) / 50;
+          const dy = (touch.clientY - joystickCenter.y) / 50;
+          const len = Math.sqrt(dx * dx + dy * dy);
+          const clampedLen = Math.min(len, 1);
+          const nx = len > 0 ? (dx / len) * clampedLen : 0;
+          const ny = len > 0 ? (dy / len) * clampedLen : 0;
+          this.mobileJoystick = { x: nx, y: ny };
+          knob.style.transform = `translate(${nx * 35}px, ${ny * 35}px)`;
+          break;
+        }
+      }
+    }, { passive: true });
 
-    document.addEventListener('touchend', () => {
-      if (joystickActive) {
-        joystickActive = false;
-        this.mobileJoystick = null;
-        knob.style.transform = 'translate(0, 0)';
+    document.addEventListener('touchend', (e) => {
+      for (let i = 0; i < e.changedTouches.length; i++) {
+        if (e.changedTouches[i].identifier === joystickTouchId) {
+          joystickActive = false;
+          joystickTouchId = null;
+          this.mobileJoystick = null;
+          base.style.display = 'none';
+          knob.style.transform = 'translate(0, 0)';
+          break;
+        }
       }
     });
 
-    // Attack button
-    document.getElementById('mobile-attack')!.addEventListener('touchstart', (e) => {
+    // Attack button — doesn't interfere with joystick
+    const atkBtn = document.getElementById('mobile-attack')!;
+    atkBtn.addEventListener('touchstart', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       this.mobileAttackPressed = true;
     });
   }
