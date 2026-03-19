@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-19 — 41a5968: v2.5.8: Fix SpriteSheet.getSprite argument order in tryExtractWalkSheets
+
+**Commit:** 41a5968
+
+### Summary
+Fixed a fatal game load error caused by swapped arguments in `SpriteSheet.getSprite()` inside `tryExtractWalkSheets()`. The call `getSprite(0, i)` was interpreted by Excalibur as (column=0, row=i), so any walk animation with more than one frame would throw "No sprite exists in the SpriteSheet at (0, 1)" and crash the game before it could start.
+
+### Changes Made
+- `src/components/AnimatedSpriteComponent.ts`:
+  - `tryExtractWalkSheets()`: changed `sheet.getSprite(0, i)` to `sheet.getSprite(i, 0)` — Excalibur's signature is `(column, row)`, so iterating columns across row 0 is the correct pattern for a horizontal sprite strip
+- `package.json`: bumped version from 2.0.0 to 2.5.8 to align with commit versioning convention
+
+### Rationale
+The argument swap meant Excalibur was looking for sprites in a second row that does not exist in a single-row horizontal strip, causing an immediate fatal throw. The fix reads frames left-to-right across row 0, which is exactly how the walk spritesheets are laid out.
+
+### Next Steps
+- Verify all 8 directional walk animations play correctly in-game after this fix
+- Add idle animation frames (currently falls back to static sprite when not moving)
+
+---
+
 ## 2026-03-19 — aec0213: v2.5.7: Player walking animations via spritesheet support
 
 **Commit:** aec0213
