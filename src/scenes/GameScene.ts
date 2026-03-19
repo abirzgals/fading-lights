@@ -389,21 +389,24 @@ export class GameScene extends ex.Scene {
     }
   }
 
-  /** Spawn a tree stump — visible for 20s, then fades out in 3s. Not a collider. */
+  /** Spawn a random tree stump — visible for 20s, then fades out in 3s. Not a collider. */
   private spawnStump(x: number, y: number): void {
     const stump = new ex.Actor({
-      pos: ex.vec(x, y + 10), // slightly below tree center (at ground)
+      pos: ex.vec(x, y + 8),
       anchor: ex.vec(0.5, 0.5),
     });
-    // Simple stump graphic — brown rectangle with darker top
-    stump.graphics.use(new ex.Rectangle({
-      width: 12, height: 8,
-      color: ex.Color.fromHex('#5a3a1a'),
-    }));
-    stump.z = -0.5; // below characters but above ground
+    // Pick random stump variant
+    const variants = AssetLoader.stumpVariants;
+    const variant = variants[Math.floor(Math.random() * variants.length)];
+    if (variant?.isLoaded()) {
+      stump.graphics.use(variant.toSprite());
+    } else {
+      stump.graphics.use(new ex.Rectangle({ width: 14, height: 10, color: ex.Color.fromHex('#5a3a1a') }));
+    }
+    stump.z = -0.5;
     stump.actions
-      .delay(20000)   // visible for 20 seconds
-      .fade(0, 3000)  // fade out over 3 seconds
+      .delay(20000)
+      .fade(0, 3000)
       .die();
     this.add(stump);
   }

@@ -2,6 +2,55 @@
 
 ---
 
+## 2026-03-19 — v2.6.67: Stump sprite variants, speed rebalance, extended melee range, PathFollower AI movement
+
+### Summary
+Added 3 stump sprite variants that are randomly selected when a tree is chopped. Rebalanced movement speeds across player and all enemy types to make combat feel more deliberate. Extended player melee range from 32px to 48px so melee can more reliably reach ranged enemies. Refactored all enemy movement behaviours (flee, orbit, wander) to use PathFollower so they pathfind to calculated target points rather than moving in straight lines.
+
+### Changes Made
+- `public/assets/pixelart/stump1.png`, `stump2.png`, `stump3.png` — New 32x32 pixel art stump sprites (3 visual variants, generated via PixelLab MCP).
+- `src/engine/AssetLoader.ts` — Registers all 3 stump texture variants.
+- `src/scenes/GameScene.ts` — `spawnStump()` randomly selects one of the 3 stump textures when placing a stump after a tree is chopped.
+- `src/config.ts` — Speed rebalance: Player 160→110; Wisp 104→72, Stalker 76→56, Beast 52→40, Lord 44→36; Archer 62→42, Mage 48→35; Crawler 60→44.
+- `src/entities/EntityFactory.ts` — Player melee attack range increased from 32px to 48px.
+- `src/ai/EnemyBrainSystem.ts` — Flee, orbit, and wander behaviours now calculate a target point (flee point 120px away, perpendicular orbit point, random wander point 80px away) and use PathFollower to pathfind there. Paths stored for debug rendering.
+
+### Rationale
+The original speeds made enemies too easy to kite and the player felt too fast relative to the maze. Slowing everything down adds weight and tension to encounters. Extending melee range addresses the frustration of being unable to hit ranged enemies before they reposition. Routing all AI movement through PathFollower eliminates cases where enemies would phase through walls or get stuck on corners during flee/orbit/wander states.
+
+### Next Steps
+- Playtest the new speeds and tune further if combat still feels off.
+- Verify PathFollower flee/orbit/wander paths are being recalculated at appropriate intervals (not every frame).
+- Consider adding a brief stump-appear animation when the stump spawns.
+
+---
+
+## 2026-03-19 — v2.0.1: Custom loading screen with ember particles and fade-out
+
+### Summary
+Replaced Excalibur's default loading UI with a fully custom themed overlay injected directly into the DOM in `src/main.ts`. The screen matches the game's visual identity and transitions out cleanly once assets are ready.
+
+### Changes Made
+- `src/main.ts`
+  - Custom `div` overlay injected at the start of the file, before the engine is created.
+  - "THE FADING LIGHT" title rendered at 48px with pulsing `text-shadow` animation (`titlePulse` keyframe).
+  - "SURVIVE THE DARKNESS" subtitle beneath the title in muted orange.
+  - Orange gradient progress bar (300px wide, 4px tall) wired to a 200ms polling interval tracking `loadedCount / totalCount`.
+  - Floating ember particle system: `spawnEmber()` called every 150ms via `setInterval`, each ember rises via `emberRise` keyframe and self-removes after its duration.
+  - Injected `<style>` tag hides `.excalibur-loader` and `#excalibur-play` via `display: none !important`, defines `titlePulse` and `emberRise` keyframes.
+  - On `game.start(loader).then(...)`: intervals cleared, bar snapped to 100%, status text set to "Ready", overlay fades out over 0.8s then is removed from the DOM along with the style tag.
+  - Removed the stale "skip intro/menu for testing" comment from the `goToScene` call.
+- `src/config.ts` — `GAME_VERSION` bumped from `2.0.0` to `2.0.1`.
+
+### Rationale
+Excalibur's default loader has no visual connection to the game's dark, ember-lit aesthetic. Replacing it with a custom overlay that uses the same colour palette (`#020105` background, `#ff8844` orange) and atmospheric particle effect sets the mood before the first frame renders, creating a cohesive first impression.
+
+### Next Steps
+- Consider tying `loadedCount` directly to Excalibur's loader events for a more accurate progress value rather than the polling interval.
+- Evaluate whether the ember particle count/speed needs tuning on lower-end devices.
+
+---
+
 ## 2026-03-19 — v2.6.66: Debug mode off by default in GameScene
 
 ### Summary

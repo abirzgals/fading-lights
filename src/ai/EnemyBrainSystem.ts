@@ -98,13 +98,23 @@ export class EnemyBrainSystem {
           e.vel = ex.vec(0, 0);
           break;
 
-        case 'wander':
+        case 'wander': {
           if (ai.wanderTimer <= 0) {
             ai.wanderAngle = Math.random() * Math.PI * 2;
             ai.wanderTimer = 1 + Math.random() * 2;
           }
-          e.vel = ex.vec(Math.cos(ai.wanderAngle) * speed * 0.3, Math.sin(ai.wanderAngle) * speed * 0.3);
+          // Wander via pathfinding
+          const wanderX = e.pos.x + Math.cos(ai.wanderAngle) * 80;
+          const wanderY = e.pos.y + Math.sin(ai.wanderAngle) * 80;
+          const wanderTo = this.grid.findWalkableNear(wanderX, wanderY);
+          const wpf = this.getPathFollower(e);
+          wpf.tick(dt);
+          const wdir = wpf.moveTo(e.pos.x, e.pos.y, wanderTo.x, wanderTo.y);
+          e.vel = ex.vec(wdir.x * speed * 0.3, wdir.y * speed * 0.3);
+          (e as any)._aiPath = wpf.getPath();
+          (e as any)._aiPathIdx = wpf.getPathIdx();
           break;
+        }
 
         case 'chase':
           this.chaseWithPathfinding(e, target, speed, dt);
@@ -120,9 +130,19 @@ export class EnemyBrainSystem {
           break;
 
         case 'flee': {
+          // Flee via pathfinding — find a point away from target
           const away = e.pos.sub(target.pos).normalize();
-          e.vel = ex.vec(away.x * speed * 0.8, away.y * speed * 0.8);
-          // Ranged enemies occasionally shoot while fleeing (~10% chance per second)
+          const fleeX = e.pos.x + away.x * 120;
+          const fleeY = e.pos.y + away.y * 120;
+          const fleeTo = this.grid.findWalkableNear(fleeX, fleeY);
+          const pf = this.getPathFollower(e);
+          pf.tick(dt);
+          const dir = pf.moveTo(e.pos.x, e.pos.y, fleeTo.x, fleeTo.y);
+          e.vel = ex.vec(dir.x * speed * 0.8, dir.y * speed * 0.8);
+          // Store path for debug
+          (e as any)._aiPath = pf.getPath();
+          (e as any)._aiPathIdx = pf.getPathIdx();
+          // Ranged enemies occasionally shoot while fleeing
           if (ai.isRanged && Math.random() < 0.1 * dt) {
             this.doRangedAttack(e, target, ai, scene);
           }
@@ -171,11 +191,19 @@ export class EnemyBrainSystem {
     }
   }
 
-  /** Orbit target + fire ranged attack with animation */
+  /** Orbit target via pathfinding + fire ranged attack */
   private doOrbit(e: GameEntity, target: ex.Actor, speed: number, ai: AIBrainComponent, scene: ex.Scene): void {
-    // Circle around target
-    const orbitDir = e.pos.sub(target.pos).normalize();
-    e.vel = ex.vec(-orbitDir.y * speed * 0.5, orbitDir.x * speed * 0.5);
+    // Calculate orbit point — perpendicular to target direction
+    const toTarget = e.pos.sub(target.pos).normalize();
+    const orbitX = e.pos.x + (-toTarget.y) * 60;
+    const orbitY = e.pos.y + toTarget.x * 60;
+    const orbitTo = this.grid.findWalkableNear(orbitX, orbitY);
+    const pf = this.getPathFollower(e);
+    pf.tick(1 / 60);
+    const dir = pf.moveTo(e.pos.x, e.pos.y, orbitTo.x, orbitTo.y);
+    e.vel = ex.vec(dir.x * speed * 0.5, dir.y * speed * 0.5);
+    (e as any)._aiPath = pf.getPath();
+    (e as any)._aiPathIdx = pf.getPathIdx();
 
     this.doRangedAttack(e, target, ai, scene);
   }

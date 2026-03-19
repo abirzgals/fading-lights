@@ -44,7 +44,7 @@ export class EntityFactory {
     // 1000 HP for testing, CONFIG.PLAYER_MAX_HP for production
     player.addComponent(new HealthComponent(1000));
     player.addComponent(new MeleeAttackComponent({
-      damage: 10, range: 32, cooldownMs: 800, damageFrame: 2, totalFrames: 3, arcDeg: 120,
+      damage: 10, range: 48, cooldownMs: 800, damageFrame: 2, totalFrames: 3, arcDeg: 120,
     }));
     // Player anchor 0.5 — feet ~10px below pos
     player.addComponent(new ShadowCasterComponent({ feetOffset: 10 }));

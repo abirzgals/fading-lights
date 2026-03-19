@@ -1,6 +1,6 @@
 import { WeaponDef, EnemyDef, BuildingDef, EnemyType, BuildingType } from './types';
 
-export const GAME_VERSION = '2.0.1';
+export const GAME_VERSION = '2.6.67';
 
 export const CONFIG = {
   // World
@@ -8,7 +8,7 @@ export const CONFIG = {
   TILE_SIZE: 32,
 
   // Player
-  PLAYER_SPEED: 160,
+  PLAYER_SPEED: 110,
   PLAYER_MAX_HP: 100,
 
   // Bonfire
@@ -61,13 +61,13 @@ export const WEAPONS: Record<string, WeaponDef> = {
 };
 
 export const ENEMIES: Record<EnemyType, EnemyDef> = {
-  SHADOW_WISP:    { name: 'Shadow Wisp',    hp: 14,  damage: 5,  speed: 104, xp: 5,  size: 12, color: 0x4444AA, gold: 1 },
-  SHADOW_STALKER: { name: 'Shadow Stalker', hp: 35,  damage: 12, speed: 76,  xp: 15, size: 18, color: 0x6622AA, gold: 2 },
-  SHADOW_BEAST:   { name: 'Shadow Beast',   hp: 84,  damage: 25, speed: 52,  xp: 35, size: 28, color: 0x440066, gold: 4 },
-  SHADOW_LORD:    { name: 'Shadow Lord',    hp: 210, damage: 40, speed: 44,  xp: 100, size: 36, color: 0x220044, gold: 10 },
-  FOG_CRAWLER:    { name: 'Fog Crawler',    hp: 56,  damage: 0,  speed: 60,  xp: 25, size: 22, color: 0x333355, gold: 3, targetsFire: true },
-  SHADOW_ARCHER:  { name: 'Shadow Archer',  hp: 42,  damage: 14, speed: 62,  xp: 20, size: 16, color: 0x553388, gold: 3, ranged: true, projectileSpeed: 220, attackRange: 200, attackCooldown: 2200, projectileType: 'arrow' },
-  VOID_MAGE:      { name: 'Void Mage',      hp: 65,  damage: 22, speed: 48,  xp: 40, size: 20, color: 0x6600AA, gold: 5, ranged: true, projectileSpeed: 160, attackRange: 240, attackCooldown: 3000, projectileType: 'magic' },
+  SHADOW_WISP:    { name: 'Shadow Wisp',    hp: 14,  damage: 5,  speed: 72,  xp: 5,  size: 12, color: 0x4444AA, gold: 1 },
+  SHADOW_STALKER: { name: 'Shadow Stalker', hp: 35,  damage: 12, speed: 56,  xp: 15, size: 18, color: 0x6622AA, gold: 2 },
+  SHADOW_BEAST:   { name: 'Shadow Beast',   hp: 84,  damage: 25, speed: 40,  xp: 35, size: 28, color: 0x440066, gold: 4 },
+  SHADOW_LORD:    { name: 'Shadow Lord',    hp: 210, damage: 40, speed: 36,  xp: 100, size: 36, color: 0x220044, gold: 10 },
+  FOG_CRAWLER:    { name: 'Fog Crawler',    hp: 56,  damage: 0,  speed: 44,  xp: 25, size: 22, color: 0x333355, gold: 3, targetsFire: true },
+  SHADOW_ARCHER:  { name: 'Shadow Archer',  hp: 42,  damage: 14, speed: 42,  xp: 20, size: 16, color: 0x553388, gold: 3, ranged: true, projectileSpeed: 220, attackRange: 200, attackCooldown: 2200, projectileType: 'arrow' },
+  VOID_MAGE:      { name: 'Void Mage',      hp: 65,  damage: 22, speed: 35,  xp: 40, size: 20, color: 0x6600AA, gold: 5, ranged: true, projectileSpeed: 160, attackRange: 240, attackCooldown: 3000, projectileType: 'magic' },
 };
 
 export const BUILDINGS: Record<BuildingType, BuildingDef> = {
