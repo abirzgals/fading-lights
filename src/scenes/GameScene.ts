@@ -38,6 +38,11 @@ export class GameScene extends ex.Scene {
   private botEnabled = true;
   private enemyBrains!: EnemyBrainSystem;
 
+  // FPS counter
+  private fpsFrames = 0;
+  private fpsTimer = 0;
+  private fpsDisplay = 0;
+
   // Game state
   // HP is read from player's HealthComponent — no separate field
   private resources = { wood: 5, stone: 0, metal: 0, gold: 0 };
@@ -153,6 +158,14 @@ export class GameScene extends ex.Scene {
 
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    // FPS counter
+    this.fpsFrames++;
+    this.fpsTimer += dt;
+    if (this.fpsTimer >= 1) {
+      this.fpsDisplay = this.fpsFrames;
+      this.fpsFrames = 0;
+      this.fpsTimer = 0;
+    }
     this.pushEntitiesOutOfBlocked();
     this.handlePlayerInput(engine, dt);
     this.runEnemyAI(dt);
@@ -1337,7 +1350,9 @@ export class GameScene extends ex.Scene {
     const lvlBar = '█'.repeat(Math.round(lvlProgress / 10)) + '░'.repeat(10 - Math.round(lvlProgress / 10));
     const lvlLabel = isMax ? `Lv.${this.campLevel} MAX` : `Lv.${this.campLevel}`;
 
+    const fpsColor = this.fpsDisplay >= 50 ? '#44FF44' : this.fpsDisplay >= 30 ? '#FFAA00' : '#FF4444';
     this.hudEl.innerHTML = `
+      <span style="color:${fpsColor}">${this.fpsDisplay} FPS</span><br>
       <span style="color:#44FF44">HP [${hpBar}] ${Math.round(hp)}/${maxHp}</span><br>
       <span style="color:#FF8800">FIRE [${fuelBar}] ${fuelPct}%</span><br>
       <span style="color:#CC66FF">CAMP [${lvlBar}] ${lvlLabel}</span><br>
