@@ -240,6 +240,10 @@ export class GameScene extends ex.Scene {
                   }
                   this.spawnFloatingText(nearRes.pos.x, nearRes.pos.y - 16,
                     `+${res.dropAmount} ${res.resourceType}`, '#44FF44');
+                  // Spawn stump for trees before killing
+                  if (nearRes.entityType === 'tree') {
+                    this.spawnStump(nearRes.pos.x, nearRes.pos.y);
+                  }
                   nearRes.kill();
                 }
               }
@@ -337,6 +341,25 @@ export class GameScene extends ex.Scene {
       spark.actions.fade(0, 300 + Math.random() * 200).die();
       this.add(spark);
     }
+  }
+
+  /** Spawn a tree stump — visible for 20s, then fades out in 3s. Not a collider. */
+  private spawnStump(x: number, y: number): void {
+    const stump = new ex.Actor({
+      pos: ex.vec(x, y + 10), // slightly below tree center (at ground)
+      anchor: ex.vec(0.5, 0.5),
+    });
+    // Simple stump graphic — brown rectangle with darker top
+    stump.graphics.use(new ex.Rectangle({
+      width: 12, height: 8,
+      color: ex.Color.fromHex('#5a3a1a'),
+    }));
+    stump.z = -0.5; // below characters but above ground
+    stump.actions
+      .delay(20000)   // visible for 20 seconds
+      .fade(0, 3000)  // fade out over 3 seconds
+      .die();
+    this.add(stump);
   }
 
   private spawnFloatingText(x: number, y: number, text: string, color: string): void {

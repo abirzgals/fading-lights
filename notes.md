@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.32: Fix gap-fill tile ownership + tree stumps
+
+### Summary
+Two tree-related fixes: gap-fill tile ownership is now correctly established during tree creation (not reverse-calculated after the fact), and trees now leave a visible stump when destroyed.
+
+### Changes Made
+- `src/world/LevelScript.ts` — `treeByTile` map is now populated inside the tree creation loop using the exact `(tx, ty)` grid coordinates. Removed the old post-loop rebuild that reverse-calculated tile position from entity world position (`Math.floor(e.pos.x / T)` etc.), which was off-by-one and caused gap-fill tiles to remain blocked after a tree was cut.
+- `src/scenes/GameScene.ts` — Added `spawnStump(x, y)` method. When a tree resource is killed, a 12x8px brown rectangle actor is placed at ground position (`y + 10`). It is not a collider, sits at `z = -0.5`, waits 20 seconds, then fades out over 3 seconds and calls `.die()`.
+
+### Rationale
+The reverse position calculation (`Math.floor((e.pos.y + T) / T)`) produced incorrect tile coordinates due to the visual offset applied during tree placement, meaning the treeByTile map entries never matched gap-fill lookups. Building the map during creation using the raw `tx,ty` loop variables is exact and reliable. The stump provides visual feedback that a tree was harvested without requiring any collision or gameplay logic.
+
+### Next Steps
+- Consider a more detailed stump sprite once pixel art assets are available.
+- Verify gap-fill freeing is correct in dense forest edge cases.
+
+---
+
 ## 2026-03-19 — v2.6.30: Gap-fill collider recalc on tree destroy + corner wall-sliding fix
 
 ### Summary

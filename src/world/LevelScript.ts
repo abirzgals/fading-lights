@@ -190,31 +190,23 @@ export class Level1Script {
       (window as any).__playerName || 'Wanderer');
 
     // ======== TREES ========
+    // Track tree by grid tile for gap-fill assignment
+    const treeByTile = new Map<string, GameEntity>();
     for (let tx = 2; tx < worldSize - 2; tx++) {
       for (let ty = 2; ty < worldSize - 2; ty++) {
         if (isClearing(tx, ty) || isPath(tx, ty)) continue;
         const density = getNoise(tx, ty) * 0.6 + getNoise(tx * 2.7 + 50, ty * 2.7 + 50) * 0.4;
-        // Denser forests: lower threshold = more trees
         const threshold = density > 0.55 ? 0.15 : density > 0.35 ? 0.55 : 0.92;
         if (rng() > threshold) continue;
         if ((tx - cx) ** 2 + (ty - cy) ** 2 < 25 || grid.isBlocked(tx, ty)) continue;
-        entities.push(EntityFactory.createTree(scene, tx * T + T / 2, ty * T + T / 2 - T, tx, ty,
-          Math.floor(rng() * AssetLoader.treeVariants.length)));
+        const tree = EntityFactory.createTree(scene, tx * T + T / 2, ty * T + T / 2 - T, tx, ty,
+          Math.floor(rng() * AssetLoader.treeVariants.length));
+        entities.push(tree);
+        treeByTile.set(`${tx},${ty}`, tree);
       }
     }
 
     // ======== FOREST WALL — fill gaps, assign to nearest tree ========
-    // Build tree lookup by tile position
-    const treeByTile = new Map<string, GameEntity>();
-    for (const e of entities) {
-      if (e.entityType !== 'tree') continue;
-      const gc = e.get(GridOccupancyComponent) as GridOccupancyComponent | null;
-      if (!gc) continue;
-      // Tree's own tile — use entity position to find tile
-      const ttx = Math.floor(e.pos.x / T), tty = Math.floor((e.pos.y + T) / T); // +T because visual offset
-      treeByTile.set(`${ttx},${tty}`, e);
-    }
-
     let gapsFilled = 0;
     for (let tx = 2; tx < worldSize - 2; tx++) {
       for (let ty = 2; ty < worldSize - 2; ty++) {
@@ -228,7 +220,6 @@ export class Level1Script {
             if (dx === 0 && dy === 0) continue;
             if (grid.isBlocked(tx + dx, ty + dy)) {
               blockedNeighbors++;
-              // Find the tree that owns this neighbor tile
               const tree = treeByTile.get(`${tx + dx},${ty + dy}`);
               if (tree) {
                 const d = Math.abs(dx) + Math.abs(dy);
@@ -238,17 +229,16 @@ export class Level1Script {
           }
         }
         if (blockedNeighbors >= 3 && nearestTree) {
-          // Assign gap tile to nearest tree — it will be freed when tree dies
           const gc = nearestTree.get(GridOccupancyComponent) as GridOccupancyComponent | null;
           if (gc) {
             gc.addTile(tx, ty);
-            treeByTile.set(`${tx},${ty}`, nearestTree); // register for further gap-fills
+            treeByTile.set(`${tx},${ty}`, nearestTree);
             gapsFilled++;
           }
         }
       }
     }
-    console.log(`[Level] Filled ${gapsFilled} forest gaps (assigned to trees)`);
+    console.log(`[Level] Filled ${gapsFilled} forest gaps (owned by trees)`);
 
     // ======== STARTER STONES ========
     let placed = 0;
