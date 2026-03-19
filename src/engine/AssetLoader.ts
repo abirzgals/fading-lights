@@ -13,9 +13,14 @@ export class AssetLoader {
   static treeBirch = new ex.ImageSource('/assets/pixelart/tree_birch.png');
 
   // Stones / metals
-  static stoneDeposit = new ex.ImageSource('/assets/pixelart/stone_deposit.png');
-  static metalOre = new ex.ImageSource('/assets/pixelart/metal_ore.png');
+  static stoneDeposit = new ex.ImageSource('/assets/pixelart/stone_deposit_new.png');
+  static metalOre = new ex.ImageSource('/assets/pixelart/metal_ore_new.png');
   static rockWall = new ex.ImageSource('/assets/pixelart/rock_wall.png');
+
+  // Drop item textures
+  static woodDrop = new ex.ImageSource('/assets/pixelart/wood_drop.png');
+  static stoneDrop = new ex.ImageSource('/assets/pixelart/stone_drop.png');
+  static metalDrop = new ex.ImageSource('/assets/pixelart/metal_drop.png');
 
   // Ground tileset (32x32 per tile, 4x4 = 128x128)
   static groundTileset = new ex.ImageSource('/assets/pixelart/ground-tileset.png');
@@ -285,6 +290,8 @@ export class AssetLoader {
       this.darkTree, this.treePine, this.treeOak, this.treeDead, this.treeBirch,
       // Resources
       this.stoneDeposit, this.metalOre, this.rockWall,
+      // Drop textures
+      this.woodDrop, this.stoneDrop, this.metalDrop,
       // Ground
       this.groundTileset,
       // Weapons

@@ -2,6 +2,7 @@ import * as ex from 'excalibur';
 import { GameEntity } from '../engine/GameEntity';
 import { FogOfWarPostProcessor, FogLight } from '../engine/FogOfWarPostProcessor';
 import { EntityFactory } from '../entities/EntityFactory';
+import { AssetLoader } from '../engine/AssetLoader';
 import { Level1Script, LevelData } from '../world/LevelScript';
 import { CONFIG, ENEMIES } from '../config';
 import { EnemyType } from '../types';
@@ -251,7 +252,11 @@ export class GameScene extends ex.Scene {
       pos: ex.vec(fromX, fromY),
       anchor: ex.vec(0.5, 0.5),
     });
-    stick.graphics.use(new ex.Rectangle({ width: 10, height: 4, color: ex.Color.fromHex('#8B6914') }));
+    if (AssetLoader.woodDrop.isLoaded()) {
+      stick.graphics.use(AssetLoader.woodDrop.toSprite());
+    } else {
+      stick.graphics.use(new ex.Rectangle({ width: 10, height: 4, color: ex.Color.fromHex('#8B6914') }));
+    }
     stick.z = 9998;
 
     const duration = 500; // ms

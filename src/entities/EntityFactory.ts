@@ -143,13 +143,13 @@ export class EntityFactory {
   }
 
   static createStone(scene: ex.Scene, x: number, y: number, tx: number, ty: number): GameEntity {
-    const stone = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
+    const stone = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.6) });
     stone.entityType = 'stone';
 
     if (AssetLoader.stoneDeposit.isLoaded()) {
       stone.graphics.use(AssetLoader.stoneDeposit.toSprite());
     } else {
-      stone.graphics.use(new ex.Rectangle({ width: 20, height: 16, color: ex.Color.fromHex('#666666') }));
+      stone.graphics.use(new ex.Rectangle({ width: 32, height: 28, color: ex.Color.fromHex('#666666') }));
     }
 
     stone.addComponent(new HealthComponent(40));
@@ -161,13 +161,13 @@ export class EntityFactory {
   }
 
   static createMetal(scene: ex.Scene, x: number, y: number, tx: number, ty: number): GameEntity {
-    const metal = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
+    const metal = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.6) });
     metal.entityType = 'metal';
 
     if (AssetLoader.metalOre.isLoaded()) {
       metal.graphics.use(AssetLoader.metalOre.toSprite());
     } else {
-      metal.graphics.use(new ex.Rectangle({ width: 20, height: 16, color: ex.Color.fromHex('#CC8844') }));
+      metal.graphics.use(new ex.Rectangle({ width: 32, height: 28, color: ex.Color.fromHex('#CC8844') }));
     }
 
     metal.addComponent(new HealthComponent(50));
@@ -181,28 +181,36 @@ export class EntityFactory {
   /** Create a resource drop on the ground (wood stick, stone chunk, etc.) */
   static createDrop(scene: ex.Scene, x: number, y: number, type: 'wood' | 'stone' | 'metal' | 'gold'): GameEntity {
     const drop = new GameEntity({
-      pos: ex.vec(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 16),
+      pos: ex.vec(x + (Math.random() - 0.5) * 24, y + (Math.random() - 0.5) * 18),
       anchor: ex.vec(0.5, 0.5),
     });
     drop.entityType = 'drop';
     (drop as any).dropType = type;
 
-    // Simple procedural graphic per type
-    const colors: Record<string, string> = {
-      wood: '#8B6914', stone: '#888888', metal: '#B87333', gold: '#FFD700',
+    // Use pixel art textures, fallback to procedural
+    const textures: Record<string, ex.ImageSource> = {
+      wood: AssetLoader.woodDrop,
+      stone: AssetLoader.stoneDrop,
+      metal: AssetLoader.metalDrop,
     };
-    const color = ex.Color.fromHex(colors[type] ?? '#FFFFFF');
-
-    if (type === 'wood') {
-      // Horizontal stick
-      drop.graphics.use(new ex.Rectangle({ width: 10, height: 4, color }));
+    const tex = textures[type];
+    if (tex?.isLoaded()) {
+      drop.graphics.use(tex.toSprite());
     } else {
-      // Small circle chunk
-      drop.graphics.use(new ex.Circle({ radius: 4, color }));
+      // Fallback procedural
+      const colors: Record<string, string> = {
+        wood: '#8B6914', stone: '#888888', metal: '#B87333', gold: '#FFD700',
+      };
+      const color = ex.Color.fromHex(colors[type] ?? '#FFFFFF');
+      if (type === 'wood') {
+        drop.graphics.use(new ex.Rectangle({ width: 10, height: 4, color }));
+      } else {
+        drop.graphics.use(new ex.Circle({ radius: 4, color }));
+      }
     }
 
-    drop.z = 1; // below characters
-    // Small bounce-in effect
+    drop.z = 1;
+    // Bounce-in effect
     drop.scale = ex.vec(0.3, 0.3);
     drop.actions.scaleTo(ex.vec(1, 1), ex.vec(4, 4));
 
