@@ -2,6 +2,35 @@
 
 ---
 
+## 2026-03-19 — v2.6.17: Elliptical shadow with bonfire wobble
+
+### Summary
+Replaced the grey rectangle shadow with a properly shaped elliptical ground shadow. The shadow now looks like it lies flat on the ground, is offset from entity feet in the direction away from the light, and dances with the bonfire firelight using the same wobble math as the fog shader.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts` — full rewrite:
+  - Shadow graphic changed from `Rectangle` to `Circle` scaled into an ellipse via `actor.scale`.
+  - Alpha raised to max 0.45 (was 0.35); min raised to 0.08 (was 0.05) — visibly darker shadows.
+  - Shadow positioned offset from entity feet in the light-away direction. Y component multiplied by 0.5 to flatten it for ground perspective.
+  - Scale X stretches along the shadow direction; scale Y stays flat (0.3–0.45 range) for a ground-plane look.
+  - Constructor now accepts `{ entityWidth, entityHeight }` for proper ellipse proportions.
+  - Removed per-frame graphic-resize logic (no longer needed with scale-based approach).
+- `src/entities/EntityFactory.ts`:
+  - Player: `ShadowCasterComponent({ entityWidth: 14, entityHeight: 24 })`
+  - Enemies: `ShadowCasterComponent({ entityWidth: def.size, entityHeight: def.size })`
+  - Trees: `ShadowCasterComponent({ entityWidth: 20, entityHeight: 40 })`
+- `src/scenes/GameScene.ts`:
+  - Bonfire light positions for shadow calculation now apply a sin/cos wobble (matching the fog shader's seed + frequency constants), so shadows sway with the firelight every frame.
+
+### Rationale
+The grey rectangle shadow was visually incorrect — it appeared as a solid block rather than a ground shadow. The new ellipse, rotated and scaled, reads as a cast shadow lying on the ground plane. Syncing shadow wobble with the fog shader makes the lighting feel cohesive.
+
+### Next Steps
+- Tune ellipse proportions per entity type if needed after playtesting.
+- Consider adding a soft gradient to the shadow (radial gradient ellipse) for even softer edges.
+
+---
+
 ## 2026-03-19 — v2.6.16: Rewrite shadow system to match original game
 
 ### Summary
