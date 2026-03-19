@@ -403,7 +403,7 @@ export class GameScene extends ex.Scene {
             const fDir = facingDirs[facing] ?? { x: 0, y: 1 };
 
             const nearRes = this.level.entities
-              .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 52)
+              .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 60)
               .sort((a, b) => {
                 // Score = distance - facing bonus (dot * 30px)
                 // Lower = better. Facing direction gets 30px advantage
