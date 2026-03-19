@@ -45,6 +45,8 @@ export interface BotGameState {
   bonfireFuel: number;
   bonfireMaxFuel: number;
   resources: { wood: number; stone: number; metal: number; gold: number };
+  campLevel: number;
+  campFuelAdded: number;
   /** Unlocked but unbuilt spots the bot can work toward */
   availableBuildSpots: BotBuildSpot[];
 }
@@ -70,6 +72,10 @@ interface BotContext {
   nearestResourceDist: number;
   woodNeeded: number;
   hasEnoughWood: boolean;
+  /** Can we level up the fire? */
+  canLevelUp: boolean;
+  /** How many wood logs needed to reach next fire level */
+  woodForLevelUp: number;
   /** Build spot the bot can afford right now */
   affordableBuildSpot: BotBuildSpot | null;
   /** Build spot the bot should gather resources for */
@@ -135,6 +141,8 @@ export class BotAI {
     bonfireFuel: 80,
     bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
     resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
+    campLevel: 0,
+    campFuelAdded: 0,
     availableBuildSpots: [],
   };
 
@@ -467,6 +475,28 @@ export class BotAI {
           check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null && ctx.fuelRatio < 0.85,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
+        // === LEVEL UP FIRE — gather wood + feed to reach next level ===
+        {
+          name: 'Level Up Fire',
+          check: (ctx) => ctx.canLevelUp && ctx.hpRatio >= 0.4,
+          children: [
+            {
+              name: 'Feed to Level Up',
+              check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null,
+              goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by,
+                _treePath: `Feed to Lv.${this.gameState.campLevel + 1} (${ctx.woodForLevelUp} wood left)` }),
+            },
+            {
+              name: 'Gather for Level Up',
+              check: (ctx) => ctx.nearestResource !== null,
+              goal: (ctx) => ({
+                type: 'chop', target: ctx.nearestResource!,
+                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+                _treePath: `Gather for Lv.${this.gameState.campLevel + 1} (need ${ctx.woodForLevelUp} wood)`,
+              }),
+            },
+          ],
+        },
         // === BUILD — walk to affordable build spot ===
         {
           name: 'Build',
@@ -634,10 +664,20 @@ export class BotAI {
       }
     }
 
-    // How much wood do we need? (fuel deficit + 2 extra logs buffer)
+    // How much wood do we need for fuel?
     const fuelDeficit = this.gameState.bonfireMaxFuel * 0.8 - this.gameState.bonfireFuel;
     const woodNeeded = Math.max(0, Math.ceil(fuelDeficit / CONFIG.FUEL_PER_WOOD)) + 2;
     const hasEnoughWood = this.gameState.resources.wood >= woodNeeded;
+
+    // Fire level-up: how much fuel (wood) needed to reach next level?
+    const levels = CONFIG.FIRE_LEVELS;
+    const cl = this.gameState.campLevel;
+    const canLevelUp = cl < levels.length - 1;
+    let woodForLevelUp = 0;
+    if (canLevelUp) {
+      const fuelNeeded = levels[cl + 1] - this.gameState.campFuelAdded;
+      woodForLevelUp = Math.max(0, Math.ceil(fuelNeeded / CONFIG.FUEL_PER_WOOD));
+    }
 
     // Build spot analysis
     const res = this.gameState.resources;
@@ -680,6 +720,7 @@ export class BotAI {
       bestEnemy, enemyNearCamp, projectileAttacker,
       nearestResource, nearestResourceDist,
       woodNeeded, hasEnoughWood,
+      canLevelUp, woodForLevelUp,
       affordableBuildSpot, gatherBuildSpot, gatherNeed,
       evasion, dt,
     };

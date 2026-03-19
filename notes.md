@@ -2,6 +2,35 @@
 
 ---
 
+## 2026-03-19 — v2.6.6: Bot AI actively upgrades bonfire to next level
+
+### Summary
+Extended `BotGameState` with `campLevel` and `campFuelAdded` so the bot is aware of the bonfire's current upgrade state. The `buildContext()` method now derives two new context flags — `canLevelUp` (not yet at max fire level) and `woodForLevelUp` (logs required to reach the next fuel threshold). A new "Level Up Fire" decision tree node sits between the regular fire-feeding logic and the build logic; its two children send the bot to feed the bonfire if it already holds wood, or to chop trees if it does not. Status labels report the target level and remaining wood count (e.g., "Feed to Lv.2 (3 wood left)" or "Gather for Lv.2 (need 5 wood)"). `GameScene` now passes `campLevel` and `campFuelAdded` to the bot on every tick.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Extended `BotGameState` interface with `campLevel: number` and `campFuelAdded: number`.
+  - Extended `BotContext` interface with `canLevelUp: boolean` and `woodForLevelUp: number`.
+  - Default `gameState` initialised with `campLevel: 0` and `campFuelAdded: 0`.
+  - `buildContext()`: reads `CONFIG.FIRE_LEVELS` and current `campLevel`/`campFuelAdded` to compute `canLevelUp` and `woodForLevelUp` (fuel deficit divided by `FUEL_PER_WOOD`, rounded up).
+  - Decision tree: added `'Level Up Fire'` node (requires `canLevelUp` and HP >= 40%) with two children — `'Feed to Level Up'` (has wood + bonfire reachable) and `'Gather for Level Up'` (nearest resource reachable).
+  - Both children embed target level and remaining wood count in the `_treePath` status string.
+- `src/scenes/GameScene.ts`:
+  - Bot state update now passes `campLevel: this.campLevel` and `campFuelAdded: this.campFuelAdded` each tick.
+
+### Priority Order (high to low)
+survive → defend camp → counter-attack → kite → fire emergency → combat → feed fire → **level up fire** → build → gather for build → gather wood → idle
+
+### Rationale
+Levelling up the bonfire unlocks new build spots, making it a prerequisite for building expansion. Placing the node after basic fire maintenance but before building ensures the bot does not neglect survival while still advancing the camp before spending resources on structures. The two-child structure (feed vs. gather) mirrors the existing fire-feeding pattern, keeping the AI consistent.
+
+### Next Steps
+- Confirm `CONFIG.FIRE_LEVELS` thresholds match the game design document
+- Test edge case: bot at max fire level should skip the node entirely and proceed to building
+- Consider requiring a minimum wood reserve before entering the level-up branch so the bot does not strip all logs and starve the bonfire
+
+---
+
 ## 2026-03-19 — v2.6.5: Bot AI can gather resources and build structures
 
 ### Summary

@@ -132,6 +132,8 @@ export class GameScene extends ex.Scene {
         bonfireFuel: this.bonfireFuel,
         bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
         resources: { ...this.resources },
+        campLevel: this.campLevel,
+        campFuelAdded: this.campFuelAdded,
         availableBuildSpots: this.buildSpots
           .filter(s => s.state === 'unlocked')
           .map(s => ({ type: s.type, wx: s.wx, wy: s.wy, cost: BUILDINGS[s.type].cost })),
