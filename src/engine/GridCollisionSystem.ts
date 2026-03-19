@@ -38,23 +38,22 @@ export class GridCollisionSystem {
     return { tx: Math.floor(wx / this.tileSize), ty: Math.floor(wy / this.tileSize) };
   }
 
-  /** BFS flood-fill from a world position. Returns set of reachable tile keys "tx,ty" within maxTiles. */
-  floodFill(wx: number, wy: number, maxTiles: number = 200): Set<string> {
+  /** BFS flood-fill from a world position. Returns map of reachable tile key "tx,ty" → distance (in tiles). */
+  floodFill(wx: number, wy: number, maxTiles: number = 200): Map<string, number> {
     const T = this.tileSize;
     const sx = Math.floor(wx / T), sy = Math.floor(wy / T);
-    const visited = new Set<string>();
-    const queue: Array<{ x: number; y: number }> = [];
+    const visited = new Map<string, number>();
+    const queue: Array<{ x: number; y: number; d: number }> = [];
 
     if (this.isBlocked(sx, sy)) {
-      // Start from nearest walkable
       const fix = this.pushOutOfBlocked(wx, wy);
       if (!fix) return visited;
       const fx = Math.floor(fix.x / T), fy = Math.floor(fix.y / T);
-      visited.add(`${fx},${fy}`);
-      queue.push({ x: fx, y: fy });
+      visited.set(`${fx},${fy}`, 0);
+      queue.push({ x: fx, y: fy, d: 0 });
     } else {
-      visited.add(`${sx},${sy}`);
-      queue.push({ x: sx, y: sy });
+      visited.set(`${sx},${sy}`, 0);
+      queue.push({ x: sx, y: sy, d: 0 });
     }
 
     const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
@@ -65,8 +64,8 @@ export class GridCollisionSystem {
         const key = `${nx},${ny}`;
         if (visited.has(key)) continue;
         if (this.isBlocked(nx, ny)) continue;
-        visited.add(key);
-        queue.push({ x: nx, y: ny });
+        visited.set(key, cur.d + 1);
+        queue.push({ x: nx, y: ny, d: cur.d + 1 });
       }
     }
     return visited;

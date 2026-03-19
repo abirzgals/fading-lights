@@ -63,28 +63,34 @@ export class PathFollower {
       return { x: 0, y: 0 };
     }
 
-    // Find best approach point — nearest walkable tile adjacent to target
-    let goalX = toX, goalY = toY;
-    const ttx = Math.floor(toX / T), tty = Math.floor(toY / T);
-    if (this.grid.isBlocked(ttx, tty)) {
-      let bestD = Infinity;
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          if (dx === 0 && dy === 0) continue;
-          if (!this.grid.isBlocked(ttx + dx, tty + dy)) {
-            const nx = (ttx + dx) * T + T / 2, ny = (tty + dy) * T + T / 2;
-            const d = Math.hypot(nx - fromX, ny - fromY);
-            if (d < bestD) { bestD = d; goalX = nx; goalY = ny; }
+    // Repath if needed — including best-side calculation
+    const targetMoved = this.pathTarget &&
+      Math.hypot(toX - this.pathTarget.x, toY - this.pathTarget.y) > 60;
+    if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 || targetMoved) {
+      // Find best approach side for blocked targets
+      let goalX = toX, goalY = toY;
+      const ttx = Math.floor(toX / T), tty = Math.floor(toY / T);
+      if (this.grid.isBlocked(ttx, tty)) {
+        let bestPath: Array<{ x: number; y: number }> | null = null;
+        let bestLen = Infinity;
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = ttx + dx, ny = tty + dy;
+            if (this.grid.isBlocked(nx, ny)) continue;
+            const candidate = this.grid.findPath(fromX, fromY, nx * T + T / 2, ny * T + T / 2);
+            if (candidate && candidate.length < bestLen) {
+              bestLen = candidate.length;
+              bestPath = candidate;
+              goalX = nx * T + T / 2;
+              goalY = ny * T + T / 2;
+            }
           }
         }
+        this.path = bestPath;
+      } else {
+        this.path = this.grid.findPath(fromX, fromY, goalX, goalY);
       }
-    }
-
-    // Repath if needed
-    const targetMoved = this.pathTarget &&
-      Math.hypot(goalX - this.pathTarget.x, goalY - this.pathTarget.y) > 60;
-    if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 || targetMoved) {
-      this.path = this.grid.findPath(fromX, fromY, goalX, goalY);
       this.pathIdx = 0;
       this.repathTimer = 0.8 + Math.random() * 0.4;
       this.pathTarget = { x: goalX, y: goalY };

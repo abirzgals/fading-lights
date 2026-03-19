@@ -686,11 +686,10 @@ export class BotAI {
       }
     }
 
-    // BFS flood-fill from player — find all reachable tiles (wave algorithm)
-    // Only resources on reachable tiles are valid candidates
+    // BFS flood-fill from player — find all reachable tiles with WAVE DISTANCE
     const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
 
-    // Best resource per type — only from reachable tiles
+    // Best resource per type — only from reachable tiles, scored by wave distance
     const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
@@ -702,39 +701,41 @@ export class BotAI {
       if (!rc) continue;
       const rType = rc.resourceType;
 
-      // Check if a WALKABLE tile adjacent to this resource is reachable by wave
+      // Find nearest reachable walkable tile adjacent to resource
       const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-      let isReachable = false;
-      // Resource itself might be on a walkable tile (e.g. tree occupies the tile)
-      if (reachable.has(`${etx},${ety}`)) {
-        isReachable = true;
+      let waveDist = Infinity;
+
+      // Check resource tile itself
+      const selfDist = reachable.get(`${etx},${ety}`);
+      if (selfDist !== undefined) {
+        waveDist = selfDist;
       } else {
-        // Check 8 neighbors — must be both walkable AND reachable
-        for (let dx = -1; dx <= 1 && !isReachable; dx++) {
-          for (let dy = -1; dy <= 1 && !isReachable; dy++) {
+        // Check 8 neighbors — must be walkable AND reachable
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
             if (dx === 0 && dy === 0) continue;
             const nx = etx + dx, ny = ety + dy;
-            if (!this.grid.isBlocked(nx, ny) && reachable.has(`${nx},${ny}`)) {
-              isReachable = true;
-            }
+            if (this.grid.isBlocked(nx, ny)) continue;
+            const nd = reachable.get(`${nx},${ny}`);
+            if (nd !== undefined && nd < waveDist) waveDist = nd;
           }
         }
       }
-      if (!isReachable) continue;
+      if (waveDist === Infinity) continue; // truly unreachable
 
-      const distToPlayer = p.pos.distance(e.pos);
-      const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : distToPlayer;
+      // Score by WAVE DISTANCE (actual walk distance), not straight-line
+      const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : waveDist * 32;
       if (distToCamp > this.GATHER_RANGE * 1.5) continue;
-      const score = distToPlayer * 0.6 + distToCamp * 0.4;
+      const score = waveDist * 32 * 0.6 + distToCamp * 0.4; // wave dist in pixels
 
       const prev = bestResourceByType[rType];
       if (!prev || score < prev.score) {
-        bestResourceByType[rType] = { entity: e, dist: distToPlayer, score };
+        bestResourceByType[rType] = { entity: e, dist: waveDist * 32, score };
       }
       if (score < bestOverallScore) {
         bestOverallScore = score;
         nearestResource = e;
-        nearestResourceDist = distToPlayer;
+        nearestResourceDist = waveDist * 32;
       }
     }
 
