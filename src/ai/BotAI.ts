@@ -32,11 +32,21 @@ interface TreeNode {
   goal?: (ctx: BotContext) => BotGoal;
 }
 
+/** Build spot info passed from GameScene */
+export interface BotBuildSpot {
+  type: string;
+  wx: number;
+  wy: number;
+  cost: Partial<Record<string, number>>;
+}
+
 /** Game state passed in from GameScene each tick */
 export interface BotGameState {
   bonfireFuel: number;
   bonfireMaxFuel: number;
   resources: { wood: number; stone: number; metal: number; gold: number };
+  /** Unlocked but unbuilt spots the bot can work toward */
+  availableBuildSpots: BotBuildSpot[];
 }
 
 interface BotContext {
@@ -60,6 +70,12 @@ interface BotContext {
   nearestResourceDist: number;
   woodNeeded: number;
   hasEnoughWood: boolean;
+  /** Build spot the bot can afford right now */
+  affordableBuildSpot: BotBuildSpot | null;
+  /** Build spot the bot should gather resources for */
+  gatherBuildSpot: BotBuildSpot | null;
+  /** What resource is missing for the gather build spot */
+  gatherNeed: { type: string; amount: number } | null;
   evasion: { x: number; y: number; urgency: number } | null;
   dt: number;
 }
@@ -119,6 +135,7 @@ export class BotAI {
     bonfireFuel: 80,
     bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
     resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
+    availableBuildSpots: [],
   };
 
   private readonly tree: TreeNode;
@@ -150,6 +167,7 @@ export class BotAI {
     chop: 1.5,
     mine: 1.5,
     feed: 1.5,
+    build: 2.0,
     flee: 0.8,
     kite: 0.4,
     dodge: 0.2,
@@ -251,6 +269,7 @@ export class BotAI {
       feed: 'Feeding fire',
       chop: 'Chopping wood',
       mine: 'Mining',
+      build: 'Building',
       kill: 'Fighting!',
       flee: 'Retreating!',
       dodge: 'Dodging!',
@@ -448,12 +467,36 @@ export class BotAI {
           check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null && ctx.fuelRatio < 0.85,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
-        // === NEED WOOD → GATHER (only enough + 2 extra, near camp) ===
+        // === BUILD — walk to affordable build spot ===
+        {
+          name: 'Build',
+          check: (ctx) => ctx.affordableBuildSpot !== null,
+          goal: (ctx) => ({
+            type: 'build',
+            x: ctx.affordableBuildSpot!.wx, y: ctx.affordableBuildSpot!.wy,
+            _treePath: `Build ${ctx.affordableBuildSpot!.type}`,
+          }),
+        },
+        // === GATHER FOR BUILDING — collect missing resources ===
+        {
+          name: 'Gather for Build',
+          check: (ctx) => {
+            if (ctx.hpRatio < 0.4) return false;
+            if (!ctx.gatherBuildSpot || !ctx.gatherNeed) return false;
+            return ctx.nearestResource !== null;
+          },
+          goal: (ctx) => ({
+            type: 'chop', target: ctx.nearestResource!,
+            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+            _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
+          }),
+        },
+        // === NEED WOOD → GATHER for fire ===
         {
           name: 'Gather Wood',
           check: (ctx) => {
             if (ctx.hpRatio < 0.4) return false;
-            if (ctx.hasEnoughWood) return false; // already have enough
+            if (ctx.hasEnoughWood) return false;
             return ctx.nearestResource !== null;
           },
           goal: (ctx) => ({
@@ -596,6 +639,34 @@ export class BotAI {
     const woodNeeded = Math.max(0, Math.ceil(fuelDeficit / CONFIG.FUEL_PER_WOOD)) + 2;
     const hasEnoughWood = this.gameState.resources.wood >= woodNeeded;
 
+    // Build spot analysis
+    const res = this.gameState.resources;
+    let affordableBuildSpot: BotBuildSpot | null = null;
+    let gatherBuildSpot: BotBuildSpot | null = null;
+    let gatherNeed: { type: string; amount: number } | null = null;
+
+    for (const spot of this.gameState.availableBuildSpots) {
+      // Check if we can afford it
+      let canAfford = true;
+      let missingType = '';
+      let missingAmt = 0;
+      for (const [r, amt] of Object.entries(spot.cost)) {
+        const have = (res as any)[r] ?? 0;
+        if (have < (amt ?? 0)) {
+          canAfford = false;
+          if (!missingType) { missingType = r; missingAmt = (amt ?? 0) - have; }
+        }
+      }
+      if (canAfford) {
+        affordableBuildSpot = spot;
+        break; // first affordable wins
+      }
+      if (!gatherBuildSpot && missingType) {
+        gatherBuildSpot = spot;
+        gatherNeed = { type: missingType, amount: missingAmt };
+      }
+    }
+
     const evasion = this.computeEvasion(p, enemies);
 
     return {
@@ -609,6 +680,7 @@ export class BotAI {
       bestEnemy, enemyNearCamp, projectileAttacker,
       nearestResource, nearestResourceDist,
       woodNeeded, hasEnoughWood,
+      affordableBuildSpot, gatherBuildSpot, gatherNeed,
       evasion, dt,
     };
   }
@@ -787,6 +859,19 @@ export class BotAI {
             vx = vx * (1 - blend) + ctx.evasion.x * blend;
             vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }
+        }
+        break;
+      }
+
+      case 'build': {
+        // Walk to build spot — building happens automatically in GameScene.runBuildSpots()
+        const dist = ctx.player.pos.distance(ex.vec(goal.x!, goal.y!));
+        if (dist < CONFIG.INTERACT_RADIUS) {
+          // At spot — stand still, GameScene will auto-build
+          vx = 0; vy = 0;
+        } else {
+          const dir = this.moveToWithPathfinding(goal.x!, goal.y!);
+          vx = dir.x; vy = dir.y;
         }
         break;
       }

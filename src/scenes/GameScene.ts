@@ -132,6 +132,9 @@ export class GameScene extends ex.Scene {
         bonfireFuel: this.bonfireFuel,
         bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
         resources: { ...this.resources },
+        availableBuildSpots: this.buildSpots
+          .filter(s => s.state === 'unlocked')
+          .map(s => ({ type: s.type, wx: s.wx, wy: s.wy, cost: BUILDINGS[s.type].cost })),
       });
       const cmd = this.botAI.update(dt);
       vx = cmd.vx;

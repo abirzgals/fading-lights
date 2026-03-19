@@ -2,6 +2,61 @@
 
 ---
 
+## 2026-03-19 — v2.6.5: Bot AI can gather resources and build structures
+
+### Summary
+Extended `BotGameState` to include `availableBuildSpots` (unlocked, unbuilt spots from `GameScene`). The bot now analyses which spots it can afford and which require more resources, then acts accordingly: walking to a spot it can afford (auto-build triggers via `GameScene.runBuildSpots`) or gathering the specific missing resource first. A new `build` goal type drives A* pathfinding to the spot; the bot stands still on arrival. Status label shows "Building" and a 2-second hold time prevents goal flickering. Priority sits just above "gather for build" and below all survival and combat nodes.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Added `BotBuildSpot` interface (`type`, `wx`, `wy`, `cost`).
+  - Extended `BotGameState` with `availableBuildSpots: BotBuildSpot[]`.
+  - Added context fields `affordableBuildSpot`, `gatherBuildSpot`, `gatherNeed`.
+  - `buildContext()`: iterates available spots, computes first affordable spot and first spot missing a resource, filling the three new context fields.
+  - Decision tree node `'Build'`: active when `affordableBuildSpot !== null`; produces a `build` goal pointing at the spot's world coordinates.
+  - Decision tree node `'Gather for Build'`: active when `gatherBuildSpot` exists, HP >= 40%, and a resource node is reachable; reuses the `chop` goal type directed at the nearest resource.
+  - Hold time for `build` goal set to 2.0 seconds.
+  - Status label maps `build` → `'Building'`.
+  - `executeGoal` case `'build'`: A* walk toward spot; zero velocity when within `INTERACT_RADIUS`.
+- `src/scenes/GameScene.ts`:
+  - Bot state update now filters `buildSpots` to `state === 'unlocked'` and maps them to `BotBuildSpot` objects (including cost from `BUILDINGS`), passing the array as `availableBuildSpots`.
+
+### Priority Order (high to low)
+survive → defend camp → counter-attack → kite → fire emergency → combat → feed fire → BUILD → gather for build → gather wood → idle
+
+### Rationale
+The bot previously had no awareness of the build system, leaving it idle even when it had the resources to construct a building. Passing the unlocked spot list from `GameScene` keeps the AI decoupled from scene internals, and the two-tier logic (afford now vs. need to gather) means the bot makes progress toward buildings even when partially resourced. The 2-second hold time ensures the goal does not flicker when the bot is on the boundary of an affordable spot calculation.
+
+### Next Steps
+- Verify `GameScene.runBuildSpots` correctly auto-builds when the bot stands within `INTERACT_RADIUS` of a spot
+- Test multi-spot scenarios — bot should not greedily chain builds without re-evaluating fuel needs
+- Consider adding a maximum "wood reserve" check before building, so the bot does not spend all wood and neglect the bonfire
+
+---
+
+## 2026-03-19 — v2.6.4: Tune bot combat aggression — fight harder, flee less
+
+### Summary
+Adjusted five interrelated thresholds in `BotAI.ts` to make the bot commit to fights rather than retreating at the first sign of damage. The bot now only flees when truly critical (sub-25% HP), skips retreat entirely when it can clearly finish a weakened enemy, and no longer kites a single melee opponent.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - **Retreat threshold** lowered from 35% to 25% HP — `if (ctx.hpRatio < 0.25) this.retreating = true`.
+  - **"Can win" override** — when `retreating` is true but only 1 enemy remains with HP < 30, the retreat check returns false and the bot finishes the fight instead of fleeing.
+  - **Kite guard** — added `if (ctx.nearEnemyCount < 2) return false` so kiting is only triggered when surrounded by 2 or more melee enemies; in a 1v1 the bot stands and fights.
+  - **Surrounded flee threshold** tightened from HP < 70% to HP < 50%, requiring the bot to be more damaged before attempting to escape a mob.
+  - **Hysteresis** adjusted: retreat begins at 25% HP and cancels at 50% (previously 35% start / 60% cancel), narrowing the oscillation band.
+
+### Rationale
+The previous thresholds caused the bot to retreat too conservatively — fleeing at 35% HP meant abandoning fights it could win, and kiting a single enemy made 1v1 combat feel timid. Lowering the retreat floor to 25% keeps the bot engaged through normal damage trading. The "can win" check prevents the edge case where a bot correctly enters retreat mode but then runs from a nearly-dead enemy it should finish. Restricting kiting to multi-enemy situations makes the bot feel decisive rather than evasive in straightforward encounters.
+
+### Next Steps
+- Playtest the new thresholds and verify the bot does not die more often due to reduced retreating
+- Consider adding an "enrage" state (attack speed bonus) when HP drops below 25% but "can win" check fires
+- Tune the "can win" HP threshold (currently < 30) based on how often bots lose those all-in fights
+
+---
+
 ## 2026-03-19 — v2.6.3: Dynamic shadow rendering system
 
 ### Summary
