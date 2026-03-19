@@ -193,19 +193,18 @@ export class Level1Script {
     // Track tree by grid tile for gap-fill assignment
     const treeByTile = new Map<string, GameEntity>();
     for (let tx = 2; tx < worldSize - 2; tx++) {
-      for (let ty = 4; ty < worldSize - 2; ty++) {
+      for (let ty = 2; ty < worldSize - 2; ty++) {
         if (isClearing(tx, ty) || isPath(tx, ty)) continue;
-        // Collider at ty-2 (upper trunk, matches visual center of tree)
-        const colTy = ty - 2;
-        if (isPath(tx, colTy) || isClearing(tx, colTy)) continue;
         const density = getNoise(tx, ty) * 0.6 + getNoise(tx * 2.7 + 50, ty * 2.7 + 50) * 0.4;
         const threshold = density > 0.55 ? 0.15 : density > 0.35 ? 0.55 : 0.92;
         if (rng() > threshold) continue;
-        if ((tx - cx) ** 2 + (colTy - cy) ** 2 < 25 || grid.isBlocked(tx, colTy)) continue;
-        const tree = EntityFactory.createTree(scene, tx * T + T / 2, ty * T + T / 2 - T, tx, colTy,
+        if ((tx - cx) ** 2 + (ty - cy) ** 2 < 25 || grid.isBlocked(tx, ty)) continue;
+        // Place tree: pos at tile center, anchor 0.8 handles visual offset
+        // Collider = same tile as tree (tx, ty) — no offset needed
+        const tree = EntityFactory.createTree(scene, tx * T + T / 2, ty * T + T / 2, tx, ty,
           Math.floor(rng() * AssetLoader.treeVariants.length));
         entities.push(tree);
-        treeByTile.set(`${tx},${colTy}`, tree);
+        treeByTile.set(`${tx},${ty}`, tree);
       }
     }
 
