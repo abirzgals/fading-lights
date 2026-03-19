@@ -43,6 +43,10 @@ export class GameScene extends ex.Scene {
   private fpsTimer = 0;
   private fpsDisplay = 0;
   private hudUpdateTimer = 0;
+
+  // Viewport culling for static entities
+  private cullTimer = 0;
+  private culledEntities: Set<GameEntity> = new Set(); // entities currently removed from scene
   private perfTimings: Record<string, number> = {};
   private perfDisplay: Record<string, number> = {};
   private perfAccum: Record<string, number> = {};
@@ -181,6 +185,7 @@ export class GameScene extends ex.Scene {
     }
 
     this.profileStep('pushOut', () => this.pushEntitiesOutOfBlocked());
+    this.profileStep('cull', () => this.viewportCull());
     this.profileStep('input', () => this.handlePlayerInput(engine, dt));
     // Sub-profile bot AI internals
     if (this.botEnabled && this.botAI) {
@@ -205,6 +210,36 @@ export class GameScene extends ex.Scene {
     if (this.hudUpdateTimer <= 0) {
       this.hudUpdateTimer = 200; // update HUD 5x/sec instead of 60x
       this.profileStep('hud', () => this.updateHUD());
+    }
+  }
+
+  // ======== VIEWPORT CULLING — add/remove static entities from scene ========
+  private viewportCull(): void {
+    this.cullTimer++;
+    if (this.cullTimer % 10 !== 0) return; // every 10 frames
+
+    const cam = this.camera;
+    const zoom = cam.zoom;
+    const vp = this.engine.screen.resolution;
+    const halfW = vp.width / zoom / 2 + T * 5; // 5 tile margin
+    const halfH = vp.height / zoom / 2 + T * 5;
+    const cx = cam.pos.x, cy = cam.pos.y;
+    const left = cx - halfW, right = cx + halfW;
+    const top = cy - halfH, bottom = cy + halfH;
+
+    for (const e of this.level.entities) {
+      if (e.isKilled()) continue;
+      const inView = e.pos.x > left && e.pos.x < right && e.pos.y > top && e.pos.y < bottom;
+
+      if (inView && this.culledEntities.has(e)) {
+        // Bring back into scene
+        this.add(e);
+        this.culledEntities.delete(e);
+      } else if (!inView && !this.culledEntities.has(e)) {
+        // Remove from scene (but keep in entities list)
+        this.remove(e);
+        this.culledEntities.add(e);
+      }
     }
   }
 
@@ -1377,9 +1412,10 @@ export class GameScene extends ex.Scene {
     const lvlBar = '█'.repeat(Math.round(lvlProgress / 10)) + '░'.repeat(10 - Math.round(lvlProgress / 10));
     const lvlLabel = isMax ? `Lv.${this.campLevel} MAX` : `Lv.${this.campLevel}`;
 
+    const sceneActors = this.actors.length;
     const fpsColor = this.fpsDisplay >= 50 ? '#44FF44' : this.fpsDisplay >= 30 ? '#FFAA00' : '#FF4444';
     this.hudEl.innerHTML = `
-      <span style="color:${fpsColor}">${this.fpsDisplay} FPS</span><br>
+      <span style="color:${fpsColor}">${this.fpsDisplay} FPS</span> <span style="color:#666">${sceneActors} actors</span><br>
       <span style="color:#44FF44">HP [${hpBar}] ${Math.round(hp)}/${maxHp}</span><br>
       <span style="color:#FF8800">FIRE [${fuelBar}] ${fuelPct}%</span><br>
       <span style="color:#CC66FF">CAMP [${lvlBar}] ${lvlLabel}</span><br>
