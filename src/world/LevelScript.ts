@@ -40,7 +40,7 @@ export class Level1Script {
     const enemies: GameEntity[] = [];
 
     // ======== GROUND ========
-    // Dark forest floor — chunked rectangles
+    // Dark forest floor — chunked rectangles (visible under trees)
     const chunkSize = 32;
     for (let gy = 0; gy < worldSize; gy += chunkSize) {
       for (let gx = 0; gx < worldSize; gx += chunkSize) {
@@ -48,7 +48,7 @@ export class Level1Script {
         const h = Math.min(chunkSize, worldSize - gy) * T;
         const chunk = new ex.Actor({
           pos: ex.vec(gx * T + w / 2, gy * T + h / 2),
-          width: w, height: h, color: ex.Color.fromHex('#050a02'), anchor: ex.vec(0.5, 0.5),
+          width: w, height: h, color: ex.Color.fromHex('#0f1a08'), anchor: ex.vec(0.5, 0.5),
         });
         chunk.z = -10;
         scene.add(chunk);
@@ -115,6 +115,7 @@ export class Level1Script {
         }
     }
 
+    // Render Wang tiles for paths/clearings transitions
     for (const key of renderSet) {
       const [tx, ty] = key.split(',').map(Number);
       const nw = pathTiles.has(`${tx},${ty}`) ? 1 : 0;
@@ -131,6 +132,51 @@ export class Level1Script {
       }
       tile.z = -8;
       scene.add(tile);
+    }
+
+    // Fill ALL forest tiles with the dark ground texture (wangIdx=0)
+    // This prevents black gaps between trees
+    if (gs) {
+      const forestFi = WANG_TO_FRAME[0]; // full forest tile
+      const forestCol = forestFi % 4, forestRow = Math.floor(forestFi / 4);
+      const forestSprite = gs.getSprite(forestCol, forestRow)!;
+      // Chunked: render forest ground in 4x4 tile blocks for performance
+      const fChunk = 4;
+      for (let gy = 0; gy < worldSize; gy += fChunk) {
+        for (let gx = 0; gx < worldSize; gx += fChunk) {
+          // Skip if this chunk overlaps with renderSet (already has Wang tiles)
+          let hasRender = false;
+          for (let dy = 0; dy < fChunk && !hasRender; dy++)
+            for (let dx = 0; dx < fChunk && !hasRender; dx++)
+              if (renderSet.has(`${gx + dx},${gy + dy}`)) hasRender = true;
+          if (hasRender) {
+            // Render individual forest tiles for non-renderSet tiles in this chunk
+            for (let dy = 0; dy < fChunk; dy++) {
+              for (let dx = 0; dx < fChunk; dx++) {
+                const ftx = gx + dx, fty = gy + dy;
+                if (ftx >= worldSize || fty >= worldSize) continue;
+                if (renderSet.has(`${ftx},${fty}`)) continue; // already has Wang tile
+                const ft = new ex.Actor({ pos: ex.vec(ftx * T + T / 2, fty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
+                ft.graphics.use(forestSprite);
+                ft.z = -9;
+                scene.add(ft);
+              }
+            }
+          } else {
+            // Entire chunk is forest — render one big tile per chunk position
+            for (let dy = 0; dy < fChunk; dy++) {
+              for (let dx = 0; dx < fChunk; dx++) {
+                const ftx = gx + dx, fty = gy + dy;
+                if (ftx >= worldSize || fty >= worldSize) continue;
+                const ft = new ex.Actor({ pos: ex.vec(ftx * T + T / 2, fty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
+                ft.graphics.use(forestSprite);
+                ft.z = -9;
+                scene.add(ft);
+              }
+            }
+          }
+        }
+      }
     }
 
     // ======== BONFIRE ========
