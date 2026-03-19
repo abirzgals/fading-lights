@@ -1387,12 +1387,19 @@ export class GameScene extends ex.Scene {
       <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}
       ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}
-      ${Object.keys(this.perfDisplay).length > 0 ? `<br><span style="color:#666;font-size:10px">${
-        Object.entries(this.perfDisplay)
+      ${Object.keys(this.perfDisplay).length > 0 ? `<br>
+      <div style="background:rgba(0,0,0,0.75);border:1px solid #333;border-radius:4px;padding:4px 8px;margin-top:4px;font-size:10px;line-height:1.6;display:inline-block">
+        <span style="color:#888">PERF (1s totals)</span><br>
+        ${Object.entries(this.perfDisplay)
           .sort((a, b) => b[1] - a[1])
-          .map(([k, v]) => `${k}:${Math.round(v)}ms`)
-          .join(' · ')
-      }</span>` : ''}`;
+          .map(([k, v]) => {
+            const ms = Math.round(v);
+            const color = ms > 50 ? '#FF4444' : ms > 20 ? '#FFAA00' : '#44FF44';
+            const bar = '█'.repeat(Math.min(20, Math.round(ms / 5)));
+            return `<span style="color:${color}">${k.padEnd(10)} ${String(ms).padStart(4)}ms <span style="color:${color}80">${bar}</span></span>`;
+          })
+          .join('<br>')}
+      </div>` : ''}`;
   }
   onDeactivate(): void {
     if (this.hudEl) this.hudEl.remove();

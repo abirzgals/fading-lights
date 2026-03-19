@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-20 — v2.6.90: Profiler HUD styled as dark box with color-coded bar chart
+
+### Summary
+Replaced the plain grey single-line profiler text with a styled dark panel. Each entry now shows the stage name left-padded to 10 characters, the millisecond total right-padded to 4 digits, and a block bar chart made of `█` characters (one block per 5ms, capped at 20 blocks). Bar and label color is red (`#FF4444`) for >50ms, yellow (`#FFAA00`) for >20ms, and green (`#44FF44`) for <=20ms. The panel has a semi-transparent black background (`rgba(0,0,0,0.75)`), a dark border, and a "PERF (1s totals)" header — making performance data readable at a glance without squinting at dense grey text.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Replaced the single `<span style="color:#666;font-size:10px">` line with a `<div>` block styled with `background:rgba(0,0,0,0.75)`, `border:1px solid #333`, `border-radius:4px`, and `padding:4px 8px`.
+  - Added a `PERF (1s totals)` header span in `#888`.
+  - Each entry rendered with `k.padEnd(10)`, `String(ms).padStart(4)ms`, and a `█`-bar whose length is `Math.min(20, Math.round(ms/5))`.
+  - Color thresholds: `>50ms` → `#FF4444`, `>20ms` → `#FFAA00`, `<=20ms` → `#44FF44`; bar uses the same color at 50% alpha (`${color}80`).
+  - Entries joined with `<br>` instead of ` · `.
+
+### Rationale
+The previous single-line format was hard to scan quickly when many stages were listed. The vertical layout with fixed-width columns and a proportional bar chart makes relative costs immediately obvious — a 100ms bar is visually twice a 50ms bar. Color coding lets the eye jump straight to the problem stage without reading every number.
+
+### Next Steps
+- Consider adding a threshold to hide the panel when all stages are green, reducing visual clutter during normal play.
+
+---
+
 ## 2026-03-20 — v2.6.89: BotAI sub-profiling — break down the "input" stage
 
 ### Summary
