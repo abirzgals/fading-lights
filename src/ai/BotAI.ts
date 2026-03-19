@@ -337,19 +337,26 @@ export class BotAI {
       name: 'SURVIVE & PROGRESS',
       check: () => true,
       children: [
-        // === SURVIVAL ===
+        // === SURVIVAL — only flee when critically low HP or surrounded ===
         {
           name: 'SURVIVE',
           check: () => true,
           children: [
             {
-              name: 'Low HP Retreat',
+              name: 'Critical HP Retreat',
               check: (ctx) => {
-                if (ctx.hpRatio < 0.35) this.retreating = true;
-                if (ctx.hpRatio > 0.6) this.retreating = false;
-                return this.retreating && ctx.distToFire > 60;
+                // Retreat at < 25% HP, stop retreating at > 50%
+                if (ctx.hpRatio < 0.25) this.retreating = true;
+                if (ctx.hpRatio > 0.5) this.retreating = false;
+                if (!this.retreating || ctx.distToFire <= 60) return false;
+                // But if we can win (1 weak enemy left), keep fighting
+                if (ctx.nearEnemyCount <= 1 && ctx.nearestEnemy) {
+                  const eHp = (ctx.nearestEnemy.get(HealthComponent) as HealthComponent | null)?.hp ?? 999;
+                  if (eHp < 30) return false; // enemy almost dead — finish it
+                }
+                return true;
               },
-              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Low HP Retreat' }),
+              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Critical HP Retreat' }),
             },
             {
               name: 'Dodge Projectile',
@@ -358,7 +365,7 @@ export class BotAI {
             },
             {
               name: 'Surrounded',
-              check: (ctx) => ctx.nearEnemyCount >= 3 && ctx.hpRatio < 0.7,
+              check: (ctx) => ctx.nearEnemyCount >= 3 && ctx.hpRatio < 0.5,
               goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Surrounded' }),
             },
           ],
@@ -383,18 +390,19 @@ export class BotAI {
             _treePath: 'Counter-Attack',
           }),
         },
-        // === KITE MELEE ENEMIES ===
+        // === KITE — only when surrounded by 2+ melee enemies ===
         {
-          name: 'Kite Melee',
+          name: 'Kite (surrounded)',
           check: (ctx) => {
             if (!ctx.nearestEnemy || ctx.nearestEnemyDist > this.KITE_DISTANCE) return false;
+            if (ctx.nearEnemyCount < 2) return false; // 1v1 → stand and fight
             const ai = ctx.nearestEnemy.get(AIBrainComponent) as AIBrainComponent | null;
             return ai !== null && !ai.isRanged;
           },
           goal: (ctx) => ({
             type: 'kite', target: ctx.nearestEnemy!,
             x: ctx.nearestEnemy!.pos.x, y: ctx.nearestEnemy!.pos.y,
-            _treePath: 'Kite Melee',
+            _treePath: 'Kite (surrounded)',
           }),
         },
         // === FIRE EMERGENCY ===
