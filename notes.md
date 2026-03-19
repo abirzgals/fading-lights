@@ -2,6 +2,46 @@
 
 ---
 
+## 2026-03-20 — v2.7.4: Mobile ATK button hold for continuous attacking
+
+### Summary
+Added hold-to-attack support to the mobile ATK button. Previously a single tap triggered one attack swing. Now the player can hold the ATK button to continuously swing as long as the finger remains pressed.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `mobileAttackHeld` boolean flag, set `true` on `touchstart`, `false` on `touchend` and `touchcancel`.
+  - `shouldAttack` now evaluates `mobileAttackPressed || mobileAttackHeld`, so either a tap or an active hold triggers the attack each frame.
+  - `mobileAttackPressed` is still cleared after use (single-tap path), while `mobileAttackHeld` persists until the finger lifts.
+
+### Rationale
+Single-tap attacks required repeated tapping during combat, which was fatiguing and slower than the desktop auto-attack experience. Hold behavior closes the gap and feels more natural on touch screens.
+
+### Next Steps
+- Consider a visual indicator (button highlight or pulse) while the hold is active.
+- Verify hold does not trigger if the joystick overlaps the ATK button area on small screens.
+
+---
+
+## 2026-03-20 — fix: reduce bot approach distance from 40px to 30px
+
+### Commit
+`5ec5ef1` — fix: reduce bot approach distance from 40px to 30px
+
+### Summary
+Tightened the bot's attack trigger range from 40px to 30px so it moves even closer to trees and stones before swinging. This improves resource-gathering reliability by ensuring the bot is well within melee contact before attacking.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Both `distToTarget < 40` checks (active attack and path-arrived attack) reduced to `distToTarget < 30`.
+
+### Rationale
+At 40px the bot was occasionally triggering attacks at a distance where hits were inconsistent against resource objects. Reducing to 30px keeps the bot at true contact range before it swings, matching more closely with the visual tile overlap at the point of attack.
+
+### Next Steps
+- A shared `MELEE_RANGE` constant between `GameScene.ts` and `BotAI.ts` would prevent further range drift across commits.
+
+---
+
 ## 2026-03-20 — v2.7.3: Mobile joystick redesign + attack range tuning
 
 ### Summary

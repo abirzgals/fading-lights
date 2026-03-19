@@ -99,6 +99,7 @@ export class GameScene extends ex.Scene {
   // Mobile controls
   private mobileJoystick: { x: number; y: number } | null = null;
   private mobileAttackPressed = false;
+  private mobileAttackHeld = false;
   private mobileControlsEl: HTMLDivElement | null = null;
 
   onInitialize(engine: ex.Engine): void {
@@ -353,7 +354,7 @@ export class GameScene extends ex.Scene {
         const jLen = Math.sqrt(vx * vx + vy * vy);
         if (jLen > 1) { vx /= jLen; vy /= jLen; }
       }
-      if (this.mobileAttackPressed) {
+      if (this.mobileAttackPressed || this.mobileAttackHeld) {
         shouldAttack = true;
         this.mobileAttackPressed = false;
       }
@@ -1243,6 +1244,14 @@ export class GameScene extends ex.Scene {
       e.preventDefault();
       e.stopPropagation();
       this.mobileAttackPressed = true;
+      this.mobileAttackHeld = true;
+    });
+    atkBtn.addEventListener('touchend', (e) => {
+      e.preventDefault();
+      this.mobileAttackHeld = false;
+    });
+    atkBtn.addEventListener('touchcancel', () => {
+      this.mobileAttackHeld = false;
     });
   }
 
