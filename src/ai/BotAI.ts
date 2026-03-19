@@ -469,13 +469,37 @@ export class BotAI {
             },
           ],
         },
-        // === HAS WOOD → FEED FIRE ===
+        // === HAS WOOD → FEED FIRE (maintenance) ===
         {
           name: 'Feed Fire',
           check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null && ctx.fuelRatio < 0.85,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
-        // === LEVEL UP FIRE — gather wood + feed to reach next level ===
+        // === BUILD — higher priority than leveling up ===
+        {
+          name: 'Build',
+          check: (ctx) => ctx.affordableBuildSpot !== null,
+          goal: (ctx) => ({
+            type: 'build',
+            x: ctx.affordableBuildSpot!.wx, y: ctx.affordableBuildSpot!.wy,
+            _treePath: `Build ${ctx.affordableBuildSpot!.type}`,
+          }),
+        },
+        // === GATHER FOR BUILDING ===
+        {
+          name: 'Gather for Build',
+          check: (ctx) => {
+            if (ctx.hpRatio < 0.4) return false;
+            if (!ctx.gatherBuildSpot || !ctx.gatherNeed) return false;
+            return ctx.nearestResource !== null;
+          },
+          goal: (ctx) => ({
+            type: 'chop', target: ctx.nearestResource!,
+            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+            _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
+          }),
+        },
+        // === LEVEL UP FIRE — after buildings are built ===
         {
           name: 'Level Up Fire',
           check: (ctx) => ctx.canLevelUp && ctx.hpRatio >= 0.4,
@@ -496,30 +520,6 @@ export class BotAI {
               }),
             },
           ],
-        },
-        // === BUILD — walk to affordable build spot ===
-        {
-          name: 'Build',
-          check: (ctx) => ctx.affordableBuildSpot !== null,
-          goal: (ctx) => ({
-            type: 'build',
-            x: ctx.affordableBuildSpot!.wx, y: ctx.affordableBuildSpot!.wy,
-            _treePath: `Build ${ctx.affordableBuildSpot!.type}`,
-          }),
-        },
-        // === GATHER FOR BUILDING — collect missing resources ===
-        {
-          name: 'Gather for Build',
-          check: (ctx) => {
-            if (ctx.hpRatio < 0.4) return false;
-            if (!ctx.gatherBuildSpot || !ctx.gatherNeed) return false;
-            return ctx.nearestResource !== null;
-          },
-          goal: (ctx) => ({
-            type: 'chop', target: ctx.nearestResource!,
-            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-            _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
-          }),
         },
         // === NEED WOOD → GATHER for fire ===
         {

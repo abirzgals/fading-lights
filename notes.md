@@ -2,6 +2,50 @@
 
 ---
 
+## 2026-03-19 — v2.6.10: Bot prioritizes building over leveling up bonfire
+
+### Summary
+Reordered the bot decision tree so that building turrets and outposts takes precedence over leveling up the bonfire. Previously the bot would keep feeding the bonfire to reach the next camp level before constructing any defenses. Now it builds first and levels up afterward.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Moved the `Build` and `Gather for Build` nodes above the `Level Up Fire` subtree in the idle decision tree. Added clarifying comments marking `Feed Fire` as maintenance and `Build` as higher priority than leveling up.
+
+### Priority Order After Combat
+1. Feed Fire (maintenance, fuel < 85%)
+2. Build (if can afford a building)
+3. Gather for Build (if building available but missing resources)
+4. Level Up Fire (gather + feed to reach next camp level)
+5. Gather Wood (for fire fuel)
+6. Camp Idle
+
+### Rationale
+The old order caused the bot to starve its building queue by continuously funneling wood into the bonfire for level-ups. Defenses (turrets, outposts) provide immediate combat value, so building them first produces better strategic outcomes in actual play.
+
+### Next Steps
+- Monitor whether bots now over-invest in buildings at the expense of fire maintenance.
+- Consider a hybrid check: build only if fuel ratio is already healthy (e.g., > 0.5).
+
+---
+
+## 2026-03-19 — v2.6.9: Replace turret texture + add outpost sprite
+
+### Summary
+Replaced the turret pixel art (prior version looked like a windmill) with a proper 32x32 wooden guard tower on stilts with a crossbow, generated via PixelLab MCP. Added a new outpost texture — a torch-lit wooden fence enclosure with a campfire (32x32, PixelLab MCP). AssetLoader now registers `outpostSprite`, and EntityFactory applies it when rendering the OUTPOST building type.
+
+### Changes Made
+- `public/assets/pixelart/turret.png`: Replaced — new sprite is a wooden guard tower on stilts with crossbow (32x32).
+- `public/assets/pixelart/outpost.png`: New asset — torch-lit wooden fence enclosure with campfire (32x32).
+- `src/engine/AssetLoader.ts`: Added `outpostSprite` static `ImageSource`; registered alongside `turretSprite` in `allResources`.
+- `src/entities/EntityFactory.ts`: Added `else if` branch in `createBuilding` to apply `outpostSprite` when `buildingType === 'OUTPOST'` and the asset is loaded.
+
+### Rationale
+The previous turret sprite was visually ambiguous and not readable as a defensive structure. The new tower sprite clearly communicates a guard post. The outpost now has a dedicated texture instead of falling back to the color-coded rectangle, improving overall visual consistency across building types.
+
+### Next Steps
+- Consider adding sprites for remaining building types (FORGE, etc.) to eliminate all color-rect fallbacks.
+
+---
+
 ## 2026-03-19 — v2.6.8: Bot stands and fights melee enemies, only dodges projectiles
 
 ### Summary
