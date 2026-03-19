@@ -1024,7 +1024,12 @@ export class BotAI {
         }
 
         if (this.pathFollower.arrived) {
-          // At the target — attack and stay put
+          // Arrived at approach tile — check if actually adjacent
+          if (!isDirectNeighbor) {
+            // Arrived but not adjacent — target unreachable from here
+            this.goalAge = 999;
+            break;
+          }
           attack = true;
           vx = 0; vy = 0;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
