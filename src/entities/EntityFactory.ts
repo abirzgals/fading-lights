@@ -274,15 +274,19 @@ export class EntityFactory {
     (building as any).buildingType = buildingType;
 
     // Visual by type
-    const colorMap: Record<string, string> = {
-      TURRET: '#AA8844', OUTPOST: '#FFCC44', FORGE: '#CC6644',
-      WEAPON_SHOP: '#AAAACC', ARMOR_WORKSHOP: '#8888AA', FRIEND_HUT: '#66AA66',
-    };
     const size = buildingType === 'TURRET' ? 18 : buildingType === 'OUTPOST' ? 22 : 20;
-    building.graphics.use(new ex.Rectangle({
-      width: size, height: size,
-      color: ex.Color.fromHex(colorMap[buildingType] ?? '#888888'),
-    }));
+    if (buildingType === 'TURRET' && AssetLoader.turretSprite.isLoaded()) {
+      building.graphics.use(AssetLoader.turretSprite.toSprite());
+    } else {
+      const colorMap: Record<string, string> = {
+        TURRET: '#AA8844', OUTPOST: '#FFCC44', FORGE: '#CC6644',
+        WEAPON_SHOP: '#AAAACC', ARMOR_WORKSHOP: '#8888AA', FRIEND_HUT: '#66AA66',
+      };
+      building.graphics.use(new ex.Rectangle({
+        width: size, height: size,
+        color: ex.Color.fromHex(colorMap[buildingType] ?? '#888888'),
+      }));
+    }
 
     building.addComponent(new HealthComponent(def.hp));
     building.addComponent(new BuildingComponent(buildingType));

@@ -66,7 +66,9 @@ export class BuildingComponent extends ex.Component {
         pos: actor.pos.clone(),
         anchor: ex.vec(0.5, 0.5),
       });
-      proj.graphics.use(new ex.Circle({ radius: 3, color: ex.Color.fromHex('#FFAA00') }));
+      // Arrow-like projectile
+      proj.graphics.use(new ex.Rectangle({ width: 8, height: 2, color: ex.Color.fromHex('#AA8844') }));
+      proj.rotation = Math.atan2(dir.y, dir.x);
       (proj as any).entityType = 'turret_projectile';
       proj.vel = ex.vec(dir.x * 300, dir.y * 300);
       proj.z = 9000;

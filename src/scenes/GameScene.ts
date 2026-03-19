@@ -383,9 +383,13 @@ export class GameScene extends ex.Scene {
 
     const player = this.level.player;
     const bf = this.level.bonfires[0];
+    // Allow feeding if: fuel not full OR still leveling up (even at full fuel, feed for XP)
+    const isMaxLevel = this.campLevel >= CONFIG.FIRE_LEVELS.length - 1;
+    const needsFuel = this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.9;
+    const needsLevelUp = !isMaxLevel;
     if (this.resources.wood > 0 && bf &&
       bf.pos.distance(player.pos) < CONFIG.INTERACT_RADIUS &&
-      this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.9 &&
+      (needsFuel || needsLevelUp) &&
       this.feedCooldown <= 0) {
       this.resources.wood--;
       const added = Math.min(CONFIG.FUEL_PER_WOOD, CONFIG.BONFIRE_MAX_FUEL - this.bonfireFuel);

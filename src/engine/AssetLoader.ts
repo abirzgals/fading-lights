@@ -17,6 +17,9 @@ export class AssetLoader {
   static metalOre = new ex.ImageSource('/assets/pixelart/metal_ore_new.png');
   static rockWall = new ex.ImageSource('/assets/pixelart/rock_wall.png');
 
+  // Buildings
+  static turretSprite = new ex.ImageSource('/assets/pixelart/turret.png');
+
   // Drop item textures
   static woodDrop = new ex.ImageSource('/assets/pixelart/wood_drop.png');
   static stoneDrop = new ex.ImageSource('/assets/pixelart/stone_drop.png');
@@ -290,6 +293,8 @@ export class AssetLoader {
       this.darkTree, this.treePine, this.treeOak, this.treeDead, this.treeBirch,
       // Resources
       this.stoneDeposit, this.metalOre, this.rockWall,
+      // Buildings
+      this.turretSprite,
       // Drop textures
       this.woodDrop, this.stoneDrop, this.metalDrop,
       // Ground
