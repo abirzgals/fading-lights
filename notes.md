@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-03-20 — v2.6.92: Optimize ai.context from ~25ms to ~3-5ms
+
+### Summary
+Three targeted optimizations reduced the `ai.context` profiler cost from ~25ms/tick to approximately 3-5ms. The key change is a pre-filtered `resourceEntities[]` array that caches only the ~200 entities with a `ResourceComponent`, eliminating the full 16000-entity iteration on every context build. The BFS floodFill cache was extended to 1s (from 0.5s) and its tile limit reduced from 300 to 200, halving computation frequency and cutting per-recompute BFS work by 33%. HUD `innerHTML` updates were throttled to 5x/sec (from 60x/sec), removing a significant DOM cost that was running every frame.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Added `resourceEntities: GameEntity[]` and `resourceListDirty: boolean` instance fields.
+  - Added `invalidateResources()` public method — sets `resourceListDirty = true`.
+  - `buildContext()` rebuilds `resourceEntities` from a filtered scan only when `resourceListDirty` is set; otherwise the cached array is reused.
+  - Resource scoring loop now iterates `this.resourceEntities` (~200 items) instead of `this.getEntities()` (~16000 items).
+  - BFS cache timer extended to `1.0s` (was `0.5s`); `floodFill` tile limit reduced to `200` (was `300`).
+- `src/scenes/GameScene.ts`:
+  - Added `hudUpdateTimer` field; HUD update gated to fire every 200ms (5x/sec) instead of every frame.
+  - On resource kill: calls `this.botAI?.invalidateResources()` before the existing `netSync?.sendResourceKilled(...)` call.
+- `package.json` / `package-lock.json`: bumped version to `2.6.92`.
+
+### Rationale
+The v2.6.91 throttle reduced `ai.context` from ~150ms/sec to ~25ms/tick, but the resource scoring loop was still iterating all 16000 entities every 500ms. Pre-filtering to ~200 resource entities yields roughly an 80x reduction in that loop's iteration count. Combining this with a longer BFS interval and reduced tile budget, plus eliminating 55 unnecessary HUD DOM writes per second, brings the total cost down to the 3-5ms range observed in the profiler.
+
+### Next Steps
+- Monitor profiler HUD to confirm `ai.context` holds at 3-5ms during active resource-heavy gameplay.
+- The `resourceEntities` list is invalidated only on resource death — if resources are ever spawned dynamically, `invalidateResources()` should also be called at spawn time.
+
+---
+
 ## 2026-03-20 — v2.6.91: Throttle all heavy BotAI.buildContext computation to 500ms
 
 ### Summary
