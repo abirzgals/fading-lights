@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.76: Configure Cloudflare Worker deployment
+
+### Summary
+Updated `server/wrangler.toml` with two changes required to successfully deploy on the Cloudflare free plan: added `account_id` and changed `new_classes` to `new_sqlite_classes` under the migrations block. The worker is now live at https://fading-light-relay.arturs-birzgals.workers.dev.
+
+### Changes Made
+- `server/wrangler.toml`: Added `account_id = "d48bc9e5446343f511168879211b6392"`. Changed `new_classes` to `new_sqlite_classes` under `[[migrations]]` — Cloudflare free plan requires SQLite-backed Durable Objects.
+
+### Rationale
+The `new_classes` key causes a deploy error on Cloudflare free accounts; `new_sqlite_classes` is the correct key for free-tier Durable Objects which use SQLite storage. The `account_id` field is required by Wrangler when deploying non-interactively.
+
+### Next Steps
+- Wire client-side multiplayer code to connect to `wss://fading-light-relay.arturs-birzgals.workers.dev`.
+- Implement reconnect logic on the client for dropped WebSocket connections.
+- Add room code generation UI to the game lobby/menu.
+
+---
+
 ## 2026-03-19 — feat: Cloudflare Workers multiplayer relay server
 
 ### Summary
