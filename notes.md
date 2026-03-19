@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.55: HitEffectComponent — shake/flash on resource hit + facing-priority targeting
+
+### Summary
+Added a new `HitEffectComponent` that provides visual feedback when resource entities take damage. Removed all inline hit-effect logic from `GameScene`. Also improved resource attack targeting to prefer objects in the player's facing direction.
+
+### Changes Made
+- `src/components/HitEffectComponent.ts` (new) — Component attached to damageable resource entities. Auto-detects HP change each frame by comparing against the previous HP value. Two modes: `'shake'` applies a 200ms horizontal oscillation with fading intensity (used for trees); `'flash'` applies a 100ms white tint (used for stones and metals). Follows the standard component pattern — zero game logic lives in the scene.
+- `src/entities/EntityFactory.ts` — Trees receive `HitEffectComponent('shake')`, stones and metals receive `HitEffectComponent('flash')`.
+- `src/scenes/GameScene.ts` — Removed inline hit-effect calls from `damageResource()`. Resource attack targeting now uses a scored sort: `score = distance - (dot(toTarget, facingDir) * 30)`. This gives a 30px effective advantage to resources in the player's facing direction, making attacks feel intentional when multiple resources are nearby.
+- `package.json` — Version bumped to 2.6.55.
+
+### Rationale
+The inline effects in `damageResource()` were a violation of the component architecture — visual feedback should be owned by the entity, not the scene. `HitEffectComponent` makes the effect portable and removes hidden coupling. The facing-direction targeting fix addresses player frustration when attacking resources: clicking attack near a resource cluster previously hit whichever was mathematically closest, which often wasn't the one the player was looking at.
+
+### Next Steps
+- Consider expanding `HitEffectComponent` to support player/enemy entities for melee hit feedback.
+- The 30px facing bonus is a tunable constant — may need adjustment once playtested with dense resource clusters.
+
+---
+
 ## 2026-03-19 — v2.6.54: Fix bot stuck on "Picking up" after drop already collected
 
 ### Summary
