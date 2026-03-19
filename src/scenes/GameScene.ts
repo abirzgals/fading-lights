@@ -14,7 +14,7 @@ import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
-import { BotAI } from '../ai/BotAI';
+import { BotAI, BotGameState } from '../ai/BotAI';
 import { EnemyBrainSystem } from '../ai/EnemyBrainSystem';
 import { setGridSystem } from '../components/GridOccupancyComponent';
 
@@ -29,7 +29,7 @@ export class GameScene extends ex.Scene {
   private fog!: FogOfWarPostProcessor;
   private level!: LevelData;
   private botAI: BotAI | null = null;
-  private botEnabled = false;
+  private botEnabled = true;
   private enemyBrains!: EnemyBrainSystem;
 
   // Game state (will move to GameStateComponent later)
@@ -70,6 +70,7 @@ export class GameScene extends ex.Scene {
     engine.input.keyboard.on('press', (evt: ex.KeyEvent) => {
       if (evt.key === ex.Keys.Backquote) {
         this.botEnabled = !this.botEnabled;
+        if (!this.botEnabled) this.botAI?.removeDebugHUD();
         console.log(`[Bot] ${this.botEnabled ? 'ENABLED' : 'DISABLED'}`);
       }
     });
@@ -96,11 +97,23 @@ export class GameScene extends ex.Scene {
     let shouldAttack = false;
 
     if (this.botEnabled && this.botAI) {
-      // Bot AI controls
+      // Pass current game state to bot
+      this.botAI.setGameState({
+        bonfireFuel: this.bonfireFuel,
+        bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
+        resources: { ...this.resources },
+      });
       const cmd = this.botAI.update(dt);
       vx = cmd.vx;
       vy = cmd.vy;
       shouldAttack = cmd.attack;
+      // Bot wants to interact (feed bonfire)
+      if (cmd.interact && this.resources.wood > 0 && this.level.bonfires[0] &&
+        this.level.bonfires[0].pos.distance(player.pos) < CONFIG.INTERACT_RADIUS &&
+        this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.95) {
+        this.resources.wood--;
+        this.bonfireFuel = Math.min(CONFIG.BONFIRE_MAX_FUEL, this.bonfireFuel + CONFIG.FUEL_PER_WOOD);
+      }
     } else {
       // Human controls
       const kb = engine.input.keyboard;
@@ -245,5 +258,8 @@ export class GameScene extends ex.Scene {
       <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}`;
   }
-  onDeactivate(): void { if (this.hudEl) this.hudEl.remove(); }
+  onDeactivate(): void {
+    if (this.hudEl) this.hudEl.remove();
+    this.botAI?.removeDebugHUD();
+  }
 }

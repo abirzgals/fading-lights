@@ -4,19 +4,66 @@ import { GridCollisionSystem } from '../engine/GridCollisionSystem';
 import { HealthComponent } from '../components/HealthComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { AIBrainComponent } from '../components/AIBrainComponent';
+import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { CONFIG } from '../config';
 
-/**
- * Bot AI — Autonomous player decision tree.
- * Ported from original bot.js with kiting, dodge, and resource management.
- *
- * Priority order:
- * 1. SURVIVE — dodge enemy attacks, kite melee, evade projectiles
- * 2. COMBAT — fight nearby enemies (kite melee, dodge ranged)
- * 3. FEED FIRE — keep bonfire fuel above 30%
- * 4. GATHER — chop trees, mine stones for resources
- * 5. EXPLORE — move toward unexplored areas
- */
+// ============================================================
+// Decision tree node types
+// ============================================================
+interface TreeTrace {
+  name: string;
+  depth: number;
+  status: 'active' | 'checking' | 'failed';
+}
+
+interface BotGoal {
+  type: string;
+  target?: GameEntity;
+  x?: number;
+  y?: number;
+  evasion?: { x: number; y: number; urgency: number };
+  _treePath: string;
+}
+
+interface TreeNode {
+  name: string;
+  check: (ctx: BotContext) => boolean;
+  children?: TreeNode[];
+  goal?: (ctx: BotContext) => BotGoal;
+}
+
+/** Game state passed in from GameScene each tick */
+export interface BotGameState {
+  bonfireFuel: number;
+  bonfireMaxFuel: number;
+  resources: { wood: number; stone: number; metal: number; gold: number };
+}
+
+interface BotContext {
+  player: GameEntity;
+  bonfire: GameEntity | null;
+  bx: number; by: number;
+  distToFire: number;
+  hpRatio: number;
+  fuelRatio: number;
+  resources: BotGameState['resources'];
+  enemies: GameEntity[];
+  entities: GameEntity[];
+  nearestEnemy: GameEntity | null;
+  nearestEnemyDist: number;
+  nearEnemyCount: number;
+  strongEnemyClose: boolean;
+  bestEnemy: GameEntity | null;
+  nearestResource: GameEntity | null;
+  nearestResourceDist: number;
+  evasion: { x: number; y: number; urgency: number } | null;
+  dt: number;
+}
+
+// ============================================================
+// BotAI — Full decision tree autonomous player
+// Ported from original bot.js with kiting, dodge, fire management
+// ============================================================
 export class BotAI {
   private player: GameEntity;
   private grid: GridCollisionSystem;
@@ -25,21 +72,38 @@ export class BotAI {
   private getBonfires: () => GameEntity[];
 
   // State
-  private currentGoal: string = 'IDLE';
-  private targetEntity: GameEntity | null = null;
-  private path: Array<{ x: number; y: number }> | null = null;
-  private pathIdx = 0;
+  private currentGoal: BotGoal | null = null;
+  private kiteTimer = 0;
+  private retreating = false; // hysteresis flag
+  private wanderAngle = 0;
+  private wanderTimer = 0;
+  private orbitAngle = 0;
   private stuckTimer = 0;
   private lastPos = { x: 0, y: 0 };
-  private wanderAngle = 0;
-  private kiteTimer = 0;
-  private dodgeDir: ex.Vector | null = null;
+
+  // Decision tree debug trace
+  private treeTrace: TreeTrace[] = [];
+  private activeNodeName = '';
+
+  // Debug HUD
+  private debugEl: HTMLDivElement | null = null;
 
   // Config
   private readonly ATTACK_REACH = 40;
   private readonly SIGHT_RANGE = 350;
-  private readonly KITE_DISTANCE = 45;  // stay just outside enemy melee range
-  private readonly DODGE_SPEED = 200;
+  private readonly KITE_DISTANCE = 50;
+  private readonly ENEMY_AVOID_R = 55;
+  private readonly PROJ_AVOID_R = 100;
+
+  // Game state (updated each tick from GameScene)
+  private gameState: BotGameState = {
+    bonfireFuel: 80,
+    bonfireMaxFuel: CONFIG.BONFIRE_MAX_FUEL,
+    resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
+  };
+
+  // The decision tree — built once
+  private readonly tree: TreeNode;
 
   constructor(opts: {
     player: GameEntity;
@@ -53,25 +117,253 @@ export class BotAI {
     this.getEntities = opts.getEntities;
     this.getEnemies = opts.getEnemies;
     this.getBonfires = opts.getBonfires;
+    this.tree = this.buildDecisionTree();
+  }
+
+  /** Update game state from GameScene each tick */
+  setGameState(state: BotGameState): void {
+    this.gameState = state;
   }
 
   /** Call every tick from GameScene */
   update(dt: number): { vx: number; vy: number; attack: boolean; interact: boolean } {
+    const ctx = this.buildContext(dt);
+
+    // Evaluate decision tree
+    const trace: TreeTrace[] = [];
+    const goal = this.evaluateTree(this.tree, ctx, 0, trace);
+    this.treeTrace = trace;
+    this.currentGoal = goal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
+    this.activeNodeName = this.currentGoal._treePath;
+
+    // Execute goal
+    const result = this.executeGoal(this.currentGoal, ctx, dt);
+
+    // Stuck detection
+    const moved = Math.hypot(
+      this.player.pos.x - this.lastPos.x,
+      this.player.pos.y - this.lastPos.y
+    );
+    this.lastPos.x = this.player.pos.x;
+    this.lastPos.y = this.player.pos.y;
+    if (moved < 1) {
+      this.stuckTimer += dt;
+      if (this.stuckTimer > 1.5) {
+        this.stuckTimer = 0;
+        this.wanderAngle = Math.random() * Math.PI * 2;
+        this.orbitAngle += 1.5;
+      }
+    } else {
+      this.stuckTimer = 0;
+    }
+
+    // Update debug HUD
+    this.renderDebugHUD();
+
+    return result;
+  }
+
+  // ============================================================
+  // DECISION TREE — structured like original bot.js
+  // ============================================================
+  private buildDecisionTree(): TreeNode {
+    return {
+      name: 'SURVIVE & PROGRESS',
+      check: () => true,
+      children: [
+        // === SURVIVAL (reactive — highest priority) ===
+        {
+          name: 'SURVIVE',
+          check: () => true,
+          children: [
+            {
+              name: 'Low HP Retreat',
+              check: (ctx) => {
+                if (ctx.hpRatio < 0.35) this.retreating = true;
+                if (ctx.hpRatio > 0.6) this.retreating = false;
+                return this.retreating && ctx.distToFire > 60;
+              },
+              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Low HP Retreat' }),
+            },
+            {
+              name: 'Dodge Projectile',
+              check: (ctx) => ctx.evasion !== null && ctx.evasion.urgency > 1.0,
+              goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion!, _treePath: 'Dodge Projectile' }),
+            },
+            {
+              name: 'Strong Enemy Close',
+              check: (ctx) => ctx.strongEnemyClose && ctx.hpRatio < 0.6,
+              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Strong Enemy Close' }),
+            },
+            {
+              name: 'Surrounded',
+              check: (ctx) => ctx.nearEnemyCount >= 3 && ctx.hpRatio < 0.7,
+              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Surrounded' }),
+            },
+          ],
+        },
+        // === FIRE EMERGENCY ===
+        {
+          name: 'FIRE DYING',
+          check: (ctx) => ctx.fuelRatio < 0.35,
+          children: [
+            {
+              name: 'Feed Fire (critical)',
+              check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null,
+              goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire (critical)' }),
+            },
+            {
+              name: 'Chop for Fire (urgent)',
+              check: (ctx) => {
+                if (ctx.hpRatio < 0.35) return false;
+                return ctx.nearestResource !== null && ctx.nearestResourceDist < 300;
+              },
+              goal: (ctx) => ({
+                type: 'chop', target: ctx.nearestResource!,
+                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+                _treePath: 'Chop for Fire (urgent)',
+              }),
+            },
+          ],
+        },
+        // === KITE MELEE ENEMIES ===
+        {
+          name: 'Kite Melee',
+          check: (ctx) => {
+            if (!ctx.nearestEnemy || ctx.nearestEnemyDist > this.KITE_DISTANCE) return false;
+            const ai = ctx.nearestEnemy.get(AIBrainComponent) as AIBrainComponent | null;
+            return ai !== null && !ai.isRanged;
+          },
+          goal: (ctx) => ({
+            type: 'kite', target: ctx.nearestEnemy!,
+            x: ctx.nearestEnemy!.pos.x, y: ctx.nearestEnemy!.pos.y,
+            _treePath: 'Kite Melee',
+          }),
+        },
+        // === COMBAT — fight visible enemies ===
+        {
+          name: 'COMBAT',
+          check: (ctx) => ctx.bestEnemy !== null,
+          children: [
+            {
+              name: 'Kill Enemy',
+              check: () => true,
+              goal: (ctx) => ({
+                type: 'kill', target: ctx.bestEnemy!,
+                x: ctx.bestEnemy!.pos.x, y: ctx.bestEnemy!.pos.y,
+                _treePath: 'Kill Enemy',
+              }),
+            },
+          ],
+        },
+        // === FEED FIRE (normal maintenance) ===
+        {
+          name: 'Feed Fire',
+          check: (ctx) => ctx.fuelRatio < 0.7 && ctx.resources.wood >= 1 && ctx.bonfire !== null,
+          goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
+        },
+        // === GATHER RESOURCES ===
+        {
+          name: 'Gather Resources',
+          check: (ctx) => {
+            if (ctx.hpRatio < 0.4) return false;
+            return ctx.nearestResource !== null && ctx.nearestResourceDist < 300;
+          },
+          goal: (ctx) => ({
+            type: 'chop', target: ctx.nearestResource!,
+            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+            _treePath: 'Gather Resources',
+          }),
+        },
+        // === PATROL / WANDER ===
+        {
+          name: 'Patrol',
+          check: () => true,
+          goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'Patrol' }),
+        },
+      ],
+    };
+  }
+
+  // ============================================================
+  // Tree evaluator — builds trace for debug HUD
+  // ============================================================
+  private evaluateTree(node: TreeNode, ctx: BotContext, depth: number, trace: TreeTrace[]): BotGoal | null {
+    const passed = node.check(ctx);
+    if (!passed) {
+      trace.push({ name: node.name, depth, status: 'failed' });
+      return null;
+    }
+
+    if (node.goal) {
+      trace.push({ name: node.name, depth, status: 'active' });
+      return node.goal(ctx);
+    }
+
+    if (node.children) {
+      trace.push({ name: node.name, depth, status: 'checking' });
+      for (const child of node.children) {
+        const result = this.evaluateTree(child, ctx, depth + 1, trace);
+        if (result) {
+          // Mark branch as active
+          for (let i = trace.length - 1; i >= 0; i--) {
+            if (trace[i].depth === depth && trace[i].name === node.name) {
+              trace[i].status = 'active';
+              break;
+            }
+          }
+          result._treePath = node.name + ' > ' + result._treePath;
+          return result;
+        }
+      }
+      // All children failed
+      const branchIdx = trace.findIndex(t => t.depth === depth && t.name === node.name);
+      if (branchIdx >= 0) trace[branchIdx].status = 'failed';
+    }
+    return null;
+  }
+
+  // ============================================================
+  // Context builder — computed once per tick
+  // ============================================================
+  private buildContext(dt: number): BotContext {
     const p = this.player;
     const hp = p.get(HealthComponent) as HealthComponent | null;
-    const hpRatio = hp ? hp.hp / hp.maxHp : 1;
     const enemies = this.getEnemies().filter(e => !e.isKilled());
     const bonfires = this.getBonfires();
+    const bonfire = bonfires[0] ?? null;
+    const bx = bonfire?.pos.x ?? p.pos.x;
+    const by = bonfire?.pos.y ?? p.pos.y;
 
-    // Find nearest enemy
+    // Nearest enemy
     let nearestEnemy: GameEntity | null = null;
     let nearestEnemyDist = Infinity;
+    let nearEnemyCount = 0;
+    let strongEnemyClose = false;
+
     for (const e of enemies) {
       const d = p.pos.distance(e.pos);
       if (d < nearestEnemyDist) { nearestEnemyDist = d; nearestEnemy = e; }
+      if (d < 80) nearEnemyCount++;
+      if (d < 55) {
+        const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
+        if (ai && ai.damage >= 15) strongEnemyClose = true;
+      }
     }
 
-    // Find nearest resource
+    // Best enemy to hunt (within sight, prioritize self-defense)
+    let bestEnemy: GameEntity | null = null;
+    let bestScore = -Infinity;
+    for (const e of enemies) {
+      const d = p.pos.distance(e.pos);
+      if (d > this.SIGHT_RANGE) continue;
+      const selfDefense = d < 60;
+      const eHp = (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 20;
+      const score = (selfDefense ? 500 : 0) + (300 - d) - eHp * 0.5;
+      if (score > bestScore) { bestScore = score; bestEnemy = e; }
+    }
+
+    // Nearest resource
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
     for (const e of this.getEntities()) {
@@ -80,97 +372,257 @@ export class BotAI {
       if (d < nearestResourceDist) { nearestResourceDist = d; nearestResource = e; }
     }
 
-    // Bonfire fuel check
-    const bonfire = bonfires[0];
-    const nearBonfire = bonfire ? p.pos.distance(bonfire.pos) < CONFIG.INTERACT_RADIUS : false;
+    // Evasion — projectile dodging
+    const evasion = this.computeEvasion(p, enemies);
 
-    // Check for incoming projectiles to dodge
-    this.dodgeDir = this.findDodgeDirection(p, enemies);
+    return {
+      player: p,
+      bonfire, bx, by,
+      distToFire: bonfire ? p.pos.distance(bonfire.pos) : 0,
+      hpRatio: hp ? hp.hp / hp.maxHp : 1,
+      fuelRatio: this.gameState.bonfireFuel / this.gameState.bonfireMaxFuel,
+      resources: this.gameState.resources,
+      enemies,
+      entities: this.getEntities(),
+      nearestEnemy,
+      nearestEnemyDist,
+      nearEnemyCount,
+      strongEnemyClose,
+      bestEnemy,
+      nearestResource,
+      nearestResourceDist,
+      evasion,
+      dt,
+    };
+  }
 
+  // ============================================================
+  // Evasion — dodge enemies + projectiles
+  // ============================================================
+  private computeEvasion(
+    player: GameEntity,
+    enemies: GameEntity[]
+  ): { x: number; y: number; urgency: number } | null {
+    if (!player.scene) return null;
+    let evX = 0, evY = 0;
+    const px = player.pos.x, py = player.pos.y;
+
+    // Avoid close enemies
+    for (const e of enemies) {
+      const ed = player.pos.distance(e.pos);
+      if (ed < this.ENEMY_AVOID_R && ed > 1) {
+        const strength = (this.ENEMY_AVOID_R - ed) / this.ENEMY_AVOID_R * 0.7;
+        evX += (px - e.pos.x) / ed * strength;
+        evY += (py - e.pos.y) / ed * strength;
+      }
+    }
+
+    // Dodge projectiles
+    for (const actor of player.scene.actors) {
+      if ((actor as any).entityType !== 'projectile') continue;
+      const dist = player.pos.distance(actor.pos);
+      if (dist > this.PROJ_AVOID_R || dist < 5) continue;
+      const speed = actor.vel.distance(ex.Vector.Zero);
+      if (speed < 10) continue;
+
+      // Closest approach calculation
+      const tpx = px - actor.pos.x, tpy = py - actor.pos.y;
+      const dot = tpx * actor.vel.x + tpy * actor.vel.y;
+      if (dot < 0) continue; // moving away
+      const tClosest = dot / (speed * speed);
+      const cpx = actor.pos.x + actor.vel.x * tClosest;
+      const cpy = actor.pos.y + actor.vel.y * tClosest;
+      const minDist = Math.hypot(cpx - px, cpy - py);
+      if (minDist > 30) continue; // won't hit us
+
+      // Dodge perpendicular, prefer toward bonfire
+      const pnx = -actor.vel.y / speed, pny = actor.vel.x / speed;
+      const bonfires = this.getBonfires();
+      const bf = bonfires[0];
+      if (bf) {
+        const toBfX = bf.pos.x - px, toBfY = bf.pos.y - py;
+        const dotBf = pnx * toBfX + pny * toBfY;
+        const sign = dotBf >= 0 ? 1 : -1;
+        const urgency = tClosest < 0.3 ? 3.0 : tClosest < 0.7 ? 2.0 : 1.2;
+        evX += pnx * sign * urgency;
+        evY += pny * sign * urgency;
+      } else {
+        evX += pnx * 2.0;
+        evY += pny * 2.0;
+      }
+    }
+
+    const len = Math.hypot(evX, evY);
+    if (len < 0.1) return null;
+    return { x: evX / len, y: evY / len, urgency: len };
+  }
+
+  // ============================================================
+  // Goal execution
+  // ============================================================
+  private executeGoal(
+    goal: BotGoal, ctx: BotContext, dt: number
+  ): { vx: number; vy: number; attack: boolean; interact: boolean } {
     let vx = 0, vy = 0;
     let attack = false;
     let interact = false;
 
-    // ============================================================
-    // DECISION TREE — priority order
-    // ============================================================
-
-    // 1. DODGE PROJECTILES (highest priority reactive)
-    if (this.dodgeDir) {
-      this.currentGoal = 'DODGE';
-      vx = this.dodgeDir.x;
-      vy = this.dodgeDir.y;
-    }
-    // 2. KITE MELEE ENEMIES — if enemy is attacking (in melee range), step back
-    else if (nearestEnemy && nearestEnemyDist < this.KITE_DISTANCE) {
-      const ai = nearestEnemy.get(AIBrainComponent) as AIBrainComponent | null;
-      if (ai && !ai.isRanged) {
-        this.currentGoal = 'KITE';
-        // Step away from enemy
-        const away = p.pos.sub(nearestEnemy.pos).normalize();
-        vx = away.x;
-        vy = away.y;
-        // Counter-attack when enemy is in their attack animation (they're stuck)
-        this.kiteTimer += dt;
-        if (this.kiteTimer > 0.3) {
-          this.kiteTimer = 0;
-          attack = true; // swing while backing up
+    switch (goal.type) {
+      case 'flee': {
+        const dir = this.dirTo(ctx.player.pos, goal.x!, goal.y!);
+        vx = dir.x;
+        vy = dir.y;
+        // Blend evasion
+        if (ctx.evasion && ctx.evasion.urgency > 0.5) {
+          const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
+          vx += ctx.evasion.x * blend;
+          vy += ctx.evasion.y * blend;
         }
-      } else {
-        // Ranged enemy close — just flee
-        this.currentGoal = 'FLEE';
-        const away = p.pos.sub(nearestEnemy.pos).normalize();
+        break;
+      }
+
+      case 'dodge': {
+        if (goal.evasion) {
+          vx = goal.evasion.x;
+          vy = goal.evasion.y;
+        }
+        break;
+      }
+
+      case 'kite': {
+        const enemy = goal.target!;
+        const away = ctx.player.pos.sub(enemy.pos).normalize();
         vx = away.x;
         vy = away.y;
+        // Pull toward bonfire while kiting (40% bonfire, 60% away)
+        if (ctx.bonfire) {
+          const toBf = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
+          vx = away.x * 0.6 + toBf.x * 0.4;
+          vy = away.y * 0.6 + toBf.y * 0.4;
+        }
+        // Counter-attack while backing up
+        this.kiteTimer += dt;
+        if (this.kiteTimer > 0.25) {
+          this.kiteTimer = 0;
+          attack = true;
+        }
+        break;
       }
-    }
-    // 3. SURVIVE — retreat to bonfire if low HP
-    else if (hpRatio < 0.3 && bonfire && !nearBonfire) {
-      this.currentGoal = 'RETREAT';
-      const dir = bonfire.pos.sub(p.pos).normalize();
-      vx = dir.x;
-      vy = dir.y;
-    }
-    // 4. COMBAT — attack nearby enemies (stay at weapon range, kite)
-    else if (nearestEnemy && nearestEnemyDist < this.SIGHT_RANGE) {
-      this.currentGoal = 'COMBAT';
-      if (nearestEnemyDist < this.ATTACK_REACH) {
-        // In attack range — swing!
-        attack = true;
-        // Slight kite back after attack
-        const away = p.pos.sub(nearestEnemy.pos).normalize();
-        vx = away.x * 0.3;
-        vy = away.y * 0.3;
-      } else {
-        // Approach to attack range
-        const dir = nearestEnemy.pos.sub(p.pos).normalize();
-        vx = dir.x;
-        vy = dir.y;
+
+      case 'kill': {
+        const enemy = goal.target!;
+        if (enemy.isKilled()) break;
+        const dist = ctx.player.pos.distance(enemy.pos);
+        if (dist < this.ATTACK_REACH) {
+          attack = true;
+          // Kite backward after attack, pull toward bonfire
+          const away = ctx.player.pos.sub(enemy.pos).normalize();
+          if (ctx.bonfire) {
+            const toBf = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
+            vx = away.x * 0.6 + toBf.x * 0.4;
+            vy = away.y * 0.6 + toBf.y * 0.4;
+          } else {
+            vx = away.x * 0.3;
+            vy = away.y * 0.3;
+          }
+        } else {
+          // Approach — with evasion blending
+          const dir = this.dirTo(ctx.player.pos, enemy.pos.x, enemy.pos.y);
+          vx = dir.x;
+          vy = dir.y;
+          if (ctx.evasion && ctx.evasion.urgency > 0.5) {
+            const blend = Math.min(ctx.evasion.urgency * 0.3, 0.5);
+            vx += ctx.evasion.x * blend;
+            vy += ctx.evasion.y * blend;
+          }
+        }
+        break;
       }
-    }
-    // 5. GATHER RESOURCES — chop nearest tree/stone
-    else if (nearestResource && nearestResourceDist < 300) {
-      this.currentGoal = 'GATHER';
-      if (nearestResourceDist < 52) {
-        // In range — chop!
-        attack = true;
-      } else {
-        // Walk to resource
-        const dir = nearestResource.pos.sub(p.pos).normalize();
-        vx = dir.x;
-        vy = dir.y;
+
+      case 'feed': {
+        if (!ctx.bonfire) break;
+        const dist = ctx.player.pos.distance(ctx.bonfire.pos);
+        if (dist < CONFIG.INTERACT_RADIUS) {
+          // At bonfire — orbit and interact
+          this.orbitAngle += dt * 1.5;
+          const ox = ctx.bx + Math.cos(this.orbitAngle) * 30;
+          const oy = ctx.by + Math.sin(this.orbitAngle) * 30;
+          const dir = this.dirTo(ctx.player.pos, ox, oy);
+          vx = dir.x * 0.4;
+          vy = dir.y * 0.4;
+          interact = true; // signals GameScene to auto-feed bonfire
+        } else {
+          // Walk to bonfire — with evasion
+          const dir = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
+          vx = dir.x;
+          vy = dir.y;
+          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
+            vx = ctx.evasion.x;
+            vy = ctx.evasion.y;
+          }
+        }
+        break;
       }
-    }
-    // 6. WANDER — explore
-    else {
-      this.currentGoal = 'WANDER';
-      this.stuckTimer += dt;
-      if (this.stuckTimer > 3) {
-        this.stuckTimer = 0;
-        this.wanderAngle = Math.random() * Math.PI * 2;
+
+      case 'chop':
+      case 'mine': {
+        const target = goal.target!;
+        if (target.isKilled()) break;
+        const dist = ctx.player.pos.distance(target.pos);
+        if (dist < 52) {
+          // In range — attack resource
+          attack = true;
+          // Orbit while attacking
+          this.orbitAngle += dt * 2;
+          const ox = target.pos.x + Math.cos(this.orbitAngle) * 30;
+          const oy = target.pos.y + Math.sin(this.orbitAngle) * 30;
+          const dir = this.dirTo(ctx.player.pos, ox, oy);
+          vx = dir.x * 0.3;
+          vy = dir.y * 0.3;
+          // If enemies close, blend evasion
+          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
+            vx = ctx.evasion.x;
+            vy = ctx.evasion.y;
+          }
+        } else {
+          // Walk to target — with evasion
+          const dir = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+          vx = dir.x;
+          vy = dir.y;
+          if (ctx.evasion && ctx.evasion.urgency > 0.5) {
+            const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
+            vx += ctx.evasion.x * blend;
+            vy += ctx.evasion.y * blend;
+          }
+        }
+        break;
       }
-      vx = Math.cos(this.wanderAngle) * 0.5;
-      vy = Math.sin(this.wanderAngle) * 0.5;
+
+      case 'idle': {
+        // Orbit around bonfire
+        this.wanderTimer += dt;
+        if (this.wanderTimer > 3) {
+          this.wanderTimer = 0;
+          this.wanderAngle = Math.random() * Math.PI * 2;
+        }
+        if (ctx.bonfire && ctx.distToFire < 80) {
+          this.orbitAngle += dt * 0.8;
+          const ox = ctx.bx + Math.cos(this.orbitAngle) * 50;
+          const oy = ctx.by + Math.sin(this.orbitAngle) * 50;
+          const dir = this.dirTo(ctx.player.pos, ox, oy);
+          vx = dir.x * 0.4;
+          vy = dir.y * 0.4;
+        } else if (ctx.bonfire) {
+          // Walk to bonfire
+          const dir = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
+          vx = dir.x * 0.6;
+          vy = dir.y * 0.6;
+        } else {
+          vx = Math.cos(this.wanderAngle) * 0.5;
+          vy = Math.sin(this.wanderAngle) * 0.5;
+        }
+        break;
+      }
     }
 
     // Normalize
@@ -180,30 +632,86 @@ export class BotAI {
     return { vx, vy, attack, interact };
   }
 
-  /** Find dodge direction to avoid incoming projectiles */
-  private findDodgeDirection(player: GameEntity, enemies: GameEntity[]): ex.Vector | null {
-    // Check all actors in scene for projectiles heading toward player
-    if (!player.scene) return null;
-
-    for (const actor of player.scene.actors) {
-      if ((actor as any).entityType !== 'projectile') continue;
-      const proj = actor;
-      const dist = player.pos.distance(proj.pos);
-      if (dist > 100 || dist < 5) continue;
-
-      // Is projectile heading toward us?
-      const toPlayer = player.pos.sub(proj.pos).normalize();
-      const projDir = proj.vel.normalize();
-      const dot = toPlayer.x * projDir.x + toPlayer.y * projDir.y;
-
-      if (dot > 0.5) {
-        // Projectile coming at us — dodge perpendicular
-        return ex.vec(-projDir.y, projDir.x); // perpendicular
-      }
-    }
-
-    return null;
+  private dirTo(from: ex.Vector, tx: number, ty: number): { x: number; y: number } {
+    const dx = tx - from.x, dy = ty - from.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1) return { x: 0, y: 0 };
+    return { x: dx / len, y: dy / len };
   }
 
-  get goal(): string { return this.currentGoal; }
+  // ============================================================
+  // DEBUG HUD — decision tree trace overlay
+  // ============================================================
+  private renderDebugHUD(): void {
+    if (!this.debugEl) {
+      this.debugEl = document.createElement('div');
+      this.debugEl.style.cssText = `
+        position: fixed; top: 8px; right: 8px; z-index: 10000;
+        background: rgba(0,0,0,0.85); color: #ccc;
+        font-family: monospace; font-size: 11px; line-height: 1.5;
+        padding: 8px 12px; border-radius: 6px;
+        pointer-events: none; max-width: 340px; min-width: 200px;
+        border: 1px solid rgba(100,255,100,0.2);
+      `;
+      document.body.appendChild(this.debugEl);
+    }
+
+    const statusColors: Record<string, string> = {
+      active: '#44ff44',
+      checking: '#888',
+      failed: '#555',
+    };
+    const statusIcons: Record<string, string> = {
+      active: '\u25B6',  // ▶
+      checking: '\u25CB', // ○
+      failed: '\u00D7',   // ×
+    };
+
+    let html = '<div style="color:#44ff44;font-weight:bold;margin-bottom:4px">BOT AI</div>';
+
+    // Game state
+    const fuelPct = Math.round(this.gameState.bonfireFuel / this.gameState.bonfireMaxFuel * 100);
+    html += `<div style="color:#ff8800">Fuel: ${fuelPct}%</div>`;
+    html += `<div style="color:#aa8844">Wood: ${this.gameState.resources.wood}</div>`;
+
+    // Tree trace
+    html += '<div style="margin-top:4px;border-top:1px solid #333;padding-top:4px">';
+    for (const entry of this.treeTrace) {
+      const indent = '\u00A0\u00A0'.repeat(entry.depth);
+      const color = statusColors[entry.status] || '#555';
+      const icon = statusIcons[entry.status] || '\u00B7';
+      const bold = entry.status === 'active' ? 'font-weight:bold;' : '';
+      html += `<div style="color:${color};${bold}">${indent}${icon} ${entry.name}</div>`;
+    }
+    html += '</div>';
+
+    // Active goal
+    if (this.currentGoal) {
+      html += `<div style="color:#ffaa00;margin-top:4px;border-top:1px solid #333;padding-top:4px">`;
+      html += `Goal: ${this.currentGoal.type}`;
+      if (this.currentGoal.target) {
+        const tType = (this.currentGoal.target as any).entityType;
+        if (tType) html += ` (${tType})`;
+      }
+      html += '</div>';
+    }
+
+    this.debugEl.innerHTML = html;
+  }
+
+  /** Remove debug HUD when bot is disabled */
+  removeDebugHUD(): void {
+    if (this.debugEl) {
+      this.debugEl.remove();
+      this.debugEl = null;
+    }
+  }
+
+  get goal(): string {
+    return this.currentGoal?._treePath ?? 'IDLE';
+  }
+
+  get trace(): TreeTrace[] {
+    return this.treeTrace;
+  }
 }
