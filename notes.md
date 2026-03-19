@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.11: Fix grid occupancy initialization + forest wall system
+
+### Summary
+Three improvements to world generation in LevelScript. A critical bug where the grid system was set after entity creation (making all tile-blocking calls no-ops) is now fixed. A forest wall pass fills single-tile gaps in dense forest to prevent characters from squeezing through. Tree density thresholds are also lowered for thicker forests.
+
+### Changes Made
+- `src/world/LevelScript.ts`:
+  - **Critical fix**: Moved `setGridSystem(grid)` call to immediately after grid creation, before any entity spawning. Previously it was called in GameScene after `Level1Script.generate()` returned, meaning all `GridOccupancyComponent.onAdd()` calls during generation fired with `_gridSystem = null` and blocked nothing.
+  - **Forest wall pass**: After all trees are placed, iterates every empty tile. If a tile has 3 or more blocked neighbors (including diagonals), it is marked blocked in the grid. This fills single-tile gaps in dense forest, forming solid walls. Logs the fill count (`[Level] Filled N forest gaps`).
+  - **Tree density**: Lowered thresholds from `0.25 / 0.7` to `0.15 / 0.55` for dense and medium noise zones, placing more trees and creating thicker forest cover.
+
+### Rationale
+The `setGridSystem` ordering bug meant trees, stones, metals, and bonfires were silently failing to register as blocked tiles. Characters could walk through all of them on the grid level. The fix ensures the grid is live before the first entity is constructed. The forest wall pass addresses the pathfinding loophole where a single empty tile between two trees allowed passage — 3494 gaps are filled in the default level configuration.
+
+### Next Steps
+- Verify NPC/enemy pathfinding still finds valid routes through the denser forest.
+- Consider making the gap-fill neighbor threshold configurable (currently hard-coded at 3).
+
+---
+
 ## 2026-03-19 — v2.6.10: Bot prioritizes building over leveling up bonfire
 
 ### Summary

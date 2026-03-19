@@ -5,6 +5,7 @@ import { EntityFactory } from '../entities/EntityFactory';
 import { AssetLoader } from '../engine/AssetLoader';
 import { CONFIG } from '../config';
 import { EnemyType } from '../types';
+import { setGridSystem } from '../components/GridOccupancyComponent';
 
 const T = CONFIG.TILE_SIZE;
 
@@ -33,6 +34,7 @@ export class Level1Script {
     const cx = Math.floor(worldSize / 2), cy = cx;
 
     const grid = new GridCollisionSystem(worldSize, T);
+    setGridSystem(grid); // Set BEFORE creating entities so GridOccupancyComponent works
     const entities: GameEntity[] = [];
     const bonfires: GameEntity[] = [];
     const enemies: GameEntity[] = [];
@@ -145,13 +147,39 @@ export class Level1Script {
       for (let ty = 2; ty < worldSize - 2; ty++) {
         if (isClearing(tx, ty) || isPath(tx, ty)) continue;
         const density = getNoise(tx, ty) * 0.6 + getNoise(tx * 2.7 + 50, ty * 2.7 + 50) * 0.4;
-        const threshold = density > 0.55 ? 0.25 : density > 0.35 ? 0.7 : 0.94;
+        // Denser forests: lower threshold = more trees
+        const threshold = density > 0.55 ? 0.15 : density > 0.35 ? 0.55 : 0.92;
         if (rng() > threshold) continue;
         if ((tx - cx) ** 2 + (ty - cy) ** 2 < 25 || grid.isBlocked(tx, ty)) continue;
         entities.push(EntityFactory.createTree(scene, tx * T + T / 2, ty * T + T / 2 - T, tx, ty,
           Math.floor(rng() * AssetLoader.treeVariants.length)));
       }
     }
+
+    // ======== FOREST WALL — fill gaps between adjacent trees ========
+    // If two blocked tiles are 2 apart with 1 empty gap, block the gap.
+    // This prevents characters from squeezing through dense forest.
+    let gapsFilled = 0;
+    for (let tx = 2; tx < worldSize - 2; tx++) {
+      for (let ty = 2; ty < worldSize - 2; ty++) {
+        if (grid.isBlocked(tx, ty)) continue; // already blocked
+        if (isPath(tx, ty) || isClearing(tx, ty)) continue; // don't block paths
+        // Count blocked neighbors (horizontal, vertical, diagonal)
+        let blockedNeighbors = 0;
+        for (let dx = -1; dx <= 1; dx++) {
+          for (let dy = -1; dy <= 1; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            if (grid.isBlocked(tx + dx, ty + dy)) blockedNeighbors++;
+          }
+        }
+        // If 3+ blocked neighbors, this tile is a gap in the forest wall — block it
+        if (blockedNeighbors >= 3) {
+          grid.setBlocked(tx, ty);
+          gapsFilled++;
+        }
+      }
+    }
+    console.log(`[Level] Filled ${gapsFilled} forest gaps`);
 
     // ======== STARTER STONES ========
     let placed = 0;
