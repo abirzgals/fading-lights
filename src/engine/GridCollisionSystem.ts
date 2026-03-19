@@ -68,7 +68,8 @@ export class GridCollisionSystem {
     return result ?? { x: wx, y: wy };
   }
 
-  /** Apply grid collision — modifies velocity to prevent entering blocked tiles */
+  /** Apply grid collision — modifies velocity to prevent entering blocked tiles.
+   *  Checks X and Y independently for wall-sliding behavior. */
   applyGridCollision(
     bodyLeft: number, bodyRight: number, bodyTop: number, bodyBottom: number,
     vx: number, vy: number, speed: number
@@ -77,7 +78,9 @@ export class GridCollisionSystem {
     const dt = 1 / 60;
     const margin = 2;
 
-    // X-axis
+    const origVx = vx, origVy = vy;
+
+    // X-axis check (using current Y position)
     if (vx !== 0) {
       const futureEdge = vx > 0
         ? bodyRight + vx * speed * dt + margin
@@ -90,7 +93,7 @@ export class GridCollisionSystem {
       }
     }
 
-    // Y-axis
+    // Y-axis check (using current X position)
     if (vy !== 0) {
       const futureEdge = vy > 0
         ? bodyBottom + vy * speed * dt + margin
@@ -100,6 +103,40 @@ export class GridCollisionSystem {
       const txMax = Math.floor((bodyRight - 1) / T);
       for (let tx = txMin; tx <= txMax; tx++) {
         if (this.isBlocked(tx, checkTY)) { vy = 0; break; }
+      }
+    }
+
+    // Corner slide: if BOTH axes blocked but either alone would work, allow sliding
+    if (vx === 0 && vy === 0 && origVx !== 0 && origVy !== 0) {
+      // Try X only (vy = 0)
+      let tryVx = origVx;
+      {
+        const futureEdge = tryVx > 0
+          ? bodyRight + tryVx * speed * dt + margin
+          : bodyLeft + tryVx * speed * dt - margin;
+        const checkTX = Math.floor(futureEdge / T);
+        const tyMin = Math.floor(bodyTop / T);
+        const tyMax = Math.floor((bodyBottom - 1) / T);
+        for (let ty = tyMin; ty <= tyMax; ty++) {
+          if (this.isBlocked(checkTX, ty)) { tryVx = 0; break; }
+        }
+      }
+      if (tryVx !== 0) { vx = tryVx; vy = 0; }
+      else {
+        // Try Y only (vx = 0)
+        let tryVy = origVy;
+        {
+          const futureEdge = tryVy > 0
+            ? bodyBottom + tryVy * speed * dt + margin
+            : bodyTop + tryVy * speed * dt - margin;
+          const checkTY = Math.floor(futureEdge / T);
+          const txMin = Math.floor(bodyLeft / T);
+          const txMax = Math.floor((bodyRight - 1) / T);
+          for (let tx = txMin; tx <= txMax; tx++) {
+            if (this.isBlocked(tx, checkTY)) { tryVy = 0; break; }
+          }
+        }
+        if (tryVy !== 0) { vx = 0; vy = tryVy; }
       }
     }
 

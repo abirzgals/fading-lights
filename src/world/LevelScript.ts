@@ -5,7 +5,7 @@ import { EntityFactory } from '../entities/EntityFactory';
 import { AssetLoader } from '../engine/AssetLoader';
 import { CONFIG } from '../config';
 import { EnemyType } from '../types';
-import { setGridSystem } from '../components/GridOccupancyComponent';
+import { setGridSystem, markGapFill } from '../components/GridOccupancyComponent';
 
 const T = CONFIG.TILE_SIZE;
 
@@ -221,6 +221,7 @@ export class Level1Script {
         // If 3+ blocked neighbors, this tile is a gap in the forest wall — block it
         if (blockedNeighbors >= 3) {
           grid.setBlocked(tx, ty);
+          markGapFill(tx, ty); // track for recalculation when trees are removed
           gapsFilled++;
         }
       }

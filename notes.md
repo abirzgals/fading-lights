@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-03-19 — v2.6.30: Gap-fill collider recalc on tree destroy + corner wall-sliding fix
+
+### Summary
+Two movement/collision improvements: gap-fill tiles in forest areas now recalculate when trees are destroyed (clearing a forest properly opens paths), and the player no longer gets stuck on tile corners when moving diagonally into a wall.
+
+### Changes Made
+- `src/components/GridOccupancyComponent.ts`:
+  - Extended the `_gridSystem` forward-reference type to expose `isBlocked()` and `getSize()`.
+  - Added `_gapFillTiles` — a module-level Set tracking tiles that were blocked by the gap-fill algorithm (not by an entity).
+  - New exported `markGapFill(tx, ty)` — called by LevelScript to register each gap-fill tile at world generation time.
+  - New internal `recalcGapFills(cx, cy)` — after an entity is removed, scans gap-fill tiles within radius 3. For each, counts its 8 blocked neighbors; if fewer than 3 remain blocked the tile is made walkable and removed from the set.
+  - `onRemove()` now calls `recalcGapFills()` for each freed tile.
+- `src/world/LevelScript.ts`:
+  - Imported `markGapFill` from `GridOccupancyComponent`.
+  - After `grid.setBlocked()` for each computed gap-fill tile, calls `markGapFill(tx, ty)` so the set is populated at generation time.
+- `src/engine/GridCollisionSystem.ts`:
+  - `applyGridCollision()` now saves `origVx` / `origVy` before the axis checks.
+  - Added a corner-slide block: when both axes come out zero but the original intent was diagonal, re-tests X alone then Y alone. If X alone is clear, slides along X (`vy = 0`); if Y alone is clear, slides along Y (`vx = 0`). Player can now slide along walls when approaching diagonally.
+
+### Rationale
+Gap-fill tiles blocked narrow gaps in forest walls to prevent trivial pathfinding exploits. However, once the trees adjacent to a gap-fill tile were destroyed, the blocking tile was never released, leaving invisible walls in cleared areas. The recalculation logic fixes this by re-evaluating validity on entity removal.
+
+The corner-sliding fix addresses a classic grid-collision edge case: pure axis-by-axis checks reject both components when the diagonal hits a corner, but either component alone would be valid movement. The fallback re-test unblocks this scenario without changing behavior for head-on wall collisions.
+
+### Next Steps
+- Consider exposing a debug overlay toggle to visualize gap-fill tiles.
+- Profile `recalcGapFills` on maps with dense forests to confirm it stays within frame budget.
+
+---
+
 ## 2026-03-19 — v2.6.29: Rework death animation — collapse + fade, no rotation
 
 ### Summary
