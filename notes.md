@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.58: Stronger hit effects — bigger tree shake and 3-phase stone/metal flash
+
+### Summary
+Amplified both hit-feedback modes in `HitEffectComponent` for much clearer visual impact. Tree shake rotation amplitude doubled and duration extended. Stone/metal flash replaced with a 3-phase impact sequence — scale burst, bounce-back dim, settle — that is dramatically more visible than the previous subtle two-pulse pattern.
+
+### Changes Made
+- `src/components/HitEffectComponent.ts` — Shake mode: rotation amplitude increased from 0.08 to 0.15 rad (~8.5 degrees), duration extended from 300ms to 400ms, oscillation frequency slowed via `phase * 0.025` multiplier. Flash mode: replaced two-pulse blink with a 3-phase sequence over 150ms — impact (t < 0.2): scale 1.2x + opacity 2.0 (over-bright push); bounce (t < 0.5): scale lerps 1.2 → 0.95 + opacity 0.5; settle (t ≥ 0.5): scale lerps back to 1.0 + opacity lerps back to 1.0. Reset to scale 1 / opacity 1 on timer expiry.
+- `package.json` — Version bumped to 2.6.58.
+
+### Rationale
+Playtesting with dense resource clusters showed the previous effects were too subtle — players were unsure whether their attacks were registering. The doubled shake amplitude makes tree hits unmistakable. The 3-phase flash sequence for stone/metal is modeled on physical impact: sudden expansion, rebound undershooting, then settling, which reads as a clear "hit" response and is more perceptible than the prior symmetric two-pulse.
+
+### Next Steps
+- Monitor whether the over-bright opacity (2.0) renders correctly across different screen brightness settings — may need to cap at 1.5 if it looks blown out on bright monitors.
+- Consider applying the same 3-phase flash to player/enemy melee hits now that the pattern is validated on resources.
+
+---
+
 ## 2026-03-19 — v2.6.57: Fix bot stopping 2 tiles from target (BotAI adjacency check)
 
 ### Summary

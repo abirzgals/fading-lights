@@ -32,7 +32,7 @@ export class HitEffectComponent extends ex.Component {
     // Detect damage
     const hp = actor.get(HealthComponent) as HealthComponent | null;
     if (hp && this.lastHp >= 0 && hp.hp < this.lastHp) {
-      this.timer = this.effectType === 'shake' ? 300 : 150;
+      this.timer = this.effectType === 'shake' ? 400 : 150;
       this.phase = 0;
     }
     if (hp) this.lastHp = hp.hp;
@@ -42,26 +42,28 @@ export class HitEffectComponent extends ex.Component {
     this.phase += deltaMs;
 
     if (this.effectType === 'shake') {
-      // Tree sway — rotate around anchor (0.5, 0.8 = trunk base)
-      // Oscillate rotation with decaying amplitude
-      const decay = this.timer / 300;
-      const angle = Math.sin(this.phase * 0.03) * 0.08 * decay; // ~4.5 degrees max
+      // Tree sway — rotate around anchor (trunk base)
+      const decay = this.timer / 400;
+      const angle = Math.sin(this.phase * 0.025) * 0.15 * decay; // ~8.5 degrees max
       actor.rotation = angle;
       if (this.timer <= 0) actor.rotation = 0;
     } else {
-      // Stone/metal flash — rapid scale pulse + opacity blink
-      if (this.phase < 60) {
-        // Phase 1: grow + brighten
-        actor.scale = ex.vec(1.12, 1.12);
-        actor.graphics.opacity = 0.6;
-      } else if (this.phase < 100) {
-        // Phase 2: shrink back
-        actor.scale = ex.vec(1.0, 1.0);
-        actor.graphics.opacity = 1.0;
+      // Stone/metal hit — scale bounce + bright flash
+      const t = this.phase / 150; // 0..1 over 150ms
+      if (t < 0.2) {
+        // Impact: scale up + go bright
+        actor.scale = ex.vec(1.2, 1.2);
+        actor.graphics.opacity = 2.0; // over-bright (clamped by renderer but pushes brightness)
+      } else if (t < 0.5) {
+        // Bounce back
+        const s = 1.2 - (t - 0.2) / 0.3 * 0.25;
+        actor.scale = ex.vec(s, s);
+        actor.graphics.opacity = 0.5;
       } else {
-        // Phase 3: second pulse (smaller)
-        actor.scale = ex.vec(1.05, 1.05);
-        actor.graphics.opacity = 0.8;
+        // Settle
+        const s = 0.95 + (t - 0.5) / 0.5 * 0.05;
+        actor.scale = ex.vec(s, s);
+        actor.graphics.opacity = 0.7 + (t - 0.5) * 0.6;
       }
       if (this.timer <= 0) {
         actor.scale = ex.vec(1, 1);
