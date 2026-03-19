@@ -2,6 +2,42 @@
 
 ---
 
+## 2026-03-19 — v2.6.45: Stricter resource reachability + debug mode on by default
+
+### Summary
+Three tightly related correctness fixes: the wave-based reachability check now verifies that neighboring tiles are both walkable and in the reachable set before accepting a resource as reachable; debugMode is enabled by default so the overlay is visible on first load; and all remaining fallback paths (direct-walk, partial paths) have been removed so failures surface cleanly rather than producing silent wrong behavior.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Rewrote resource reachability check. Previously any neighbor tile found in the reachable set was accepted, even if that tile was walled off from the resource. Now each neighbor must pass `!grid.isBlocked(nx, ny) && reachable.has(...)`. The resource tile itself is still checked directly first. Unreachable resources are skipped entirely.
+- `src/scenes/GameScene.ts` — `debugMode` initialised to `true`. The debug toggle checkbox now sets `cb.checked = this.debugMode` on creation so the UI reflects the real state. Player can uncheck to hide the overlay.
+
+### Rationale
+The old neighbor check could return `isReachable = true` for a resource surrounded by walls if the wave happened to tag a same-row/column tile on the far side of the wall. The strict walkable-AND-reachable check closes that gap. Debug mode on by default removes a step during active development. Removing all fallbacks means broken pathing is immediately visible rather than degrading silently into wall-walking.
+
+### Next Steps
+- Verify bot behavior on maps where many resources cluster near walls; confirm rapid goal-cycling does not occur.
+- Re-evaluate whether debug mode should be toggled off for any production/release build step.
+
+---
+
+## 2026-03-19 — v2.6.44: PathFollower arrived/unreachable states, no direct fallback
+
+### Summary
+PathFollower now exposes explicit `arrived` and `unreachable` boolean flags instead of relying on callers to infer state from a zero direction vector. The direct-direction fallback (walking straight toward a target when A* finds no path) has been removed entirely. BotAI chop/mine goals now act on `unreachable` to abandon and re-evaluate the goal rather than standing still or walking into walls.
+
+### Changes Made
+- `src/engine/PathFollower.ts` — Added public `arrived` and `unreachable` flags. Both reset to false at the start of every `moveTo` call. `arrived=true` is set when the entity is within 4px of target or after exhausting all waypoints. `unreachable=true` is set (and (0,0) returned) when A* finds no path — replaces the old direct-direction fallback.
+- `src/ai/BotAI.ts` (chop/mine state) — Replaced the `dir.x === 0 && dir.y === 0` arrived-heuristic with `pathFollower.arrived`. Added an `unreachable` check before the arrived check: if the path cannot be found, `goalAge` is set to 999 to force goal re-evaluation on the next frame, so the bot picks a different, reachable resource.
+
+### Rationale
+The previous (0,0) heuristic was ambiguous — it could mean "arrived" or "no path found." Distinguishing the two states eliminates the scenario where bots stood motionless in front of walled-off resources. The three clear states (moving, arrived, unreachable) make caller logic unambiguous and easier to extend.
+
+### Next Steps
+- Verify bot behavior on maps with heavily clustered obstacles where many resources may be unreachable simultaneously (rapid goalAge cycling).
+- Consider adding a short cooldown before a resource is re-evaluated as unreachable to avoid per-frame thrashing.
+
+---
+
 ## 2026-03-19 — v2.6.43: Fix bot getting stuck near obstacles — PathFollower + BotAI
 
 ### Summary
