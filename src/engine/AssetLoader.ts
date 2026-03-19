@@ -1,144 +1,148 @@
 import * as ex from 'excalibur';
 
+/** Prefix asset path with Vite base URL (handles GitHub Pages subpath) */
+const B = (import.meta as any).env?.BASE_URL ?? '/';
+const img = (path: string) => new ex.ImageSource(B + path);
+
 /**
  * Central asset registry — loads all game sprites and spritesheets.
  * Call AssetLoader.load(engine) before starting scenes.
  */
 export class AssetLoader {
   // Trees
-  static darkTree = new ex.ImageSource('/assets/pixelart/dark-tree.png');
-  static treePine = new ex.ImageSource('/assets/pixelart/tree_pine.png');
-  static treeOak = new ex.ImageSource('/assets/pixelart/tree_oak.png');
-  static treeDead = new ex.ImageSource('/assets/pixelart/tree_dead.png');
-  static treeBirch = new ex.ImageSource('/assets/pixelart/tree_birch.png');
+  static darkTree = img('assets/pixelart/dark-tree.png');
+  static treePine = img('assets/pixelart/tree_pine.png');
+  static treeOak = img('assets/pixelart/tree_oak.png');
+  static treeDead = img('assets/pixelart/tree_dead.png');
+  static treeBirch = img('assets/pixelart/tree_birch.png');
 
   // Stones / metals
-  static stoneDeposit = new ex.ImageSource('/assets/pixelart/stone_deposit_new.png');
-  static metalOre = new ex.ImageSource('/assets/pixelart/metal_ore_new.png');
-  static rockWall = new ex.ImageSource('/assets/pixelart/rock_wall.png');
+  static stoneDeposit = img('assets/pixelart/stone_deposit_new.png');
+  static metalOre = img('assets/pixelart/metal_ore_new.png');
+  static rockWall = img('assets/pixelart/rock_wall.png');
 
   // Stumps (3 variants)
-  static stump1 = new ex.ImageSource('/assets/pixelart/stump1.png');
-  static stump2 = new ex.ImageSource('/assets/pixelart/stump2.png');
-  static stump3 = new ex.ImageSource('/assets/pixelart/stump3.png');
+  static stump1 = img('assets/pixelart/stump1.png');
+  static stump2 = img('assets/pixelart/stump2.png');
+  static stump3 = img('assets/pixelart/stump3.png');
   static stumpVariants: ex.ImageSource[] = [AssetLoader.stump1, AssetLoader.stump2, AssetLoader.stump3];
 
   // Buildings
-  static turretSprite = new ex.ImageSource('/assets/pixelart/turret.png');
-  static outpostSprite = new ex.ImageSource('/assets/pixelart/outpost.png');
+  static turretSprite = img('assets/pixelart/turret.png');
+  static outpostSprite = img('assets/pixelart/outpost.png');
 
   // Drop item textures
-  static woodDrop = new ex.ImageSource('/assets/pixelart/wood_drop.png');
-  static stoneDrop = new ex.ImageSource('/assets/pixelart/stone_drop.png');
-  static metalDrop = new ex.ImageSource('/assets/pixelart/metal_drop.png');
+  static woodDrop = img('assets/pixelart/wood_drop.png');
+  static stoneDrop = img('assets/pixelart/stone_drop.png');
+  static metalDrop = img('assets/pixelart/metal_drop.png');
 
   // Ground tileset (32x32 per tile, 4x4 = 128x128)
-  static groundTileset = new ex.ImageSource('/assets/pixelart/ground-tileset.png');
+  static groundTileset = img('assets/pixelart/ground-tileset.png');
 
   // Weapons spritesheet
-  static weaponsSheet = new ex.ImageSource('/assets/weapons.png');
+  static weaponsSheet = img('assets/weapons.png');
 
   // Characters — male
-  static maleSouth = new ex.ImageSource('/assets/characters/male/rotations/south.png');
-  static maleNorth = new ex.ImageSource('/assets/characters/male/rotations/north.png');
-  static maleEast = new ex.ImageSource('/assets/characters/male/rotations/east.png');
-  static maleWest = new ex.ImageSource('/assets/characters/male/rotations/west.png');
-  static maleSE = new ex.ImageSource('/assets/characters/male/rotations/south-east.png');
-  static maleSW = new ex.ImageSource('/assets/characters/male/rotations/south-west.png');
-  static maleNE = new ex.ImageSource('/assets/characters/male/rotations/north-east.png');
-  static maleNW = new ex.ImageSource('/assets/characters/male/rotations/north-west.png');
+  static maleSouth = img('assets/characters/male/rotations/south.png');
+  static maleNorth = img('assets/characters/male/rotations/north.png');
+  static maleEast = img('assets/characters/male/rotations/east.png');
+  static maleWest = img('assets/characters/male/rotations/west.png');
+  static maleSE = img('assets/characters/male/rotations/south-east.png');
+  static maleSW = img('assets/characters/male/rotations/south-west.png');
+  static maleNE = img('assets/characters/male/rotations/north-east.png');
+  static maleNW = img('assets/characters/male/rotations/north-west.png');
 
   // Walk spritesheets (48x48 frames)
-  static maleWalkSouth = new ex.ImageSource('/assets/characters/male/walk/south.png');
-  static maleWalkNorth = new ex.ImageSource('/assets/characters/male/walk/north.png');
-  static maleWalkEast = new ex.ImageSource('/assets/characters/male/walk/east.png');
-  static maleWalkWest = new ex.ImageSource('/assets/characters/male/walk/west.png');
-  static maleWalkSE = new ex.ImageSource('/assets/characters/male/walk/south-east.png');
-  static maleWalkSW = new ex.ImageSource('/assets/characters/male/walk/south-west.png');
-  static maleWalkNE = new ex.ImageSource('/assets/characters/male/walk/north-east.png');
-  static maleWalkNW = new ex.ImageSource('/assets/characters/male/walk/north-west.png');
+  static maleWalkSouth = img('assets/characters/male/walk/south.png');
+  static maleWalkNorth = img('assets/characters/male/walk/north.png');
+  static maleWalkEast = img('assets/characters/male/walk/east.png');
+  static maleWalkWest = img('assets/characters/male/walk/west.png');
+  static maleWalkSE = img('assets/characters/male/walk/south-east.png');
+  static maleWalkSW = img('assets/characters/male/walk/south-west.png');
+  static maleWalkNE = img('assets/characters/male/walk/north-east.png');
+  static maleWalkNW = img('assets/characters/male/walk/north-west.png');
 
   // Melee attack spritesheets (48x48 frames, 3 frames per direction)
-  static maleMeleeSouth = new ex.ImageSource('/assets/characters/male/melee/south.png');
-  static maleMeleeNorth = new ex.ImageSource('/assets/characters/male/melee/north.png');
-  static maleMeleeEast = new ex.ImageSource('/assets/characters/male/melee/east.png');
-  static maleMeleeWest = new ex.ImageSource('/assets/characters/male/melee/west.png');
-  static maleMeleeSE = new ex.ImageSource('/assets/characters/male/melee/south-east.png');
-  static maleMeleeSW = new ex.ImageSource('/assets/characters/male/melee/south-west.png');
-  static maleMeleeNE = new ex.ImageSource('/assets/characters/male/melee/north-east.png');
-  static maleMeleeNW = new ex.ImageSource('/assets/characters/male/melee/north-west.png');
+  static maleMeleeSouth = img('assets/characters/male/melee/south.png');
+  static maleMeleeNorth = img('assets/characters/male/melee/north.png');
+  static maleMeleeEast = img('assets/characters/male/melee/east.png');
+  static maleMeleeWest = img('assets/characters/male/melee/west.png');
+  static maleMeleeSE = img('assets/characters/male/melee/south-east.png');
+  static maleMeleeSW = img('assets/characters/male/melee/south-west.png');
+  static maleMeleeNE = img('assets/characters/male/melee/north-east.png');
+  static maleMeleeNW = img('assets/characters/male/melee/north-west.png');
 
   // Enemy sprites (8 directions each)
   static enemySprites: Record<string, Record<string, ex.ImageSource>> = {
     SHADOW_WISP: {
-      south: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/shadow_wisp/rotations/north-west.png'),
+      south: img('assets/enemies/shadow_wisp/rotations/south.png'),
+      north: img('assets/enemies/shadow_wisp/rotations/north.png'),
+      east: img('assets/enemies/shadow_wisp/rotations/east.png'),
+      west: img('assets/enemies/shadow_wisp/rotations/west.png'),
+      'south-east': img('assets/enemies/shadow_wisp/rotations/south-east.png'),
+      'south-west': img('assets/enemies/shadow_wisp/rotations/south-west.png'),
+      'north-east': img('assets/enemies/shadow_wisp/rotations/north-east.png'),
+      'north-west': img('assets/enemies/shadow_wisp/rotations/north-west.png'),
     },
     SHADOW_STALKER: {
-      south: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south.png'),
-      north: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north.png'),
-      east: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/east.png'),
-      west: new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/pixelart/shadow-stalker/rotations/north-west.png'),
+      south: img('assets/pixelart/shadow-stalker/rotations/south.png'),
+      north: img('assets/pixelart/shadow-stalker/rotations/north.png'),
+      east: img('assets/pixelart/shadow-stalker/rotations/east.png'),
+      west: img('assets/pixelart/shadow-stalker/rotations/west.png'),
+      'south-east': img('assets/pixelart/shadow-stalker/rotations/south-east.png'),
+      'south-west': img('assets/pixelart/shadow-stalker/rotations/south-west.png'),
+      'north-east': img('assets/pixelart/shadow-stalker/rotations/north-east.png'),
+      'north-west': img('assets/pixelart/shadow-stalker/rotations/north-west.png'),
     },
     SHADOW_BEAST: {
-      south: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/shadow_beast/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/shadow_beast/rotations/north-west.png'),
+      south: img('assets/enemies/shadow_beast/rotations/south.png'),
+      north: img('assets/enemies/shadow_beast/rotations/north.png'),
+      east: img('assets/enemies/shadow_beast/rotations/east.png'),
+      west: img('assets/enemies/shadow_beast/rotations/west.png'),
+      'south-east': img('assets/enemies/shadow_beast/rotations/south-east.png'),
+      'south-west': img('assets/enemies/shadow_beast/rotations/south-west.png'),
+      'north-east': img('assets/enemies/shadow_beast/rotations/north-east.png'),
+      'north-west': img('assets/enemies/shadow_beast/rotations/north-west.png'),
     },
     SHADOW_LORD: {
-      south: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/shadow_lord/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/shadow_lord/rotations/north-west.png'),
+      south: img('assets/enemies/shadow_lord/rotations/south.png'),
+      north: img('assets/enemies/shadow_lord/rotations/north.png'),
+      east: img('assets/enemies/shadow_lord/rotations/east.png'),
+      west: img('assets/enemies/shadow_lord/rotations/west.png'),
+      'south-east': img('assets/enemies/shadow_lord/rotations/south-east.png'),
+      'south-west': img('assets/enemies/shadow_lord/rotations/south-west.png'),
+      'north-east': img('assets/enemies/shadow_lord/rotations/north-east.png'),
+      'north-west': img('assets/enemies/shadow_lord/rotations/north-west.png'),
     },
     FOG_CRAWLER: {
-      south: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/fog_crawler/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/fog_crawler/rotations/north-west.png'),
+      south: img('assets/enemies/fog_crawler/rotations/south.png'),
+      north: img('assets/enemies/fog_crawler/rotations/north.png'),
+      east: img('assets/enemies/fog_crawler/rotations/east.png'),
+      west: img('assets/enemies/fog_crawler/rotations/west.png'),
+      'south-east': img('assets/enemies/fog_crawler/rotations/south-east.png'),
+      'south-west': img('assets/enemies/fog_crawler/rotations/south-west.png'),
+      'north-east': img('assets/enemies/fog_crawler/rotations/north-east.png'),
+      'north-west': img('assets/enemies/fog_crawler/rotations/north-west.png'),
     },
     SHADOW_ARCHER: {
-      south: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/shadow_archer/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/shadow_archer/rotations/north-west.png'),
+      south: img('assets/enemies/shadow_archer/rotations/south.png'),
+      north: img('assets/enemies/shadow_archer/rotations/north.png'),
+      east: img('assets/enemies/shadow_archer/rotations/east.png'),
+      west: img('assets/enemies/shadow_archer/rotations/west.png'),
+      'south-east': img('assets/enemies/shadow_archer/rotations/south-east.png'),
+      'south-west': img('assets/enemies/shadow_archer/rotations/south-west.png'),
+      'north-east': img('assets/enemies/shadow_archer/rotations/north-east.png'),
+      'north-west': img('assets/enemies/shadow_archer/rotations/north-west.png'),
     },
     VOID_MAGE: {
-      south: new ex.ImageSource('/assets/enemies/void_mage/rotations/south.png'),
-      north: new ex.ImageSource('/assets/enemies/void_mage/rotations/north.png'),
-      east: new ex.ImageSource('/assets/enemies/void_mage/rotations/east.png'),
-      west: new ex.ImageSource('/assets/enemies/void_mage/rotations/west.png'),
-      'south-east': new ex.ImageSource('/assets/enemies/void_mage/rotations/south-east.png'),
-      'south-west': new ex.ImageSource('/assets/enemies/void_mage/rotations/south-west.png'),
-      'north-east': new ex.ImageSource('/assets/enemies/void_mage/rotations/north-east.png'),
-      'north-west': new ex.ImageSource('/assets/enemies/void_mage/rotations/north-west.png'),
+      south: img('assets/enemies/void_mage/rotations/south.png'),
+      north: img('assets/enemies/void_mage/rotations/north.png'),
+      east: img('assets/enemies/void_mage/rotations/east.png'),
+      west: img('assets/enemies/void_mage/rotations/west.png'),
+      'south-east': img('assets/enemies/void_mage/rotations/south-east.png'),
+      'south-west': img('assets/enemies/void_mage/rotations/south-west.png'),
+      'north-east': img('assets/enemies/void_mage/rotations/north-east.png'),
+      'north-west': img('assets/enemies/void_mage/rotations/north-west.png'),
     },
   };
 
@@ -246,13 +250,13 @@ export class AssetLoader {
   }
 
   // Effect textures
-  static magicOrb = new ex.ImageSource('/assets/effects/magic_orb.png');
-  static arrowProj = new ex.ImageSource('/assets/effects/arrow.png');
-  static magicExplosion = new ex.ImageSource('/assets/effects/magic_explosion.png');
-  static bonfireSprite = new ex.ImageSource('/assets/effects/bonfire.png');
+  static magicOrb = img('assets/effects/magic_orb.png');
+  static arrowProj = img('assets/effects/arrow.png');
+  static magicExplosion = img('assets/effects/magic_explosion.png');
+  static bonfireSprite = img('assets/effects/bonfire.png');
 
   // Menu background
-  static menuBg = new ex.ImageSource('/assets/menu_bg.png');
+  static menuBg = img('assets/menu_bg.png');
 
   // Tree variants array for random selection
   static treeVariants: ex.ImageSource[] = [
