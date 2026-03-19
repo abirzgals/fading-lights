@@ -2,6 +2,49 @@
 
 ---
 
+## 2026-03-20 — v2.6.94: PathFollower — remove redundant 8-neighbor A* loop
+
+### Summary
+Removed the manual 8-neighbor blocked-destination search loop from `PathFollower.repath()`. `GridCollisionSystem.findPath()` (A*) already performs an expanding ring search (up to 5 tiles) to snap a blocked destination to the nearest walkable tile before running the path search. The loop in PathFollower was therefore issuing up to 8 redundant `findPath()` calls per repath for no benefit.
+
+### Changes Made
+- `src/engine/PathFollower.ts`:
+  - Deleted the 8-neighbor sort-and-iterate block (25 lines removed).
+  - Replaced the entire blocked-destination branch with a single `this.grid.findPath(fromX, fromY, toX, toY)` call.
+  - `pathTarget` now stores the raw `toX/toY` destination rather than the resolved neighbor tile center.
+- `package.json`: bumped version to `2.6.94`.
+
+### Rationale
+A* in `GridCollisionSystem` already handles blocked destinations via an expanding ring search up to 5 tiles. Running up to 8 extra `findPath()` calls in `PathFollower` was pure duplication. Eliminating the loop reduces per-repath cost from up to ~8ms (8 A* calls) to ~1ms (1 A* call), cutting pathfinding overhead by roughly 8x in worst-case blocked-target scenarios.
+
+### Next Steps
+- Profile `ai.execute` during combat to confirm repath cost is stable at ~1ms.
+- Verify enemies navigating to blocked targets (walls, obstacles) still route correctly via the A* ring-snap behavior.
+
+---
+
+## 2026-03-20 — v2.6.93: Pathfinding performance — early exit, longer repath, lower A* cap
+
+### Summary
+Three targeted changes reduce `ai.execute` cost from ~11ms to an expected ~2-3ms. `PathFollower` now sorts the 8 candidate neighbor tiles for a blocked target by their distance to the player (closest first) and stops at the first `findPath` call that returns a valid path, instead of trying all 8 and selecting the shortest. This cuts typical A* invocations from up to 8 down to 1-2. The repath interval was raised from 0.8-1.2s to 1.5-2.0s, reducing overall repathing frequency. A*'s `MAX_ITER` guard was cut from 2000 to 800 — paths longer than 800 grid steps are unreachable or impractical for gameplay, and capping earlier saves CPU on failed/long searches.
+
+### Changes Made
+- `src/engine/PathFollower.ts`:
+  - Replaced exhaustive 8-neighbor loop (try all, keep shortest) with a sort-then-early-exit approach: neighbors sorted by squared distance from player, loop breaks on first valid path.
+  - Repath timer changed from `0.8 + Math.random() * 0.4` to `1.5 + Math.random() * 0.5`.
+- `src/engine/GridCollisionSystem.ts`:
+  - `MAX_ITER` in A* reduced from `2000` to `800` with inline comment.
+- `package.json` / `package-lock.json`: bumped version to `2.6.93`.
+
+### Rationale
+The previous approach guaranteed the shortest path to a blocked target's neighbor but required up to 8 full A* searches every repath cycle. In practice, the nearest unblocked neighbor is almost always the correct tactical choice, and the first valid path found in distance-sorted order is good enough. Combining this with a lower MAX_ITER and less frequent repathing eliminates the majority of A* work per frame.
+
+### Next Steps
+- Confirm `ai.execute` profiler cost holds at 2-3ms during active combat with many enemies.
+- If any enemies visibly get stuck more than before, consider reverting MAX_ITER to 1200 as a middle ground.
+
+---
+
 ## 2026-03-20 — v2.6.92: Optimize ai.context from ~25ms to ~3-5ms
 
 ### Summary
