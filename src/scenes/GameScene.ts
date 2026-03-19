@@ -809,6 +809,30 @@ export class GameScene extends ex.Scene {
       }
     }
 
+    // Highlight player tile (blue)
+    {
+      const pp = this.level.player;
+      const ptx = Math.floor(pp.pos.x / T), pty = Math.floor(pp.pos.y / T);
+      const pt = new ex.Actor({ pos: ex.vec(ptx * T + T / 2, pty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
+      pt.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromRGB(0, 100, 255, 0.3) }));
+      pt.z = 8001;
+      this.add(pt);
+      this.debugActors.push(pt);
+    }
+
+    // Highlight bot target tile (yellow)
+    {
+      const bg = this.botAI ? (this.botAI as any).currentGoal : null;
+      if (bg?.target) {
+        const ttx = Math.floor(bg.target.pos.x / T), tty = Math.floor(bg.target.pos.y / T);
+        const tt = new ex.Actor({ pos: ex.vec(ttx * T + T / 2, tty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
+        tt.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromRGB(255, 255, 0, 0.3) }));
+        tt.z = 8001;
+        this.add(tt);
+        this.debugActors.push(tt);
+      }
+    }
+
     // Draw A* paths with lines + dots
     const drawPath = (
       points: Array<{ x: number; y: number }>,
