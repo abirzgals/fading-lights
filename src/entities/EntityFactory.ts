@@ -9,7 +9,6 @@ import { HealthComponent } from '../components/HealthComponent';
 import { GridOccupancyComponent } from '../components/GridOccupancyComponent';
 import { LightSourceComponent } from '../components/LightSourceComponent';
 import { AIBrainComponent } from '../components/AIBrainComponent';
-import { SpriteRendererComponent } from '../components/SpriteRendererComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
@@ -26,8 +25,11 @@ export class EntityFactory {
     const player = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
     player.entityType = 'player';
 
-    player.addComponent(new SpriteRendererComponent({
+    player.addComponent(new AnimatedSpriteComponent({
       rotations: AssetLoader.maleRotations,
+      walkSpriteSheets: AssetLoader.maleWalkSheets,
+      walkSheetGrid: { columns: 6, spriteWidth: 48, spriteHeight: 48 },
+      walkFrameRate: 10,
       fallback: { width: 16, height: 24, color: ex.Color.fromHex('#FFAA44') },
     }));
     // 1000 HP for testing, CONFIG.PLAYER_MAX_HP for production
