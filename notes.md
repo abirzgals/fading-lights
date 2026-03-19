@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-20 — v2.7.2: Widen resource attack range for diagonal + anchor offset
+
+### Summary
+Increased the distance thresholds used when attacking trees and rocks so that the bot and player can reliably hit resources whose reported position is shifted by the tile anchor offset.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: resource damage range filter 52px → 60px.
+- `src/ai/BotAI.ts`: chop/mine attack trigger threshold 50px → 58px (both the in-motion check and the `pathFollower.arrived` check).
+- `package.json`: bumped version to 2.7.2.
+
+### Rationale
+Diagonal tile centers are approximately 45px from the player, but the tree sprite anchor (0.5, 0.8) offsets the entity's reported position away from the tile center. The combined displacement could push the measured distance to 50-55px, which fell outside the old 50/52px thresholds. The result was the bot arriving at a tree and standing still without attacking. The new thresholds (58px / 60px) clear the worst-case combined offset while remaining tight enough to prevent hits on genuinely distant resources.
+
+### Next Steps
+- Consider deriving attack range from a single shared constant so GameScene and BotAI thresholds cannot drift apart again.
+
+---
+
 ## 2026-03-20 — v2.7.1: Framerate-independent timing for movement, physics, and animations
 
 ### Summary
