@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.81: GitHub Pages deployment — Vite build pipeline + fullscreen button
+
+### Summary
+Wired up a proper Vite build pipeline for GitHub Pages deployment and added a fullscreen toggle button to the game toolbar. The game is now published at https://abirzgals.github.io/fading-lights/.
+
+### Changes Made
+- `vite.config.ts`: Set `base` to `/fading-lights/` so all asset paths resolve correctly under the GitHub Pages subdirectory.
+- `.github/workflows/pages.yml`: Replaced the raw file upload with a full build step — installs dependencies with `npm ci`, runs `npx vite build`, and deploys the `dist/` directory instead of the repo root. Also enabled `cancel-in-progress` for the concurrency group to avoid stale deployments.
+- `src/scenes/GameScene.ts`: Added a `[ ]` fullscreen button to the bottom toolbar. Clicking it calls `document.documentElement.requestFullscreen()` or `document.exitFullscreen()` depending on current state.
+
+### Rationale
+Without a base path, all Vite-bundled assets would 404 under a subdirectory deployment. The CI pipeline previously uploaded raw source files, which would not work with TypeScript sources and ES module imports that require bundling. The fullscreen button improves the player experience on desktop, especially for maze gameplay.
+
+### Next Steps
+- Verify the Pages deployment completes successfully and the game loads at the published URL.
+- Consider adding a fullscreen icon in place of the `[ ]` text label.
+
+---
+
 ## 2026-03-19 — v2.6.80: Auto-matchmaking — server KV rooms + client room discovery
 
 ### Summary

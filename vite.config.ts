@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/',
+  base: '/fading-lights/',
   build: {
     outDir: 'dist',
     assetsInlineLimit: 0,

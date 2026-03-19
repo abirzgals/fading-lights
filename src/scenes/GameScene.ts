@@ -1105,6 +1105,20 @@ export class GameScene extends ex.Scene {
     mpDiv.appendChild(joinBtn);
     wrap.appendChild(mpDiv);
 
+    // Fullscreen button
+    const fsBtn = document.createElement('button');
+    fsBtn.textContent = '[ ]';
+    fsBtn.title = 'Fullscreen';
+    fsBtn.style.cssText = 'font:bold 12px monospace;padding:2px 8px;cursor:pointer;background:#222;color:#ccc;border:1px solid #444;border-radius:3px;margin-left:12px;';
+    fsBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+    wrap.appendChild(fsBtn);
+
     document.body.appendChild(wrap);
     this.debugCheckbox = cb;
     (this as any)._debugWrap = wrap;
