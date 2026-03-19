@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-19 — docs: add interactive architecture visualization page
+
+### Summary
+Added `public/architecture.html` — a self-contained interactive reference page (548 lines) for navigating the full project architecture without reading source code. The page has 6 tabs:
+
+1. **Project Structure** — all modules listed and color-coded by type (scenes, AI, entities, components, systems, config, utils).
+2. **Game Objects** — every entity type (Player, Bot, Enemy variants, Turret, Building, Drop, Projectile) with its attached components listed.
+3. **Components** — all 15 components with name, purpose, and key properties documented.
+4. **AI Systems** — bot goal decision tree and per-enemy-type decision trees shown as structured flowcharts.
+5. **Data Flow** — the per-frame update loop call order and the full entity lifecycle (spawn → update → death → cleanup).
+6. **Config & Stats** — all game balance tables: enemy HP/speed/damage, build costs, resource values, turret stats, etc.
+
+### Changes Made
+- `public/architecture.html` (new, 548 lines): single-file HTML/CSS/JS, no external dependencies, served statically.
+
+### Rationale
+The codebase has grown across many modules and the architecture is not obvious from directory browsing alone. This page gives any developer (or AI assistant) a fast, visual entry point to understand how systems connect before diving into source files.
+
+### Next Steps
+- Keep the page updated as new components or entity types are added.
+- Consider linking it from the project README or a dev-tools nav menu.
+
+---
+
 ## 2026-03-19 — v2.6.24: Fix bot stuck trying to build — affordability + build spot snapping
 
 ### Summary
