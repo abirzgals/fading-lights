@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.72: Scale tree stumps to 25% — 32x32 textures render at ~8x8px
+
+### Summary
+Tree stump actors now render at 25% of their native texture size. The stump textures are 32x32 px but were previously rendering at full size, appearing far too large relative to the map scale. Setting `scale = ex.vec(0.25, 0.25)` brings them down to approximately 8x8 px, matching the intended visual footprint.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Added `stump.scale = ex.vec(0.25, 0.25)` immediately after selecting the random stump variant, before the sprite is applied.
+
+### Rationale
+Full-size 32x32 stumps were visually oversized on the tilemap. Scaling them down to 25% keeps them proportionate to the environment and other decorative objects without requiring resized texture assets.
+
+### Next Steps
+- Verify stump collision body (if any) is also appropriately sized, or is disabled for purely decorative stumps.
+- Consider whether other decorative props need similar scale corrections.
+
+---
+
 ## 2026-03-19 — v2.6.71: Better projectile dodging — bot reacts earlier
 
 ### Summary
