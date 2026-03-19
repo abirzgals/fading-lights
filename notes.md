@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-19 — v2.6.41: Fix bot stuck chopping trees through obstacles
+
+### Summary
+Rewrote the chop/mine goal logic in BotAI so the bot no longer gets stuck trying to attack a resource through an obstacle. The root cause was a distance-only check (< 56px) that triggered "attack in place" even when a rock or wall separated the bot from the tree — PathFollower was never given a chance to route around the blocker.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Chop/mine case rewritten:
+  - `moveToWithPathfinding()` is always called first (one call, no duplication).
+  - PathFollower signals arrival by returning `(0, 0)` when the bot reaches the nearest walkable side of the target.
+  - Bot attacks and stands still if `arrived` (PathFollower returned zero vector) OR raw distance < 48px.
+  - Otherwise the returned direction vector drives movement — no separate "can I reach" check needed.
+
+### Rationale
+The previous logic ran `moveToWithPathfinding()` only in the `else` branch, meaning the pathfinder was never invoked when the bot was within 56px. If an obstacle sat between the bot and the tree at that range, the bot would spam attacks at the air and never reposition. Calling PathFollower unconditionally lets it navigate around the obstacle while the distance guard (< 48px) still handles the trivial open-field case.
+
+### Next Steps
+- Verify the `(0, 0)` arrival signal is consistent across all PathFollower code paths (direct-move bypass included).
+- Consider a unified "arrived at target" predicate on PathFollower to avoid re-implementing the zero-vector check at each call site.
+
+---
+
 ## 2026-03-19 — v2.6.40: Extract PathFollower — universal A* class for all AI
 
 ### Summary
