@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-03-19 — aec0213: v2.5.7: Player walking animations via spritesheet support
+
+**Commit:** aec0213
+
+### Summary
+The player character now displays walking animations when moving. Previously the player used a `SpriteRendererComponent` showing a single static directional sprite with no leg movement. This commit wires up a walk spritesheet through `AnimatedSpriteComponent`, enabling 8-directional animated movement.
+
+### Changes Made
+- `src/components/AnimatedSpriteComponent.ts`:
+  - **`walkSpriteSheets` option** — accepts a record of direction keys to spritesheet image paths, loaded via the existing asset pipeline
+  - **Deferred frame extraction** — frames are not sliced until the spritesheet image fires its `onload` event, avoiding attempts to extract from an unready image
+  - **`AnimFrame` union type** — `ImageSource | Graphic` allows the animation array to hold both raw loaded images and excalibur `Graphic` objects interchangeably, simplifying rendering logic
+- `src/entities/EntityFactory.ts`:
+  - Player entity switched from `SpriteRendererComponent` to `AnimatedSpriteComponent`
+  - Walk animation wired up: 8 directions (N, NE, E, SE, S, SW, W, NW), 6 frames each, 48x48 px per frame, sourced from the walk spritesheet
+
+### Rationale
+Static directional sprites read as stiff and lifeless during movement. The spritesheet approach keeps all directional walk frames in a single asset file, which is simpler to manage and load. Deferring frame extraction prevents a common async bug where canvas draws fail on incomplete image data.
+
+### Next Steps
+- Add idle animation frames (currently falls back to static sprite when not moving)
+- Consider attack animation frames for the player via the same spritesheet mechanism
+- Verify animation frame timing feels natural across different movement speeds
+
+---
+
 ## 2026-03-19 — eb33605: BotAI goal persistence, movement smoothing, completion detection
 
 **Commit:** eb33605
