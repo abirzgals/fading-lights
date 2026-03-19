@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-03-20 — v2.6.99: Aggressive scene graph culling — remove far entities from Excalibur entirely
+
+### Summary
+Replaced the flag-based viewport culling approach with true scene-graph removal. Off-screen static entities are now fully removed from the Excalibur scene via `scene.remove()`, eliminating them from the engine's internal iteration loop. A `culledFromScene` Set tracks which entities have been removed so they can be re-added when they come back into view.
+
+### Problem
+The previous approach used `entity.culled = true` and `entity.graphics.visible = false` to skip our own component work and draw calls. However, Excalibur's internal loop iterates all actors in the scene unconditionally — the `culled` flag does not prevent that. With ~16 000 static entities in the scene, this cost approximately 40ms/frame (~1000ms/sec) in ENGINE time even when all entities were culled.
+
+### Fix
+- `viewportCull()` now calls `this.remove(e)` for out-of-view entities instead of setting a flag. Excalibur will not iterate, update, or render these actors at all.
+- `this.culledFromScene: Set<GameEntity>` tracks all currently removed entities.
+- When an entity re-enters the viewport, it is re-added via `this.add(e)`.
+- Culling margin expanded from 5 tiles to 6 tiles to reduce re-add thrashing near edges.
+
+### Safety: safeKillEntity()
+Killing an entity that has been removed from the scene would prevent `onPreKill` / `freeTiles` from firing, breaking resource destruction logic and network sync. A new `safeKillEntity(entity)` helper re-adds the entity to the scene before calling `kill()`. This is used in:
+- `damageResource()` — entity destruction when a resource's HP reaches zero.
+- `netSync.onResourceKilled` callback — network-driven resource removal.
+- `netSync.onBuildingPlaced` nearest-entity kill — also now calls `botAI.invalidateResources()` (previously missing).
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `private culledFromScene: Set<GameEntity>`.
+  - `viewportCull()` rewritten: `scene.remove` / `scene.add` instead of `e.culled` / `e.graphics.visible`.
+  - Added `private safeKillEntity(entity: GameEntity)` helper.
+  - `damageResource` and `netSync.onResourceKilled` updated to call `safeKillEntity`.
+  - `netSync.onBuildingPlaced` nearest-kill now also calls `botAI?.invalidateResources()`.
+- `package.json`: bumped version to `2.6.99`.
+
+### Rationale
+The ENGINE instrumentation added in v2.6.98 confirmed that Excalibur's scene-graph iteration, not our code, was consuming ~40ms/frame. The only way to eliminate that cost is to remove actors from the scene entirely. The safeKillEntity guard is the critical safety layer that makes this viable — without it, entity kills would silently skip lifecycle callbacks.
+
+### Expected Outcome
+Scene actor count drops from ~16 000 to ~500 (only entities currently visible). ENGINE time should fall from ~1000ms/sec to ~100–200ms/sec, recovering roughly 30ms/frame.
+
+### Next Steps
+- Verify ENGINE ms drops as expected in the HUD after this change.
+- Watch for edge cases: entities killed at the very edge of viewport, or killed by network events while culled.
+- Consider whether projectiles or enemies near the cull boundary need wider margins.
+
+---
+
 ## 2026-03-20 — v2.6.98: Full frame time measurement to isolate Excalibur overhead
 
 ### Summary

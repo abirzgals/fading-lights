@@ -47,8 +47,9 @@ export class GameScene extends ex.Scene {
   private frameTimeAccum = 0;
   private frameTimeDisplay = 0;
 
-  // Viewport culling for static entities
+  // Viewport culling — remove far entities from scene, re-add near ones
   private cullTimer = 0;
+  private culledFromScene: Set<GameEntity> = new Set();
   private perfTimings: Record<string, number> = {};
   private perfDisplay: Record<string, number> = {};
   private perfAccum: Record<string, number> = {};
@@ -224,17 +225,16 @@ export class GameScene extends ex.Scene {
     }
   }
 
-  // ======== VIEWPORT CULLING — disable updates for off-screen static entities ========
-  // Entity stays in scene (kill/events/colliders work), only skips component onPreUpdate
+  // ======== VIEWPORT CULLING — remove far entities from Excalibur scene graph ========
   private viewportCull(): void {
     this.cullTimer++;
-    if (this.cullTimer % 15 !== 0) return; // every 15 frames
+    if (this.cullTimer % 15 !== 0) return;
 
     const cam = this.camera;
     const zoom = cam.zoom;
     const vp = this.engine.screen.resolution;
-    const halfW = vp.width / zoom / 2 + T * 5;
-    const halfH = vp.height / zoom / 2 + T * 5;
+    const halfW = vp.width / zoom / 2 + T * 6;
+    const halfH = vp.height / zoom / 2 + T * 6;
     const cx = cam.pos.x, cy = cam.pos.y;
     const left = cx - halfW, right = cx + halfW;
     const top = cy - halfH, bottom = cy + halfH;
@@ -242,9 +242,29 @@ export class GameScene extends ex.Scene {
     for (const e of this.level.entities) {
       if (e.isKilled()) continue;
       const inView = e.pos.x > left && e.pos.x < right && e.pos.y > top && e.pos.y < bottom;
-      e.culled = !inView;
-      e.graphics.visible = inView;
+
+      if (!inView && !this.culledFromScene.has(e)) {
+        // Remove from scene — Excalibur won't iterate it at all
+        this.remove(e);
+        this.culledFromScene.add(e);
+        e.culled = true;
+      } else if (inView && this.culledFromScene.has(e)) {
+        // Re-add to scene
+        this.add(e);
+        this.culledFromScene.delete(e);
+        e.culled = false;
+      }
     }
+  }
+
+  /** Ensure entity is in scene before killing (may have been culled) */
+  private safeKillEntity(entity: GameEntity): void {
+    if (this.culledFromScene.has(entity)) {
+      this.add(entity);
+      this.culledFromScene.delete(entity);
+      entity.culled = false;
+    }
+    entity.kill();
   }
 
   // ======== PUSH OUT OF BLOCKED — prevent entities stuck in colliders ========
@@ -517,7 +537,7 @@ export class GameScene extends ex.Scene {
       if (entity.entityType === 'tree') {
         this.spawnStump(entity.pos.x, entity.pos.y);
       }
-      entity.kill();
+      this.safeKillEntity(entity);
       this.botAI?.invalidateResources();
       this.netSync?.sendResourceKilled(entity.pos.x, entity.pos.y, res.resourceType);
     }
@@ -1010,7 +1030,8 @@ export class GameScene extends ex.Scene {
           .sort((a, b) => Math.hypot(a.pos.x - x, a.pos.y - y) - Math.hypot(b.pos.x - x, b.pos.y - y))[0];
         if (nearest && Math.hypot(nearest.pos.x - x, nearest.pos.y - y) < 48) {
           if (nearest.entityType === 'tree') this.spawnStump(nearest.pos.x, nearest.pos.y);
-          nearest.kill();
+          this.safeKillEntity(nearest);
+          this.botAI?.invalidateResources();
         }
       };
       this.netSync.onBuildingPlaced = (x, y, buildingType) => {
