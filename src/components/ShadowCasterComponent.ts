@@ -80,6 +80,12 @@ export class ShadowCasterComponent extends ex.Component {
     if (!actor) return;
     if (!this.installed) this.installDraw(actor);
 
+    // Hide shadow during death animation
+    if ((actor as any).isDying) {
+      this.shadowVisible = false;
+      return;
+    }
+
     const lights = ShadowCasterComponent.lightSources;
     let bestLight: { x: number; y: number; radius: number } | null = null;
     let bestDist = Infinity;

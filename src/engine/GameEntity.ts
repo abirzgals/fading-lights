@@ -59,8 +59,8 @@ export class GameEntity extends ex.Actor {
   public isDying = false;
 
   /**
-   * Play death sequence: flash red → fall over → wait 3s → fade out 3s → kill.
-   * Call this instead of kill() for enemies/player.
+   * Play death sequence: flash red → shrink → wait 3s → fade out 3s → kill.
+   * No rotation — shadow stays correct. Uses scale + opacity for death effect.
    */
   playDeath(onComplete?: () => void): void {
     if (this.isDying || this.isKilled()) return;
@@ -69,20 +69,28 @@ export class GameEntity extends ex.Actor {
     // Stop all movement
     this.vel = ex.vec(0, 0);
 
-    // Phase 1: Flash red + fall over (0.4s)
-    const fallDir = (Math.random() > 0.5 ? 1 : -1) * (Math.PI * 0.35 + Math.random() * 0.2);
+    // Phase 1: Red flash + hit stagger (0.3s)
     this.actions
       .callMethod(() => {
-        // Red tint flash — darken the sprite
-        this.graphics.opacity = 0.7;
+        this.graphics.opacity = 0.8;
       })
-      .rotateTo(fallDir, 4) // fall over
+      .delay(100)
       .callMethod(() => {
-        // Phase 2: Lie on ground for 3 seconds
+        this.graphics.opacity = 1.0;
+      })
+      .delay(100)
+      .callMethod(() => {
         this.graphics.opacity = 0.6;
       })
+      // Phase 2: Collapse — shrink Y to simulate falling flat (0.3s)
+      .scaleTo(ex.vec(this.scale.x * 1.1, this.scale.y * 0.3), ex.vec(2, 3))
+      .callMethod(() => {
+        // Lying flat on ground
+        this.graphics.opacity = 0.5;
+      })
+      // Phase 3: Wait on ground (3s)
       .delay(3000)
-      // Phase 3: Fade out over 3 seconds
+      // Phase 4: Fade out (3s)
       .fade(0, 3000)
       .callMethod(() => {
         onComplete?.();

@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-03-19 — v2.6.29: Rework death animation — collapse + fade, no rotation
+
+### Summary
+Replaced the rotation-based death animation in `GameEntity.playDeath()` with a clean four-phase visual sequence using scale and opacity only. The shadow is now hidden during death via a guard in `ShadowCasterComponent`, preventing it from distorting or rotating with the old fall-over effect.
+
+### Changes Made
+- `src/engine/GameEntity.ts`:
+  - Removed random `rotateTo` call that caused the sprite to spin sideways on death.
+  - Phase 1: Red flash — opacity blinks 0.8 → 1.0 → 0.6 over 200ms to sell the hit.
+  - Phase 2: Collapse — `scaleTo` shrinks scaleY to 0.3 (entity squishes flat, simulating falling to the ground) while scaleX expands slightly.
+  - Phase 3: Lie on ground — opacity 0.5 for 3 seconds.
+  - Phase 4: Fade out — `fade(0, 3000)` then `kill()`.
+  - Updated JSDoc comment to reflect the new sequence.
+- `src/components/ShadowCasterComponent.ts`:
+  - Added an early-return guard at the top of the update/draw path: if `actor.isDying` is true, sets `shadowVisible = false` and returns immediately.
+  - Shadow no longer renders, rotates, or distorts during the death animation.
+
+### Rationale
+The previous rotation-based death looked unconvincing and broke the shadow — the ellipse shadow would rotate with the sprite, visually flying off into the wrong position. The new sequence keeps the sprite upright and flat, which reads clearly as "fallen" in a top-down/isometric context, and the hidden shadow avoids any visual artefacts during the animation.
+
+### Next Steps
+- Could add a brief screen-shake or particle burst on death for extra impact.
+- Consider pooling dead entities instead of killing them if performance becomes a concern.
+
+---
+
 ## 2026-03-19 — v2.6.28: Bot clears resources blocking build spots before building
 
 ### Summary
