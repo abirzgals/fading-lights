@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-19 — v2.6.23: Fix black areas in deep forest with proper ground texture
+
+### Summary
+Deep forest areas previously showed near-black gaps between tree sprites because the base ground color was almost invisible and no ground texture was drawn beneath trees. Three coordinated fixes eliminate this:
+
+1. Base ground color brightened from `#050a02` to `#0f1a08` (visible dark forest green instead of near-black).
+2. Every world tile not already covered by a Wang path/clearing transition tile now receives the full-forest ground sprite (`wangIdx=0` from `ground-tileset.png`) at `z=-9`, sitting between the base color layer (`z=-10`) and Wang transition tiles (`z=-8`).
+3. The forest tile pass uses a chunked 4x4 grid scan for performance, rendering individual tiles only in chunks that partially overlap the Wang render set.
+
+### Changes Made
+- `src/world/LevelScript.ts`:
+  - Base chunk color: `#050a02` → `#0f1a08`.
+  - Added comment above Wang tile render loop.
+  - New forest floor fill block after Wang tile rendering: iterates all world tiles in 4x4 chunks, skips tiles already in `renderSet`, places `forestSprite` at `z=-9` for remaining tiles.
+
+### Rationale
+Wang tiles only cover path edges and clearing borders. Pure deep-forest tiles had no texture assigned, leaving the base color (previously near-black) fully exposed between tree sprites. Tiling the `wangIdx=0` forest sprite everywhere provides a consistent ground layer that eliminates all black gaps.
+
+### Next Steps
+- Profile scene entity count to confirm the extra forest-floor actors do not cause frame-rate issues at full world size.
+- Consider using a TileMap or sprite batch if actor count becomes a bottleneck.
+
+---
+
 ## 2026-03-19 — v2.6.22: Fix turret targeting + HP bar for dying enemies
 
 ### Summary
