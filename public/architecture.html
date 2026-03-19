@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>The Fading Light — Architecture</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #0a0a12; color: #ccc; font-family: 'Segoe UI', system-ui, sans-serif; overflow-x: hidden; }
+h1 { text-align: center; padding: 24px; color: #ff8844; font-size: 28px; text-shadow: 0 0 20px rgba(255,136,68,0.3); }
+h2 { color: #88aaff; margin: 32px 0 16px; font-size: 20px; border-bottom: 1px solid #222; padding-bottom: 8px; }
+h3 { color: #66dd88; margin: 20px 0 8px; font-size: 15px; }
+.container { max-width: 1400px; margin: 0 auto; padding: 0 24px 60px; }
+
+/* Tab navigation */
+.tabs { display: flex; gap: 4px; margin-bottom: 24px; flex-wrap: wrap; }
+.tab { padding: 10px 20px; background: #151520; border: 1px solid #333; border-radius: 8px 8px 0 0; cursor: pointer; color: #888; font-size: 14px; transition: all 0.2s; }
+.tab:hover { background: #1a1a2a; color: #aaa; }
+.tab.active { background: #1a1a30; color: #88aaff; border-bottom-color: #1a1a30; }
+.tab-content { display: none; }
+.tab-content.active { display: block; }
+
+/* Block diagram nodes */
+.diagram { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; padding: 16px 0; }
+.node { background: #12121e; border: 1px solid #333; border-radius: 10px; padding: 14px 18px; min-width: 180px; max-width: 280px; transition: all 0.2s; cursor: default; position: relative; }
+.node:hover { border-color: #88aaff; transform: translateY(-2px); box-shadow: 0 4px 20px rgba(100,150,255,0.1); }
+.node-title { font-weight: 700; font-size: 14px; margin-bottom: 6px; }
+.node-file { font-size: 11px; color: #666; margin-bottom: 8px; font-family: monospace; }
+.node-desc { font-size: 12px; color: #999; line-height: 1.5; }
+.node-list { font-size: 11px; color: #888; line-height: 1.7; padding-left: 14px; margin-top: 6px; }
+.node-list li { list-style: none; position: relative; }
+.node-list li::before { content: '›'; position: absolute; left: -12px; color: #555; }
+
+/* Color coding */
+.node-scene { border-left: 3px solid #ff8844; }
+.node-scene .node-title { color: #ff8844; }
+.node-engine { border-left: 3px solid #44aaff; }
+.node-engine .node-title { color: #44aaff; }
+.node-entity { border-left: 3px solid #44ff88; }
+.node-entity .node-title { color: #44ff88; }
+.node-component { border-left: 3px solid #cc66ff; }
+.node-component .node-title { color: #cc66ff; }
+.node-ai { border-left: 3px solid #ffcc44; }
+.node-ai .node-title { color: #ffcc44; }
+.node-config { border-left: 3px solid #ff6666; }
+.node-config .node-title { color: #ff6666; }
+
+/* Entity diagram - workflow style */
+.entity-flow { background: #0e0e18; border-radius: 12px; padding: 20px; margin: 16px 0; border: 1px solid #222; }
+.entity-header { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+.entity-icon { width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.entity-name { font-size: 18px; font-weight: 700; }
+.entity-type { font-size: 11px; color: #666; font-family: monospace; }
+.comp-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.comp-chip { background: #1a1a2a; border: 1px solid #333; border-radius: 6px; padding: 6px 12px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+.comp-chip .dot { width: 8px; height: 8px; border-radius: 50%; }
+.comp-chip.update .dot { background: #44ff88; }
+.comp-chip.static .dot { background: #666; }
+.comp-chip .label { color: #bbb; }
+.comp-chip .info { color: #666; font-size: 10px; }
+
+/* Arrow connector */
+.arrow-down { text-align: center; color: #333; font-size: 24px; margin: 4px 0; }
+
+/* Data flow */
+.flow-row { display: flex; align-items: stretch; gap: 12px; margin: 8px 0; }
+.flow-step { background: #12121e; border: 1px solid #282838; border-radius: 8px; padding: 10px 14px; flex: 1; min-width: 120px; }
+.flow-step .step-num { display: inline-block; width: 20px; height: 20px; background: #333; border-radius: 50%; text-align: center; line-height: 20px; font-size: 11px; color: #888; margin-right: 6px; }
+.flow-step .step-title { font-size: 13px; color: #aaa; font-weight: 600; }
+.flow-step .step-desc { font-size: 11px; color: #666; margin-top: 4px; }
+.flow-arrow { display: flex; align-items: center; color: #444; font-size: 18px; }
+
+/* Decision tree visual */
+.tree-node { margin-left: 20px; border-left: 1px solid #333; padding: 4px 0 4px 16px; }
+.tree-leaf { font-size: 12px; color: #888; padding: 2px 0; }
+.tree-branch { font-size: 13px; color: #cc66ff; font-weight: 600; padding: 4px 0 2px; }
+.tree-root { font-size: 14px; color: #ffcc44; font-weight: 700; margin-bottom: 4px; }
+
+/* Legend */
+.legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 16px 0; padding: 12px; background: #0e0e18; border-radius: 8px; border: 1px solid #222; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #888; }
+.legend-color { width: 12px; height: 12px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h1>The Fading Light — Project Architecture</h1>
+<div class="container">
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" onclick="showTab('overview')">Project Structure</div>
+  <div class="tab" onclick="showTab('entities')">Game Objects</div>
+  <div class="tab" onclick="showTab('components')">Components</div>
+  <div class="tab" onclick="showTab('ai')">AI Systems</div>
+  <div class="tab" onclick="showTab('flow')">Data Flow</div>
+  <div class="tab" onclick="showTab('config')">Config & Stats</div>
+</div>
+
+<!-- TAB: Project Structure -->
+<div id="tab-overview" class="tab-content active">
+<div class="legend">
+  <div class="legend-item"><div class="legend-color" style="background:#ff8844"></div> Scenes</div>
+  <div class="legend-item"><div class="legend-color" style="background:#44aaff"></div> Engine</div>
+  <div class="legend-item"><div class="legend-color" style="background:#44ff88"></div> Entities</div>
+  <div class="legend-item"><div class="legend-color" style="background:#cc66ff"></div> Components</div>
+  <div class="legend-item"><div class="legend-color" style="background:#ffcc44"></div> AI</div>
+  <div class="legend-item"><div class="legend-color" style="background:#ff6666"></div> Config</div>
+</div>
+
+<h2>Scenes</h2>
+<div class="diagram">
+  <div class="node node-scene">
+    <div class="node-title">IntroScene</div>
+    <div class="node-file">scenes/IntroScene.ts</div>
+    <div class="node-desc">Splash screen + video intro. Click to skip.</div>
+  </div>
+  <div class="node node-scene">
+    <div class="node-title">MenuScene</div>
+    <div class="node-file">scenes/MenuScene.ts</div>
+    <div class="node-desc">Title screen with animated campfire, fireflies, name input.</div>
+  </div>
+  <div class="node node-scene">
+    <div class="node-title">GameScene</div>
+    <div class="node-file">scenes/GameScene.ts</div>
+    <div class="node-desc">Main orchestrator. Player input, enemy AI, spawning, bonfire, buildings, fog, HUD.</div>
+  </div>
+</div>
+
+<h2>Engine</h2>
+<div class="diagram">
+  <div class="node node-engine">
+    <div class="node-title">GameEntity</div>
+    <div class="node-file">engine/GameEntity.ts</div>
+    <div class="node-desc">Base Actor (like Unity GameObject). Auto-drives component updates. playDeath() animation.</div>
+  </div>
+  <div class="node node-engine">
+    <div class="node-title">GridCollisionSystem</div>
+    <div class="node-file">engine/GridCollisionSystem.ts</div>
+    <div class="node-desc">150x150 tile grid. Walkability + A* pathfinding (8-dir). Corner-sliding collision.</div>
+  </div>
+  <div class="node node-engine">
+    <div class="node-title">FogOfWarPostProcessor</div>
+    <div class="node-file">engine/FogOfWarPostProcessor.ts</div>
+    <div class="node-desc">GLSL fragment shader. 16 dynamic lights with radius, falloff, warm tint.</div>
+  </div>
+  <div class="node node-engine">
+    <div class="node-title">AssetLoader</div>
+    <div class="node-file">engine/AssetLoader.ts</div>
+    <div class="node-desc">Central sprite/spritesheet registry. 560+ resources. Enemy anims, player walk/attack.</div>
+  </div>
+  <div class="node node-engine">
+    <div class="node-title">AudioEngine</div>
+    <div class="node-file">engine/AudioEngine.ts</div>
+    <div class="node-desc">Web Audio API. Music loops, SFX, footsteps, fire crackle. Auto-resume on interaction.</div>
+  </div>
+</div>
+
+<h2>World Generation</h2>
+<div class="diagram">
+  <div class="node node-entity">
+    <div class="node-title">Level1Script</div>
+    <div class="node-file">world/LevelScript.ts</div>
+    <div class="node-desc">Seeded procedural generation. Noise-driven trees, winding paths, clearings, Wang tiles. Forest wall gap-filling.</div>
+  </div>
+  <div class="node node-entity">
+    <div class="node-title">EntityFactory</div>
+    <div class="node-file">entities/EntityFactory.ts</div>
+    <div class="node-desc">11 factory methods. Assembles GameEntities with components (like Unity prefabs).</div>
+  </div>
+</div>
+
+<h2>AI</h2>
+<div class="diagram">
+  <div class="node node-ai">
+    <div class="node-title">BotAI</div>
+    <div class="node-file">ai/BotAI.ts</div>
+    <div class="node-desc">Autonomous player. Decision tree with A* pathfinding. Gather, build, fight, feed fire.</div>
+  </div>
+  <div class="node node-ai">
+    <div class="node-title">EnemyBrainSystem</div>
+    <div class="node-file">ai/EnemyBrainSystem.ts</div>
+    <div class="node-desc">Per-frame AI for all enemies. Melee/ranged/crawler trees. A* chase, dodge-able attacks.</div>
+  </div>
+</div>
+
+<h2>Config</h2>
+<div class="diagram">
+  <div class="node node-config">
+    <div class="node-title">config.ts</div>
+    <div class="node-file">src/config.ts</div>
+    <div class="node-desc">All constants: world size, player speed, bonfire rates, fire levels, build spots, weapons, enemies, buildings.</div>
+  </div>
+  <div class="node node-config">
+    <div class="node-title">types.ts</div>
+    <div class="node-file">src/types.ts</div>
+    <div class="node-desc">TypeScript interfaces: Direction, EnemyType, BuildingType, WeaponDef, EnemyDef, BuildingDef.</div>
+  </div>
+</div>
+</div>
+
+<!-- TAB: Game Objects -->
+<div id="tab-entities" class="tab-content">
+<p style="color:#666;margin-bottom:16px;font-size:13px">Each game object is a GameEntity with attached components. <span style="color:#44ff88">Green dot</span> = has onPreUpdate (runs each frame). <span style="color:#666">Grey dot</span> = passive/data-only.</p>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#44ff44">🧑</div>
+    <div><div class="entity-name" style="color:#44ff44">Player</div><div class="entity-type">entityType: 'player'</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip update"><div class="dot"></div><div class="label">AnimatedSpriteComponent</div><div class="info">8-dir walk + melee attack</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">HealthComponent</div><div class="info">1000 HP</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">MeleeAttackComponent</div><div class="info">10 dmg, 32 range, 800ms</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">ShadowCasterComponent</div><div class="info">sprite shadow from light</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#6622aa">👾</div>
+    <div><div class="entity-name" style="color:#aa66ff">Enemy</div><div class="entity-type">7 types: WISP, STALKER, BEAST, LORD, CRAWLER, ARCHER, MAGE</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip update"><div class="dot"></div><div class="label">AnimatedSpriteComponent</div><div class="info">walk + attack anims</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">HealthComponent</div><div class="info">14-210 HP</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">AIBrainComponent</div><div class="info">state + targeting data</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">MeleeAttackComponent</div><div class="info">melee types only</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">RangedAttackComponent</div><div class="info">ARCHER + MAGE only</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">ShadowCasterComponent</div><div class="info">proportional to size</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#1a5a1a">🌲</div>
+    <div><div class="entity-name" style="color:#44aa44">Tree</div><div class="entity-type">5 visual variants, harvestable</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip update"><div class="dot"></div><div class="label">HealthComponent</div><div class="info">30 HP (3 hits)</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">GridOccupancyComponent</div><div class="info">blocks 1 tile</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">ResourceComponent</div><div class="info">drops 3 wood</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">ShadowCasterComponent</div><div class="info">2x long shadow</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#666">🪨</div>
+    <div><div class="entity-name" style="color:#aaa">Stone / Metal</div><div class="entity-type">harvestable resource deposits</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip update"><div class="dot"></div><div class="label">HealthComponent</div><div class="info">40-50 HP</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">GridOccupancyComponent</div><div class="info">blocks 1 tile</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">ResourceComponent</div><div class="info">drops 2 stone/metal</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#ff6600">🔥</div>
+    <div><div class="entity-name" style="color:#ff8844">Bonfire</div><div class="entity-type">primary game objective</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip static"><div class="dot"></div><div class="label">LightSourceComponent</div><div class="info">420px radius, warm tint</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">GridOccupancyComponent</div><div class="info">blocks 1 tile</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">Pulse Animation</div><div class="info">scale 1.0 ± 0.06</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">Fire Particles</div><div class="info">80ms interval timer</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#aa8844">🏗️</div>
+    <div><div class="entity-name" style="color:#ddaa44">Building</div><div class="entity-type">6 types: TURRET, OUTPOST, FORGE, WEAPON_SHOP, ARMOR_WORKSHOP, FRIEND_HUT</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip update"><div class="dot"></div><div class="label">HealthComponent</div><div class="info">120-200 HP</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">BuildingComponent</div><div class="info">type-specific behavior</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">GridOccupancyComponent</div><div class="info">blocks 1 tile</div></div>
+    <div class="comp-chip static"><div class="dot"></div><div class="label">LightSourceComponent</div><div class="info">OUTPOST only, 180px</div></div>
+  </div>
+</div>
+
+<div class="entity-flow">
+  <div class="entity-header">
+    <div class="entity-icon" style="background:#8b6914">📦</div>
+    <div><div class="entity-name" style="color:#bb9944">Drop</div><div class="entity-type">resource item on ground (wood/stone/metal)</div></div>
+  </div>
+  <div class="comp-grid">
+    <div class="comp-chip static"><div class="dot"></div><div class="label">No components</div><div class="info">dropType property only</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">Bounce-in anim</div><div class="info">scale 0.3 → 1.0</div></div>
+    <div class="comp-chip update"><div class="dot"></div><div class="label">Fly-to-player</div><div class="info">on pickup (300ms arc)</div></div>
+  </div>
+</div>
+</div>
+
+<!-- TAB: Components -->
+<div id="tab-components" class="tab-content">
+<h2>All Components (15)</h2>
+<div class="diagram">
+  <div class="node node-component">
+    <div class="node-title">AnimatedSpriteComponent</div>
+    <div class="node-desc">8-directional walk + attack animations. Spritesheet extraction. Damage frame callback. State machine: idle→walk→attack.</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li><li>Walk: loop, 10fps</li><li>Attack: one-shot, 12fps</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">HealthComponent</div>
+    <div class="node-desc">HP tracking with armor reduction, invincibility frames, death event.</div>
+    <ul class="node-list"><li>onPreUpdate: YES (inv timer)</li><li>damage(amt), heal(amt)</li><li>alive, hp, maxHp</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">MeleeAttackComponent</div>
+    <div class="node-desc">Melee attack with cooldown, arc check, damage frame sync.</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li><li>canAttack, startAttack()</li><li>damage, range, cooldownMs</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">RangedAttackComponent</div>
+    <div class="node-desc">Fires projectile entities with trails, glow, impact effects.</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li><li>fire(target, scene)</li><li>Arrow or magic projectile</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">AIBrainComponent</div>
+    <div class="node-desc">Enemy state data: type, speed, damage, ranged flag, aggro, wander timer.</div>
+    <ul class="node-list"><li>onPreUpdate: NO</li><li>Data container only</li><li>Used by EnemyBrainSystem</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">BuildingComponent</div>
+    <div class="node-desc">Per-type building behavior. TURRET auto-attacks nearest enemy.</div>
+    <ul class="node-list"><li>onPreUpdate: YES (turret)</li><li>Fires arrow projectiles</li><li>180px range, 8 dmg</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">ShadowCasterComponent</div>
+    <div class="node-desc">Draws entity sprite as black silhouette, stretched away from light.</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li><li>Uses graphics.onPreDraw</li><li>graphic.tint = Black</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">GridOccupancyComponent</div>
+    <div class="node-desc">Marks/unmarks tiles in walkability grid. Auto-cleanup on remove.</div>
+    <ul class="node-list"><li>onPreUpdate: NO</li><li>onAdd → setBlocked</li><li>onRemove → setWalkable</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">LightSourceComponent</div>
+    <div class="node-desc">Fog-of-war light source metadata (radius, intensity, tint).</div>
+    <ul class="node-list"><li>onPreUpdate: NO</li><li>Data only</li><li>Read by GameScene</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">ResourceComponent</div>
+    <div class="node-desc">Marks entity as harvestable. Resource type + drop amount.</div>
+    <ul class="node-list"><li>onPreUpdate: NO</li><li>resourceType: string</li><li>dropAmount: number</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">DecisionTreeComponent</div>
+    <div class="node-desc">Behavior tree nodes: Selector, Sequence, Condition, Action. Pre-built trees for melee/ranged/crawler.</div>
+    <ul class="node-list"><li>Selector: first success</li><li>Sequence: all must pass</li><li>Melee/Ranged/Crawler</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">BonfireAnimComponent</div>
+    <div class="node-desc">Animated bonfire with breathing-idle frames + scale pulse.</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">GlowEffectComponent</div>
+    <div class="node-desc">Pulsing glow overlay on bright pixels (eyes, runes).</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li></ul>
+  </div>
+  <div class="node node-component">
+    <div class="node-title">SpriteRendererComponent</div>
+    <div class="node-desc">Simple 8-dir sprite switching by velocity. Legacy (replaced by AnimatedSprite).</div>
+    <ul class="node-list"><li>onPreUpdate: YES</li></ul>
+  </div>
+</div>
+</div>
+
+<!-- TAB: AI Systems -->
+<div id="tab-ai" class="tab-content">
+<h2>Bot AI Decision Tree</h2>
+<p style="color:#666;margin-bottom:12px;font-size:13px">Evaluated every frame. First matching leaf wins. Priority top-to-bottom.</p>
+<div style="background:#0e0e18;border-radius:12px;padding:20px;border:1px solid #222;font-family:monospace">
+  <div class="tree-root">SURVIVE & PROGRESS</div>
+  <div class="tree-node">
+    <div class="tree-branch">SURVIVE</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Critical HP Retreat (HP &lt; 25%, unless 1 weak enemy left)</div>
+      <div class="tree-leaf">Dodge Projectile (evasion urgency &gt; 1.5)</div>
+      <div class="tree-leaf">Surrounded (3+ enemies close, HP &lt; 50%)</div>
+    </div>
+    <div class="tree-branch">Defend Camp (enemy within 250px of bonfire)</div>
+    <div class="tree-branch">Counter-Attack (projectile heading toward player → kill shooter)</div>
+    <div class="tree-branch">Kite (surrounded by 2+ melee, step back + counter)</div>
+    <div class="tree-branch">FIRE DYING (fuel &lt; 35%)</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Feed Fire (if has wood)</div>
+      <div class="tree-leaf">Chop for Fire (urgent)</div>
+    </div>
+    <div class="tree-branch">COMBAT (enemy in sight range 350px)</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Kill Enemy (stand and fight, dodge projectiles)</div>
+    </div>
+    <div class="tree-branch">Feed Fire (maintenance, fuel &lt; 85%)</div>
+    <div class="tree-branch">Build (if can afford → walk to spot)</div>
+    <div class="tree-branch">Gather for Build</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Pick Up drops for build (nearest needed drop &lt; 200px)</div>
+      <div class="tree-leaf">Chop/Mine for build (specific resource type)</div>
+    </div>
+    <div class="tree-branch">Level Up Fire</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Feed to level up</div>
+      <div class="tree-leaf">Gather wood for level up</div>
+    </div>
+    <div class="tree-branch">Pick Up Nearby Drops (&lt; 120px)</div>
+    <div class="tree-branch">Gather Wood (for fire fuel)</div>
+    <div class="tree-branch">Camp Idle (orbit bonfire slowly)</div>
+  </div>
+</div>
+
+<h2>Enemy Decision Trees</h2>
+<div style="display:flex;gap:16px;flex-wrap:wrap">
+  <div style="background:#0e0e18;border-radius:12px;padding:16px;border:1px solid #222;flex:1;min-width:200px;font-family:monospace">
+    <div class="tree-root">Melee Tree</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Attack (target &lt; 30px) → stand and hit</div>
+      <div class="tree-leaf">Chase (target in sight 350px) → A* pathfind</div>
+      <div class="tree-leaf">Wander (random direction)</div>
+    </div>
+    <div style="color:#666;font-size:11px;margin-top:8px">No flee — fights to the death</div>
+  </div>
+  <div style="background:#0e0e18;border-radius:12px;padding:16px;border:1px solid #222;flex:1;min-width:200px;font-family:monospace">
+    <div class="tree-root">Ranged Tree</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Flee (target &lt; 50% attack range)</div>
+      <div class="tree-leaf">Orbit + Shoot (in attack range)</div>
+      <div class="tree-leaf">Chase (in sight range)</div>
+      <div class="tree-leaf">Wander</div>
+    </div>
+  </div>
+  <div style="background:#0e0e18;border-radius:12px;padding:16px;border:1px solid #222;flex:1;min-width:200px;font-family:monospace">
+    <div class="tree-root">Crawler Tree</div>
+    <div class="tree-node">
+      <div class="tree-leaf">Chase bonfire (always)</div>
+      <div class="tree-leaf">Wander (fallback)</div>
+    </div>
+    <div style="color:#666;font-size:11px;margin-top:8px">Targets bonfire, ignores player</div>
+  </div>
+</div>
+</div>
+
+<!-- TAB: Data Flow -->
+<div id="tab-flow" class="tab-content">
+<h2>Frame Update Loop</h2>
+<div class="flow-row">
+  <div class="flow-step"><span class="step-num">1</span><div class="step-title">Player Input</div><div class="step-desc">Bot AI or keyboard → vx, vy, attack</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">2</span><div class="step-title">Grid Collision</div><div class="step-desc">Clamp velocity vs blocked tiles</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">3</span><div class="step-title">Enemy AI</div><div class="step-desc">EnemyBrainSystem runs all decision trees</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">4</span><div class="step-title">Spawning</div><div class="step-desc">Wave system: enemies per minute</div></div>
+</div>
+<div class="flow-row">
+  <div class="flow-step"><span class="step-num">5</span><div class="step-title">Drop Pickup</div><div class="step-desc">Auto-collect within 50px</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">6</span><div class="step-title">Bonfire</div><div class="step-desc">Fuel decay + auto-feed + level up</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">7</span><div class="step-title">Build Spots</div><div class="step-desc">Unlock + auto-build when affordable</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">8</span><div class="step-title">Fog + Lights</div><div class="step-desc">Shadows + GLSL post-processor</div></div>
+</div>
+<div class="flow-row">
+  <div class="flow-step"><span class="step-num">9</span><div class="step-title">Depth Sort</div><div class="step-desc">Y-based z-order for all entities</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">10</span><div class="step-title">HP Bars</div><div class="step-desc">Enemy health bar actors update</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">11</span><div class="step-title">Debug</div><div class="step-desc">Collider overlay + A* paths (if enabled)</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step"><span class="step-num">12</span><div class="step-title">HUD</div><div class="step-desc">HTML overlay: HP, fuel, resources, level</div></div>
+</div>
+
+<h2>Entity Lifecycle</h2>
+<div class="flow-row">
+  <div class="flow-step" style="border-color:#44ff88"><span class="step-num" style="background:#44ff88;color:#000">1</span><div class="step-title" style="color:#44ff88">Create</div><div class="step-desc">EntityFactory.create*(scene, x, y) → addComponent() → scene.add()</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step" style="border-color:#88aaff"><span class="step-num" style="background:#88aaff;color:#000">2</span><div class="step-title" style="color:#88aaff">Live</div><div class="step-desc">onPreUpdate each frame → component logic → movement, animation, combat</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step" style="border-color:#ffaa44"><span class="step-num" style="background:#ffaa44;color:#000">3</span><div class="step-title" style="color:#ffaa44">Die</div><div class="step-desc">playDeath() → flash → fall → 3s wait → 3s fade → kill()</div></div>
+  <div class="flow-arrow">→</div>
+  <div class="flow-step" style="border-color:#ff4444"><span class="step-num" style="background:#ff4444;color:#000">4</span><div class="step-title" style="color:#ff4444">Cleanup</div><div class="step-desc">kill() → onRemove() on all components → grid freed → removed from scene</div></div>
+</div>
+</div>
+
+<!-- TAB: Config -->
+<div id="tab-config" class="tab-content">
+<h2>Bonfire Levels</h2>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+<tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:8px;color:#cc66ff">Level</th><th style="text-align:left;padding:8px;color:#cc66ff">Fuel Needed</th><th style="text-align:left;padding:8px;color:#cc66ff">Light Radius</th><th style="text-align:left;padding:8px;color:#cc66ff">Unlocks</th></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">0</td><td>0</td><td>1.0x (420px)</td><td style="color:#666">—</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">1</td><td>25</td><td>1.5x</td><td>2 Turrets</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">2</td><td>60</td><td>2.0x</td><td>Outpost + Forge</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">3</td><td>110</td><td>2.5x</td><td>Armor Workshop + Weapon Shop</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">4</td><td>175</td><td>3.0x</td><td>Outpost + Turret</td></tr>
+<tr><td style="padding:8px">5 (MAX)</td><td>275</td><td>3.5x</td><td>Friend Hut</td></tr>
+</table>
+
+<h2>Enemy Stats</h2>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+<tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:8px;color:#aa66ff">Type</th><th style="padding:8px;color:#aa66ff">HP</th><th style="padding:8px;color:#aa66ff">DMG</th><th style="padding:8px;color:#aa66ff">Speed</th><th style="padding:8px;color:#aa66ff">XP</th><th style="padding:8px;color:#aa66ff">Special</th></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Shadow Wisp</td><td>14</td><td>5</td><td>104</td><td>5</td><td style="color:#666">—</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Shadow Stalker</td><td>35</td><td>12</td><td>76</td><td>15</td><td style="color:#666">—</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Shadow Beast</td><td>84</td><td>25</td><td>52</td><td>35</td><td style="color:#666">—</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Shadow Lord</td><td>210</td><td>40</td><td>44</td><td>100</td><td style="color:#666">Boss-tier</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Fog Crawler</td><td>56</td><td>0</td><td>60</td><td>25</td><td style="color:#ff8844">Targets bonfire</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Shadow Archer</td><td>42</td><td>14</td><td>62</td><td>20</td><td style="color:#44aaff">Ranged 200px</td></tr>
+<tr><td style="padding:8px">Void Mage</td><td>65</td><td>22</td><td>48</td><td>40</td><td style="color:#cc66ff">Ranged 240px</td></tr>
+</table>
+
+<h2>Building Stats</h2>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+<tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:8px;color:#ddaa44">Type</th><th style="padding:8px;color:#ddaa44">HP</th><th style="padding:8px;color:#ddaa44">Cost</th><th style="text-align:left;padding:8px;color:#ddaa44">Effect</th></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Turret</td><td>120</td><td>8W 5S</td><td>Auto-attacks enemies (180px, 8 dmg)</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Outpost</td><td>200</td><td>20W 10S</td><td>Extends light radius (+180px)</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Forge</td><td>150</td><td>15W 20S</td><td>Unlocks Stone Axe</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Weapon Shop</td><td>150</td><td>10W 15S 10M</td><td>Unlocks Iron Sword, Flame Blade</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Armor Workshop</td><td>150</td><td>10W 10S 15M</td><td>-30% damage taken</td></tr>
+<tr><td style="padding:8px">Friend Hut</td><td>180</td><td>25W 15S 5M</td><td>Spawns NPC ally</td></tr>
+</table>
+
+<h2>Weapons</h2>
+<table style="border-collapse:collapse;width:100%;font-size:13px">
+<tr style="border-bottom:1px solid #333"><th style="text-align:left;padding:8px;color:#ff8844">Weapon</th><th style="padding:8px;color:#ff8844">DMG</th><th style="padding:8px;color:#ff8844">Range</th><th style="padding:8px;color:#ff8844">Speed</th><th style="padding:8px;color:#ff8844">Cost</th></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Wooden Club</td><td>10</td><td>32px</td><td>800ms</td><td style="color:#666">Free</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Stone Axe</td><td>18</td><td>52px</td><td>600ms</td><td>10W 8S</td></tr>
+<tr style="border-bottom:1px solid #1a1a1a"><td style="padding:8px">Iron Sword</td><td>30</td><td>60px</td><td>400ms</td><td>5W 10S 8M</td></tr>
+<tr><td style="padding:8px">Flame Blade</td><td>38</td><td>65px</td><td>350ms</td><td>5W 5S 15M</td></tr>
+</table>
+</div>
+
+</div>
+
+<script>
+function showTab(name) {
+  document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(el => el.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
+</body>
+</html>
