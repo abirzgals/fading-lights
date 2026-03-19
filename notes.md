@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.36: Move tree collider from ty-1 to ty-2 for better trunk alignment
+
+### Summary
+Shifted the tree collider up one additional tile (from `ty-1` to `ty-2`) to better match the visual center of the trunk. Loop start guard updated from `ty >= 3` to `ty >= 4` to keep the collider tile index in bounds.
+
+### Changes Made
+- `src/world/LevelScript.ts` — `colTy` changed from `ty - 1` to `ty - 2`. Loop start changed from `ty = 3` to `ty = 4`. Skip check now tests `isPath(tx, colTy) || isClearing(tx, colTy)` using the updated `colTy`.
+
+### Rationale
+After v2.6.35 placed the collider at `ty-1`, in-game testing showed the collision boundary still felt slightly low relative to the rendered trunk center. Moving to `ty-2` aligns the walkable collision with the middle of the visible trunk sprite.
+
+### Next Steps
+- Test forest/road boundary areas to confirm no phantom collisions or missed gaps.
+- Verify gap-fill tile assignment with the updated `treeByTile` key.
+
+---
+
 ## 2026-03-19 — v2.6.35: Fix tree collider position — collider at trunk level (ty-1)
 
 ### Summary
