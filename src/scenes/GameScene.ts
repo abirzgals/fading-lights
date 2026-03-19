@@ -82,6 +82,7 @@ export class GameScene extends ex.Scene {
   }> = [];
   private buildings: GameEntity[] = [];
   private debugMode = false;
+  private profilerMode = false;
   private debugActors: ex.Actor[] = [];
   private debugCheckbox: HTMLInputElement | null = null;
 
@@ -1247,6 +1248,16 @@ export class GameScene extends ex.Scene {
     lbl2.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
     wrap.appendChild(aiCb); wrap.appendChild(lbl2);
 
+    // Profiler checkbox
+    const pfCb = document.createElement('input');
+    pfCb.type = 'checkbox'; pfCb.id = 'perf-toggle'; pfCb.checked = this.profilerMode;
+    pfCb.style.cssText = 'cursor:pointer;margin-left:8px;';
+    pfCb.addEventListener('change', () => { this.profilerMode = pfCb.checked; });
+    const lbl3 = document.createElement('label');
+    lbl3.htmlFor = 'perf-toggle'; lbl3.textContent = ' Perf';
+    lbl3.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
+    wrap.appendChild(pfCb); wrap.appendChild(lbl3);
+
     // Multiplayer buttons
     const mpDiv = document.createElement('span');
     mpDiv.style.cssText = 'margin-left:12px;';
@@ -1453,7 +1464,7 @@ export class GameScene extends ex.Scene {
       <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}
       ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}
-      ${Object.keys(this.perfDisplay).length > 0 ? `<br>
+      ${this.profilerMode && Object.keys(this.perfDisplay).length > 0 ? `<br>
       <div style="background:rgba(0,0,0,0.75);border:1px solid #333;border-radius:4px;padding:4px 8px;margin-top:4px;font-size:10px;line-height:1.6;display:inline-block">
         <span style="color:#888">PERF (1s) · avg ${this.frameTimeDisplay}ms/frame</span><br>
         <span style="color:#FF8844">ENGINE     ${String(Math.max(0, Math.round(this.frameTimeDisplay * this.fpsDisplay - Object.values(this.perfDisplay).reduce((a, b) => a + b, 0)))).padStart(4)}ms <span style="color:#FF884480">${'█'.repeat(Math.min(20, Math.round(Math.max(0, this.frameTimeDisplay * this.fpsDisplay - Object.values(this.perfDisplay).reduce((a, b) => a + b, 0)) / 50)))}</span></span><br>

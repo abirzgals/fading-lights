@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-20 — v2.7.0: Profiler panel gated behind "Perf" checkbox — off by default
+
+### Summary
+The PERF block (ENGINE / input / ai.context timing rows) in the HUD is now hidden unless the user enables it via a new "Perf" checkbox in the bottom bar. FPS and actor count remain visible at all times regardless of the checkbox state.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `private profilerMode = false` field.
+  - Added a "Perf" checkbox (`#perf-toggle`) to the bottom debug bar, positioned after the AI toggle and before the multiplayer buttons. Order is now: Debug | AI | Perf | Host | Join | Fullscreen.
+  - The `pfCb.change` listener toggles `this.profilerMode`.
+  - The `perfDisplay` HUD block is now rendered conditionally: `this.profilerMode && Object.keys(this.perfDisplay).length > 0`.
+- `package.json`: bumped version to `2.7.0`.
+
+### Rationale
+The profiler panel was always visible whenever `perfDisplay` had data, cluttering the HUD for normal play. Gating it behind a checkbox keeps the default view clean while keeping the profiler one click away for developers.
+
+### Next Steps
+- Consider persisting Perf / Debug / AI checkbox state to localStorage so preferences survive page reload.
+
+---
+
 ## 2026-03-20 — v2.6.99: Aggressive scene graph culling — remove far entities from Excalibur entirely
 
 ### Summary
