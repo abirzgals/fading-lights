@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.54: Fix bot stuck on "Picking up" after drop already collected
+
+### Summary
+Fixed a bot AI bug where the bot would remain in the "Picking up" goal indefinitely after the targeted drop had already been collected by another player or itself.
+
+### Root Cause
+The pickup goal stored only x/y coordinates rather than a direct entity reference. This meant `shouldSwitchGoal` had no way to detect when the drop was gone — it could not compare against `null` or check entity liveness. The bot would walk to the position forever with no drop to collect.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Added a proximity check in the `pickup` case of the goal update loop. Each frame, `gameState.drops` is searched for any drop within 40px of the goal's target position. If none is found, `goalAge` is set to 999 to force immediate re-evaluation on the next tick.
+- `package.json` — Version bumped to 2.6.54.
+
+### Rationale
+The fix is minimal and non-invasive: it does not require changing the goal data structure or storing entity references (which could become stale references anyway). The 40px threshold matches the visual pickup radius so re-evaluation triggers exactly when the drop is no longer reachable.
+
+### Next Steps
+- Consider refactoring pickup goals to store a drop entity ID so staleness can be detected more robustly without a positional scan.
+
+---
+
 ## 2026-03-19 — v2.6.53: Refactor resource attack — extract damageResource() method
 
 ### Summary

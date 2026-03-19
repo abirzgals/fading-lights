@@ -1043,7 +1043,14 @@ export class BotAI {
       }
 
       case 'pickup': {
-        // Walk to drop — auto-pickup happens in GameScene.runDropPickup()
+        // Check if any drop still exists near target — if not, goal is done
+        const hasDropNearby = this.gameState.drops.some(d =>
+          Math.hypot(d.x - goal.x!, d.y - goal.y!) < 40
+        );
+        if (!hasDropNearby) {
+          this.goalAge = 999; // drop collected — re-evaluate
+          break;
+        }
         const dir = this.moveToWithPathfinding(goal.x!, goal.y!);
         vx = dir.x; vy = dir.y;
         break;
