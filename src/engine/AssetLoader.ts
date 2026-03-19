@@ -43,6 +43,16 @@ export class AssetLoader {
   static maleWalkNE = new ex.ImageSource('/assets/characters/male/walk/north-east.png');
   static maleWalkNW = new ex.ImageSource('/assets/characters/male/walk/north-west.png');
 
+  // Melee attack spritesheets (48x48 frames, 3 frames per direction)
+  static maleMeleeSouth = new ex.ImageSource('/assets/characters/male/melee/south.png');
+  static maleMeleeNorth = new ex.ImageSource('/assets/characters/male/melee/north.png');
+  static maleMeleeEast = new ex.ImageSource('/assets/characters/male/melee/east.png');
+  static maleMeleeWest = new ex.ImageSource('/assets/characters/male/melee/west.png');
+  static maleMeleeSE = new ex.ImageSource('/assets/characters/male/melee/south-east.png');
+  static maleMeleeSW = new ex.ImageSource('/assets/characters/male/melee/south-west.png');
+  static maleMeleeNE = new ex.ImageSource('/assets/characters/male/melee/north-east.png');
+  static maleMeleeNW = new ex.ImageSource('/assets/characters/male/melee/north-west.png');
+
   // Enemy sprites (8 directions each)
   static enemySprites: Record<string, Record<string, ex.ImageSource>> = {
     SHADOW_WISP: {
@@ -258,6 +268,17 @@ export class AssetLoader {
     'north-west': AssetLoader.maleWalkNW,
   };
 
+  static maleMeleeSheets: Record<string, ex.ImageSource> = {
+    'south': AssetLoader.maleMeleeSouth,
+    'north': AssetLoader.maleMeleeNorth,
+    'east': AssetLoader.maleMeleeEast,
+    'west': AssetLoader.maleMeleeWest,
+    'south-east': AssetLoader.maleMeleeSE,
+    'south-west': AssetLoader.maleMeleeSW,
+    'north-east': AssetLoader.maleMeleeNE,
+    'north-west': AssetLoader.maleMeleeNW,
+  };
+
   static allResources(): ex.Loadable<any>[] {
     return [
       // Trees
@@ -274,6 +295,9 @@ export class AssetLoader {
       // Walk spritesheets
       this.maleWalkSouth, this.maleWalkNorth, this.maleWalkEast, this.maleWalkWest,
       this.maleWalkSE, this.maleWalkSW, this.maleWalkNE, this.maleWalkNW,
+      // Melee attack spritesheets
+      this.maleMeleeSouth, this.maleMeleeNorth, this.maleMeleeEast, this.maleMeleeWest,
+      this.maleMeleeSE, this.maleMeleeSW, this.maleMeleeNE, this.maleMeleeNW,
       // Effects
       this.magicOrb, this.arrowProj, this.magicExplosion, this.bonfireSprite,
       // Enemy sprites (all directions)

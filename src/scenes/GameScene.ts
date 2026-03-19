@@ -38,6 +38,7 @@ export class GameScene extends ex.Scene {
   private bonfireFuel = 80;
   private kills = 0;
   private spawnTimer = 0;
+  private drops: GameEntity[] = [];
 
   onInitialize(engine: ex.Engine): void {
     console.log('[GameScene] initializing...');
@@ -83,6 +84,7 @@ export class GameScene extends ex.Scene {
     this.handlePlayerInput(engine, dt);
     this.runEnemyAI(dt);
     this.runSpawning(dt);
+    this.runDropPickup();
     this.runBonfire(dt);
     this.updateFog();
     this.depthSort();
@@ -135,24 +137,43 @@ export class GameScene extends ex.Scene {
 
     // Attack
     if (shouldAttack) {
-      audioEngine.playAttack();
       const melee = player.get(MeleeAttackComponent) as MeleeAttackComponent | null;
-      if (melee?.canAttack) {
-        const nearest = this.level.enemies
-          .filter(e => !e.isKilled() && e.pos.distance(player.pos) < melee.range)
-          .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
-        if (nearest) melee.startAttack(nearest);
-      }
-      // Hit resources
-      const nearRes = this.level.entities
-        .filter(e => !e.isKilled() && e.get(ResourceComponent))
-        .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
-      if (nearRes && nearRes.pos.distance(player.pos) < 52) {
-        const hp = nearRes.get(HealthComponent) as HealthComponent | null;
-        const res = nearRes.get(ResourceComponent) as ResourceComponent | null;
-        if (hp && res) {
-          hp.damage(10);
-          if (!hp.alive) { this.resources[res.resourceType] += res.dropAmount; nearRes.kill(); }
+      const anim = player.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
+      if (melee?.canAttack && !anim?.isAttacking) {
+        audioEngine.playAttack();
+
+        // Play attack animation with damage callback
+        if (anim) {
+          anim.playAttack(() => {
+            // DAMAGE FRAME — deal damage to nearest enemy or resource
+            // Enemies
+            const nearest = this.level.enemies
+              .filter(e => !e.isKilled() && e.pos.distance(player.pos) < melee.range)
+              .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
+            if (nearest) melee.startAttack(nearest);
+
+            // Resources
+            const nearRes = this.level.entities
+              .filter(e => !e.isKilled() && e.get(ResourceComponent))
+              .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
+            if (nearRes && nearRes.pos.distance(player.pos) < 52) {
+              const hp = nearRes.get(HealthComponent) as HealthComponent | null;
+              const res = nearRes.get(ResourceComponent) as ResourceComponent | null;
+              if (hp && res) {
+                hp.damage(10);
+                if (!hp.alive) {
+                  // Spawn drops on the ground
+                  for (let i = 0; i < res.dropAmount; i++) {
+                    const drop = EntityFactory.createDrop(this, nearRes.pos.x, nearRes.pos.y, res.resourceType as any);
+                    this.drops.push(drop);
+                  }
+                  this.spawnFloatingText(nearRes.pos.x, nearRes.pos.y - 16,
+                    `+${res.dropAmount} ${res.resourceType}`, '#44FF44');
+                  nearRes.kill();
+                }
+              }
+            }
+          });
         }
       }
     }
@@ -164,6 +185,43 @@ export class GameScene extends ex.Scene {
       if (hp && !hp.alive) { this.kills++; audioEngine.playEnemyDeath(); e.kill(); return false; }
       return true;
     });
+  }
+
+  // ======== DROP PICKUP — auto-collect when walking over ========
+
+  private runDropPickup(): void {
+    const player = this.level.player;
+    this.drops = this.drops.filter(drop => {
+      if (drop.isKilled()) return false;
+      const dist = player.pos.distance(drop.pos);
+      if (dist < CONFIG.PICKUP_RADIUS) {
+        const type = (drop as any).dropType as string;
+        if (type in this.resources) {
+          (this.resources as any)[type] += 1;
+          this.spawnFloatingText(drop.pos.x, drop.pos.y - 8, `+1 ${type}`, '#AAFFAA');
+        }
+        drop.kill();
+        return false;
+      }
+      return true;
+    });
+  }
+
+  /** Spawn a floating text that rises and fades */
+  private spawnFloatingText(x: number, y: number, text: string, color: string): void {
+    const label = new ex.Label({
+      text,
+      pos: ex.vec(x, y),
+      font: new ex.Font({
+        family: 'monospace', size: 8, color: ex.Color.fromHex(color),
+        textAlign: ex.TextAlign.Center,
+      }),
+      anchor: ex.vec(0.5, 0.5),
+    });
+    label.z = 9999;
+    label.vel = ex.vec(0, -30);
+    label.actions.fade(0, 1200).die();
+    this.add(label);
   }
 
   // ======== ENEMY AI — delegated to EnemyBrainSystem ========

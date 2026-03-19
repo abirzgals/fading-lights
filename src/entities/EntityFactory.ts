@@ -30,6 +30,10 @@ export class EntityFactory {
       walkSpriteSheets: AssetLoader.maleWalkSheets,
       walkSheetGrid: { columns: 6, spriteWidth: 48, spriteHeight: 48 },
       walkFrameRate: 10,
+      attackSpriteSheets: AssetLoader.maleMeleeSheets,
+      attackSheetGrid: { columns: 3, spriteWidth: 48, spriteHeight: 48 },
+      attackFrameRate: 10,
+      attackDamageFrame: 1,
       fallback: { width: 16, height: 24, color: ex.Color.fromHex('#FFAA44') },
     }));
     // 1000 HP for testing, CONFIG.PLAYER_MAX_HP for production
@@ -172,6 +176,38 @@ export class EntityFactory {
 
     scene.add(metal);
     return metal;
+  }
+
+  /** Create a resource drop on the ground (wood stick, stone chunk, etc.) */
+  static createDrop(scene: ex.Scene, x: number, y: number, type: 'wood' | 'stone' | 'metal' | 'gold'): GameEntity {
+    const drop = new GameEntity({
+      pos: ex.vec(x + (Math.random() - 0.5) * 20, y + (Math.random() - 0.5) * 16),
+      anchor: ex.vec(0.5, 0.5),
+    });
+    drop.entityType = 'drop';
+    (drop as any).dropType = type;
+
+    // Simple procedural graphic per type
+    const colors: Record<string, string> = {
+      wood: '#8B6914', stone: '#888888', metal: '#B87333', gold: '#FFD700',
+    };
+    const color = ex.Color.fromHex(colors[type] ?? '#FFFFFF');
+
+    if (type === 'wood') {
+      // Horizontal stick
+      drop.graphics.use(new ex.Rectangle({ width: 10, height: 4, color }));
+    } else {
+      // Small circle chunk
+      drop.graphics.use(new ex.Circle({ radius: 4, color }));
+    }
+
+    drop.z = 1; // below characters
+    // Small bounce-in effect
+    drop.scale = ex.vec(0.3, 0.3);
+    drop.actions.scaleTo(ex.vec(1, 1), ex.vec(4, 4));
+
+    scene.add(drop);
+    return drop;
   }
 
   static createBonfire(scene: ex.Scene, x: number, y: number): GameEntity {

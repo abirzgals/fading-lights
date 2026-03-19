@@ -44,6 +44,9 @@ export class AnimatedSpriteComponent extends ex.Component {
   private walkSheetSources: Record<string, ex.ImageSource> | null = null;
   private walkSheetGrid: { columns: number; spriteWidth: number; spriteHeight: number } | null = null;
   private walkSheetsExtracted = false;
+  private attackSheetSources: Record<string, ex.ImageSource> | null = null;
+  private attackSheetGrid: { columns: number; spriteWidth: number; spriteHeight: number } | null = null;
+  private attackSheetsExtracted = false;
 
   constructor(opts: {
     rotations: Record<string, ex.ImageSource>;
@@ -54,6 +57,9 @@ export class AnimatedSpriteComponent extends ex.Component {
     walkSheetGrid?: { columns: number; spriteWidth: number; spriteHeight: number };
     walkFrameRate?: number;
     attackFrames?: Record<string, ex.ImageSource[]>;
+    /** Spritesheet strips per direction for attack animation */
+    attackSpriteSheets?: Record<string, ex.ImageSource>;
+    attackSheetGrid?: { columns: number; spriteWidth: number; spriteHeight: number };
     attackFrameRate?: number;
     attackDamageFrame?: number;
     fallback?: { width: number; height: number; color: ex.Color };
@@ -85,6 +91,11 @@ export class AnimatedSpriteComponent extends ex.Component {
         eventFrame: opts.attackDamageFrame ?? 3,
       };
     }
+
+    if (opts.attackSpriteSheets) {
+      this.attackSheetSources = opts.attackSpriteSheets;
+      this.attackSheetGrid = opts.attackSheetGrid ?? { columns: 3, spriteWidth: 48, spriteHeight: 48 };
+    }
   }
 
   onAdd(owner: ex.Entity): void {
@@ -109,7 +120,7 @@ export class AnimatedSpriteComponent extends ex.Component {
     if (!actor) return;
 
     // Deferred: extract sprites from spritesheets once loaded
-    this.tryExtractWalkSheets();
+    this.tryExtractSheets();
 
     // Determine direction from velocity
     if (actor.vel.squareDistance() > 1) {
@@ -154,18 +165,47 @@ export class AnimatedSpriteComponent extends ex.Component {
     this.applyFrame(actor);
   }
 
-  /** Try to extract walk frames from spritesheets (deferred until loaded) */
-  private tryExtractWalkSheets(): void {
-    if (this.walkSheetsExtracted || !this.walkSheetSources || !this.walkSheetGrid) return;
+  /** Extract sprites from spritesheet strips (deferred until loaded) */
+  private tryExtractSheets(): void {
+    // Walk sheets
+    if (!this.walkSheetsExtracted && this.walkSheetSources && this.walkSheetGrid) {
+      const firstSrc = Object.values(this.walkSheetSources)[0];
+      if (firstSrc?.isLoaded()) {
+        const dirs = this.extractSheetFrames(this.walkSheetSources, this.walkSheetGrid);
+        if (Object.keys(dirs).length > 0) {
+          this.walkAnim = {
+            directions: dirs,
+            frameRate: this.walkAnim?.frameRate ?? 10,
+            loop: true,
+          };
+          this.walkSheetsExtracted = true;
+        }
+      }
+    }
+    // Attack sheets
+    if (!this.attackSheetsExtracted && this.attackSheetSources && this.attackSheetGrid) {
+      const firstSrc = Object.values(this.attackSheetSources)[0];
+      if (firstSrc?.isLoaded()) {
+        const dirs = this.extractSheetFrames(this.attackSheetSources, this.attackSheetGrid);
+        if (Object.keys(dirs).length > 0) {
+          this.attackAnim = {
+            directions: dirs,
+            frameRate: this.attackAnim?.frameRate ?? 12,
+            loop: false,
+            eventFrame: this.attackAnim?.eventFrame ?? 1,
+          };
+          this.attackSheetsExtracted = true;
+        }
+      }
+    }
+  }
 
-    // Check if at least one sheet is loaded
-    const firstSrc = Object.values(this.walkSheetSources)[0];
-    if (!firstSrc?.isLoaded()) return;
-
-    const grid = this.walkSheetGrid;
+  private extractSheetFrames(
+    sources: Record<string, ex.ImageSource>,
+    grid: { columns: number; spriteWidth: number; spriteHeight: number }
+  ): Record<string, ex.Graphic[]> {
     const dirs: Record<string, ex.Graphic[]> = {};
-
-    for (const [dir, src] of Object.entries(this.walkSheetSources)) {
+    for (const [dir, src] of Object.entries(sources)) {
       if (!src.isLoaded()) continue;
       const sheet = ex.SpriteSheet.fromImageSource({
         image: src,
@@ -173,20 +213,12 @@ export class AnimatedSpriteComponent extends ex.Component {
       });
       const frames: ex.Graphic[] = [];
       for (let i = 0; i < grid.columns; i++) {
-        const sprite = sheet.getSprite(i, 0); // (column, row) — horizontal strip
+        const sprite = sheet.getSprite(i, 0);
         if (sprite) frames.push(sprite);
       }
       if (frames.length > 0) dirs[dir] = frames;
     }
-
-    if (Object.keys(dirs).length > 0) {
-      this.walkAnim = {
-        directions: dirs,
-        frameRate: this.walkAnim?.frameRate ?? 10,
-        loop: true,
-      };
-      this.walkSheetsExtracted = true;
-    }
+    return dirs;
   }
 
   private applyFrame(actor: ex.Actor): void {
