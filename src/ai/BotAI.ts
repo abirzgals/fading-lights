@@ -984,10 +984,14 @@ export class BotAI {
 
         // Always run pathfinder — it handles everything
         const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
-        // PathFollower returns (0,0) when arrived at nearest walkable side
-        const arrived = dir.x === 0 && dir.y === 0;
 
-        if (arrived) {
+        // Unreachable — can't path to this resource, give up goal
+        if (this.pathFollower.unreachable) {
+          this.goalAge = 999; // force re-evaluation next frame
+          break;
+        }
+
+        if (this.pathFollower.arrived) {
           // At the target — attack and stay put
           attack = true;
           vx = 0; vy = 0;

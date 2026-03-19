@@ -18,6 +18,10 @@ export class PathFollower {
   private path: Array<{ x: number; y: number }> | null = null;
   private pathIdx = 0;
   private repathTimer = 0;
+  /** true if last moveTo arrived at destination; false if unreachable or still moving */
+  public arrived = false;
+  /** true if last moveTo couldn't find any path */
+  public unreachable = false;
   private pathTarget: { x: number; y: number } | null = null;
   private grid: GridCollisionSystem;
 
@@ -49,10 +53,13 @@ export class PathFollower {
     fromX: number, fromY: number,
     toX: number, toY: number,
   ): { x: number; y: number } {
+    this.arrived = false;
+    this.unreachable = false;
     const directDist = Math.hypot(toX - fromX, toY - fromY);
 
     // Already at target
     if (directDist < 4) {
+      this.arrived = true;
       return { x: 0, y: 0 };
     }
 
@@ -90,6 +97,7 @@ export class PathFollower {
       if (dist < WAYPOINT_REACH) {
         this.pathIdx++;
         if (this.pathIdx >= this.path.length) {
+          this.arrived = true;
           return { x: 0, y: 0 }; // arrived
         }
       }
@@ -101,10 +109,8 @@ export class PathFollower {
       }
     }
 
-    // Fallback: direct
-    const dx = toX - fromX, dy = toY - fromY;
-    const len = Math.hypot(dx, dy);
-    if (len < 1) return { x: 0, y: 0 };
-    return { x: dx / len, y: dy / len };
+    // No path found — don't walk into walls
+    this.unreachable = true;
+    return { x: 0, y: 0 };
   }
 }
