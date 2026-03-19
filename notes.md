@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-03-19 — v2.6.64: Fix player facing direction during bot attacks
+
+### Summary
+Player sprite now correctly faces the target when the bot AI issues an attack command. Previously, `vx=vy=0` during an attack meant `AnimatedSpriteComponent` had no directional input and the sprite stayed frozen in whatever direction it was last walking. A tiny velocity (0.01) is now applied in the direction of the target (enemy or resource) to drive the facing update without causing any visible movement.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Kill action (enemy attack): replaced `vx=0; vy=0` with a 0.01-magnitude vector toward the enemy using `dirTo`
+- `src/ai/BotAI.ts` — Gather action (chop/mine): same fix applied when the player is a direct neighbor of the resource
+
+### Rationale
+`AnimatedSpriteComponent` derives facing from velocity. Zero velocity means no facing update, so the last walk direction was retained during the attack animation. The 0.01 scalar is large enough to set direction but small enough to produce no perceptible movement.
+
+### Next Steps
+- Verify facing works correctly for all eight directions on both enemy and resource targets
+- Consider whether the same pattern applies to any other zero-velocity attack states
+
+---
+
+## 2026-03-19 — v2.6.63: Spawn Shadow Archer + Void Mage near bonfire on level init for ranged combat testing
+
+### Summary
+Two starter ranged enemies (Shadow Archer and Void Mage) are now spawned near the first bonfire when a level initializes. This provides an immediate target for testing ranged enemy AI and combat mechanics without manual setup.
+
+### Changes Made
+- `src/scenes/GameScene.ts`
+  - After `initBuildSpots()`, added a spawn block that iterates over `['SHADOW_ARCHER', 'VOID_MAGE']`.
+  - For each type, picks a random angle and a distance of 180–260 units from the bonfire, finds the nearest walkable tile via `grid.findWalkableNear`, creates the enemy with `EntityFactory.createEnemy`, and pushes it into `level.enemies`.
+- `package.json` — Version bumped to 2.6.63.
+
+### Rationale
+Manually placing ranged enemies to test combat was tedious. Spawning them automatically at level start gives a consistent baseline for verifying projectile firing, aggro range, and BotAI dodge behaviour against ranged foes from the first game frame.
+
+### Next Steps
+- Remove or gate behind a debug flag once ranged combat is stable.
+- Consider spawning at fixed positions rather than random angles if reproducibility is needed for regression tests.
+
+---
+
 ## 2026-03-19 — v2.6.62: Fix bot rapid goal cycling — add 0.3s minimum hold time for reactive goals
 
 ### Summary

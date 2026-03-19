@@ -970,7 +970,9 @@ export class BotAI {
         const dist = ctx.player.pos.distance(enemy.pos);
         if (dist < this.ATTACK_REACH) {
           attack = true;
-          vx = 0; vy = 0;
+          // Face the enemy — tiny velocity toward them so sprite turns
+          const toEnemy = this.dirTo(ctx.player.pos, enemy.pos.x, enemy.pos.y);
+          vx = toEnemy.x * 0.01; vy = toEnemy.y * 0.01;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
             vx = ctx.evasion.x;
             vy = ctx.evasion.y;
@@ -1027,7 +1029,9 @@ export class BotAI {
 
         if (isDirectNeighbor) {
           attack = true;
-          vx = 0; vy = 0;
+          // Face the resource
+          const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+          vx = toRes.x * 0.01; vy = toRes.y * 0.01;
           break;
         }
 
