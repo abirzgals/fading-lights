@@ -1073,7 +1073,7 @@ export class BotAI {
 
         // Attack only if within actual weapon reach (52px — same as GameScene damage check)
         const distToTarget = ctx.player.pos.distance(target.pos);
-        if (distToTarget < 40) {
+        if (distToTarget < 30) {
           attack = true;
           // Face the resource
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
@@ -1091,7 +1091,7 @@ export class BotAI {
         }
 
         if (this.pathFollower.arrived) {
-          if (distToTarget < 40) {
+          if (distToTarget < 30) {
             // Close enough — attack
             attack = true;
             const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
