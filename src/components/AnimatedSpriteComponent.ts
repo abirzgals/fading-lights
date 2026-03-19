@@ -128,6 +128,15 @@ export class AnimatedSpriteComponent extends ex.Component {
     }
 
     // State machine: attack overrides walk overrides idle
+    if (this.currentAnim === 'attack' && !this.attackAnim) {
+      // No attack animation available — fire callback immediately and reset
+      if (!this.attackEventFired) {
+        this.attackEventFired = true;
+        this.attackCallback?.();
+      }
+      this.currentAnim = 'idle';
+      this.attackCallback = null;
+    }
     if (this.currentAnim === 'attack' && this.attackAnim) {
       this.animTimer += deltaMs;
       const frameDuration = 1000 / this.attackAnim.frameRate;
@@ -141,9 +150,9 @@ export class AnimatedSpriteComponent extends ex.Component {
           this.attackCallback?.();
         }
 
-        // Animation complete
+        // Animation complete (or no frames for this direction)
         const frames = this.attackAnim.directions[this.currentDir];
-        if (!frames || this.animFrame >= frames.length) {
+        if (!frames || frames.length === 0 || this.animFrame >= frames.length) {
           this.currentAnim = 'idle';
           this.attackCallback = null;
         }
