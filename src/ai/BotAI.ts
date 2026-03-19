@@ -388,7 +388,12 @@ export class BotAI {
             },
             {
               name: 'Dodge Projectile',
-              check: (ctx) => ctx.evasion !== null && ctx.evasion.urgency > 1.5,
+              check: (ctx) => {
+                if (!ctx.evasion) return false;
+                // Only full dodge for very imminent projectiles (urgency > 2.5)
+                // Lower urgency is handled by evasion blending in kill/chop goals
+                return ctx.evasion.urgency > 2.5;
+              },
               goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion!, _treePath: 'Dodge Projectile' }),
             },
             {
@@ -972,20 +977,12 @@ export class BotAI {
         } else {
           // A* pathfind to enemy
           const dir = this.moveToWithPathfinding(enemy.pos.x, enemy.pos.y);
-          // Unreachable — can't path to enemy, give up
-          if (this.pathFollower.unreachable) {
-            this.goalAge = 999;
-            break;
-          }
-          // Arrived but not in attack range — enemy unreachable from here
-          if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) {
-            this.goalAge = 999;
-            break;
-          }
+          if (this.pathFollower.unreachable) { this.goalAge = 999; break; }
+          if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) { this.goalAge = 999; break; }
           vx = dir.x; vy = dir.y;
-          // Dodge projectiles while approaching
-          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
-            const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
+          // Slight evasion while approaching — don't fully dodge, just nudge sideways
+          if (ctx.evasion && ctx.evasion.urgency > 1.5) {
+            const blend = Math.min(ctx.evasion.urgency * 0.2, 0.3);
             vx = vx * (1 - blend) + ctx.evasion.x * blend;
             vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }

@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.61: Fix bot oscillation between Fighting and Dodging vs ranged enemies
+
+### Summary
+The bot no longer oscillates between Fighting and Dodging states when attacked by ranged enemies. The full dodge interrupt threshold was raised so only very imminent projectiles break the current goal, and the evasion blend while approaching was reduced so the bot keeps charging forward with only a slight sideways nudge instead of stopping or slowing down.
+
+### Changes Made
+- `src/ai/BotAI.ts`
+  - Dodge Projectile check: threshold raised from `urgency > 1.5` to `urgency > 2.5`. Medium-range projectiles no longer trigger a full goal interrupt; they are handled by evasion blending inside the kill goal instead.
+  - Kill goal approach evasion: blend factor reduced from `0.4` to `0.2`, max blend cap reduced from `0.6` to `0.3`. Evasion trigger threshold raised from `urgency > 1.0` to `urgency > 1.5`.
+  - Condensed two redundant multi-line path bail-out blocks into single-line guards (no logic change).
+- `package.json` — Version bumped to 2.6.61.
+
+### Rationale
+At the old threshold (1.5), nearly every ranged shot caused a full Dodge Projectile goal to activate, interrupting the kill approach and making the bot appear to stop and strafe repeatedly. By reserving the full dodge for urgency > 2.5 and keeping lower-urgency evasion as a small positional nudge within the kill goal, the bot visibly charges toward ranged enemies while still weaving slightly to avoid projectiles.
+
+### Next Steps
+- Tune urgency thresholds further if bot still oscillates against fast-projectile enemies.
+- Consider separate thresholds per enemy type once projectile speed data is available per-entity.
+
 ## 2026-03-19 — v2.6.60: Fix pickup goal — bot walks directly to nearest drop each frame
 
 ### Summary
