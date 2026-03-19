@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.73: Validate all enemy targets against wave reachability in BotAI
+
+### Summary
+Extended wave flood-fill reachability checks to cover all three enemy targets used in bot decision-making — not just `bestEnemy`. A new `isEnemyReachable()` helper checks the enemy's tile plus all 8 neighbors against the computed wave set, accounting for enemies standing just off a walkable tile. `enemyNearCamp` and `projectileAttacker` are now nulled out when unreachable, preventing Defend Camp and Counter-Attack behaviors from triggering on enemies the bot physically cannot path to.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Added `isEnemyReachable()` helper (tile + 8-neighbor check against wave). Applied post-wave validation to `enemyNearCamp` and `projectileAttacker`.
+
+### Rationale
+The bot was getting stuck trying to fight enemies positioned behind solid rock walls. Only `bestEnemy` had reachability validation; the other two target variables did not, causing defense and counter-attack logic to fire against unreachable foes and lock the bot into a non-productive loop.
+
+### Next Steps
+- Monitor whether any additional target variables (e.g. future "heal ally" or "retreat" triggers) need the same reachability gate.
+- Consider centralizing reachability into a shared utility so future code paths get it automatically.
+
+---
+
 ## 2026-03-19 — v2.6.72: Scale tree stumps to 25% — 32x32 textures render at ~8x8px
 
 ### Summary
