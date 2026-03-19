@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-19 — v2.6.42: BFS wave algorithm for bot reachable-resource detection
+
+### Summary
+Replaced the old "top-5 candidates + individual findPath" resource selection in BotAI with a single BFS flood-fill (wave algorithm) run once per frame from the player's position. Resources behind impassable terrain are now completely invisible to the bot — it will always target something it can actually walk to.
+
+### Changes Made
+- `src/engine/GridCollisionSystem.ts` — Added `floodFill(wx, wy, maxTiles)` method:
+  - BFS expands 8-directionally from the player's world position.
+  - Skips blocked tiles via the existing `isBlocked` check.
+  - Caps expansion at 300 tiles for consistent per-frame performance.
+  - Returns a `Set<string>` of reachable tile keys in `"tx,ty"` format.
+- `src/ai/BotAI.ts` — Resource selection rewritten:
+  - `floodFill` called once per frame; result reused across all resource candidates.
+  - Each resource is checked against the reachable set (own tile + 8 adjacent tiles); unreachable resources are skipped entirely.
+  - Replaced the redundant nearest-resource score recomputation with a tracked `bestOverallScore` variable.
+
+### Rationale
+The previous approach ran pathfinding on up to 5 candidate resources per frame to detect unreachable ones — O(N * pathfinding). The BFS wave is O(N) and naturally encodes reachability for all resources in a single pass. Trees and ore nodes walled off by rocks no longer confuse the bot into selecting a target it can never reach.
+
+### Next Steps
+- Tune `maxTiles` cap (currently 300) based on observed map sizes; larger maps may need a higher value.
+- Consider caching the reachable set across frames and only re-running BFS when the player moves more than one tile.
+
+---
+
 ## 2026-03-19 — v2.6.41: Fix bot stuck chopping trees through obstacles
 
 ### Summary
