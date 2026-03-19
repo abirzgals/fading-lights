@@ -656,12 +656,26 @@ export class BotAI {
       }
     }
 
-    // Best enemy to hunt
+    // BFS flood-fill from player — find all reachable tiles with WAVE DISTANCE
+    const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+
+    // Best enemy to hunt — must be reachable by wave
     let bestEnemy: GameEntity | null = null;
     let bestScore = -Infinity;
     for (const e of enemies) {
       const d = p.pos.distance(e.pos);
       if (d > this.SIGHT_RANGE) continue;
+      // Check reachability — enemy tile or adjacent tile in wave
+      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
+      let enemyReachable = reachable.has(`${etx},${ety}`);
+      if (!enemyReachable) {
+        for (let dx = -1; dx <= 1 && !enemyReachable; dx++)
+          for (let dy = -1; dy <= 1 && !enemyReachable; dy++)
+            if (dx !== 0 || dy !== 0)
+              if (!this.grid.isBlocked(etx + dx, ety + dy) && reachable.has(`${etx + dx},${ety + dy}`))
+                enemyReachable = true;
+      }
+      if (!enemyReachable) continue;
       const selfDefense = d < 60;
       const eHp = (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 20;
       const score = (selfDefense ? 500 : 0) + (300 - d) - eHp * 0.5;
@@ -693,10 +707,7 @@ export class BotAI {
       }
     }
 
-    // BFS flood-fill from player — find all reachable tiles with WAVE DISTANCE
-    const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
-
-    // Best resource per type — only from reachable tiles, scored by wave distance
+    // Best resource per type — only from reachable tiles (wave computed above)
     const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
@@ -949,13 +960,11 @@ export class BotAI {
 
       case 'kill': {
         const enemy = goal.target!;
-        if (enemy.isKilled()) break;
+        if (enemy.isKilled() || (enemy as any).isDying) break;
         const dist = ctx.player.pos.distance(enemy.pos);
         if (dist < this.ATTACK_REACH) {
           attack = true;
-          // Stand and fight — no kiting backward
           vx = 0; vy = 0;
-          // But dodge projectiles if incoming
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
             vx = ctx.evasion.x;
             vy = ctx.evasion.y;
@@ -963,6 +972,16 @@ export class BotAI {
         } else {
           // A* pathfind to enemy
           const dir = this.moveToWithPathfinding(enemy.pos.x, enemy.pos.y);
+          // Unreachable — can't path to enemy, give up
+          if (this.pathFollower.unreachable) {
+            this.goalAge = 999;
+            break;
+          }
+          // Arrived but not in attack range — enemy unreachable from here
+          if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) {
+            this.goalAge = 999;
+            break;
+          }
           vx = dir.x; vy = dir.y;
           // Dodge projectiles while approaching
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
