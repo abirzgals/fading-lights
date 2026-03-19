@@ -54,4 +54,39 @@ export class GameEntity extends ex.Actor {
   hasComponent<T extends ex.Component>(type: new (...args: any[]) => T): boolean {
     return !!(this.get(type));
   }
+
+  /** Whether this entity is in the dying animation (not yet killed) */
+  public isDying = false;
+
+  /**
+   * Play death sequence: flash red → fall over → wait 3s → fade out 3s → kill.
+   * Call this instead of kill() for enemies/player.
+   */
+  playDeath(onComplete?: () => void): void {
+    if (this.isDying || this.isKilled()) return;
+    this.isDying = true;
+
+    // Stop all movement
+    this.vel = ex.vec(0, 0);
+
+    // Phase 1: Flash red + fall over (0.4s)
+    const fallDir = (Math.random() > 0.5 ? 1 : -1) * (Math.PI * 0.35 + Math.random() * 0.2);
+    this.actions
+      .callMethod(() => {
+        // Red tint flash — darken the sprite
+        this.graphics.opacity = 0.7;
+      })
+      .rotateTo(fallDir, 4) // fall over
+      .callMethod(() => {
+        // Phase 2: Lie on ground for 3 seconds
+        this.graphics.opacity = 0.6;
+      })
+      .delay(3000)
+      // Phase 3: Fade out over 3 seconds
+      .fade(0, 3000)
+      .callMethod(() => {
+        onComplete?.();
+        this.kill();
+      });
+  }
 }

@@ -34,7 +34,7 @@ export class EnemyBrainSystem {
   /** Update all enemies AI each frame */
   update(enemies: GameEntity[], player: GameEntity, bonfires: GameEntity[], scene: ex.Scene, dt: number): void {
     for (const e of enemies) {
-      if (e.isKilled()) continue;
+      if (e.isKilled() || e.isDying) continue; // skip dying enemies
       const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
       if (!ai) continue;
 

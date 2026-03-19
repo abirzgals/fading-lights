@@ -185,7 +185,7 @@ export class GameScene extends ex.Scene {
             // DAMAGE FRAME — deal damage to nearest enemy or resource
             // Enemies
             const nearest = this.level.enemies
-              .filter(e => !e.isKilled() && e.pos.distance(player.pos) < melee.range)
+              .filter(e => !e.isKilled() && !e.isDying && e.pos.distance(player.pos) < melee.range)
               .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
             if (nearest) melee.startAttack(nearest);
 
@@ -215,11 +215,17 @@ export class GameScene extends ex.Scene {
       }
     }
 
-    // Clean dead enemies
+    // Clean dead enemies — play death animation instead of instant kill
     this.level.enemies = this.level.enemies.filter(e => {
       if (e.isKilled()) return false;
+      if (e.isDying) return true; // keep in list until fully dead
       const hp = e.get(HealthComponent) as HealthComponent | null;
-      if (hp && !hp.alive) { this.kills++; audioEngine.playEnemyDeath(); e.kill(); return false; }
+      if (hp && !hp.alive) {
+        this.kills++;
+        audioEngine.playEnemyDeath();
+        e.playDeath(); // fall over → 3s wait → 3s fade → kill
+        return true; // keep in list during death animation
+      }
       return true;
     });
   }
@@ -358,7 +364,7 @@ export class GameScene extends ex.Scene {
 
     // How many enemies this wave wants alive
     const waveQuota = Math.min(this.waveNumber + 1, this.MAX_ALIVE);
-    const aliveCount = this.level.enemies.filter(e => !e.isKilled()).length;
+    const aliveCount = this.level.enemies.filter(e => !e.isKilled() && !e.isDying).length;
 
     // Spawn interval: spread spawns over the minute (min 3s between spawns)
     const spawnInterval = Math.max(3, 60 / (waveQuota + 1));
@@ -778,7 +784,7 @@ export class GameScene extends ex.Scene {
       <span style="color:#CC8844">Metal ${this.resources.metal}</span> ·
       <span style="color:#FFD700">Gold ${this.resources.gold}</span><br>
       <span style="color:#AA66FF">Kills ${this.kills}</span> ·
-      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span> ·
+      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled() && !e.isDying).length}</span> ·
       <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}`;
   }

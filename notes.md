@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-03-19 — v2.6.20: Death animation — enemies fall over and fade out instead of instant kill
+
+### Summary
+Replaced instant `kill()` calls for enemies with a staged `playDeath()` sequence: a brief opacity flash, a random-direction fall-over rotation, a 3-second pause lying on the ground, and a 3-second fade to zero before the entity is actually removed. Dying entities are excluded from targeting, AI, spawn counts, and HUD display via an `isDying` flag.
+
+### Changes Made
+- `src/engine/GameEntity.ts`:
+  - Added `public isDying = false` flag.
+  - Added `playDeath(onComplete?)` method: guards against double-call, stops velocity, triggers a chained action sequence — opacity 0.7, random `rotateTo` (~35 deg, 4 rad/s), opacity 0.6, `delay(3000)`, `fade(0, 3000)`, then calls `kill()`.
+- `src/scenes/GameScene.ts`:
+  - Attack targeting filter: excludes `isDying` enemies so a dying enemy cannot be selected as a melee target.
+  - Dead-enemy cleanup loop: enemies with `hp.alive === false` now call `playDeath()` and are kept in the list (`return true`) instead of being killed instantly.
+  - Enemies that `isKilled()` (fully dead) are still removed; enemies that `isDying` are kept.
+  - Spawn quota count (`aliveCount`): excludes `isDying` enemies so dying bodies do not block new spawns.
+  - HUD enemy counter: excludes `isDying` enemies from the displayed count.
+- `src/ai/EnemyBrainSystem.ts`:
+  - Per-enemy update loop now skips entities where `isDying` is true, preventing AI from running on a falling corpse.
+- `src/ai/BotAI.ts`:
+  - `buildContext` enemy filter now also excludes `isDying` so the bot never targets a dying enemy.
+
+### Rationale
+Instant removal made enemy deaths feel abrupt and cheap. The new sequence gives visual feedback that rewards the player — the body lingers long enough to be noticed but fades before cluttering the scene. Keeping dying entities in the list (rather than a separate array) minimises refactoring surface; the `isDying` flag acts as a lightweight gate at every consumption point.
+
+### Next Steps
+- Consider a brief red tint flash at the start of `playDeath()` (requires tinting the graphic rather than just reducing opacity).
+- Evaluate whether player death should also use `playDeath()`.
+- Tune the 3s lie + 3s fade durations based on playtesting — may want shorter for fast-paced waves.
+
+---
+
 ## 2026-03-19 — v2.6.19: Shadow uses entity's actual sprite as a black silhouette
 
 ### Summary

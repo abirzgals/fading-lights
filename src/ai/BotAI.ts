@@ -632,7 +632,7 @@ export class BotAI {
   private buildContext(dt: number): BotContext {
     const p = this.player;
     const hp = p.get(HealthComponent) as HealthComponent | null;
-    const enemies = this.getEnemies().filter(e => !e.isKilled());
+    const enemies = this.getEnemies().filter(e => !e.isKilled() && !e.isDying);
     const bonfires = this.getBonfires();
     const bonfire = bonfires[0] ?? null;
     const bx = bonfire?.pos.x ?? p.pos.x;
