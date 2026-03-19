@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.38: Fix bot pathfinding to approach blocked tiles from nearest side
+
+### Summary
+Bots were always pathfinding to the exact center of a target tile, which for blocked tiles (trees, bonfires, buildings) caused A* to either fail or route the bot all the way around to an arbitrary walkable tile — usually top-left. The bot now checks all 8 adjacent tiles and picks the walkable one closest to the player's current position as the A* goal.
+
+### Root Cause
+`moveToWithPathfinding()` passed `tx, ty` (the raw target world position) directly to `grid.findPath()`. When the target tile is blocked, A* would struggle to find a path to it and could settle on a distant walkable cell rather than the nearest side.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Before invoking A*, the bot converts `tx, ty` to grid coordinates and checks if the tile is blocked. If so, it scans all 8 neighbours, finds the one with the shortest Euclidean distance to the player, and uses that tile centre as `goalX, goalY` for both `findPath()` and `pathTarget`.
+
+### Rationale
+Players can interact with resources and buildings from any adjacent tile, so the bot only needs to reach any side, not the exact centre. Picking the nearest side produces natural, direct movement and avoids the "bot runs the long way around" behaviour.
+
+### Next Steps
+- If diagonal neighbours are ever blocked by the map layout, extend the fallback to cardinal neighbours only.
+- Consider caching the chosen approach tile per target to avoid recalculating every repath cycle.
+
+---
+
 ## 2026-03-19 — fix: skip A* for distances < 100px in BotAI pathfinding
 
 ### Summary

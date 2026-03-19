@@ -356,18 +356,36 @@ export class BotAI {
     const directDist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
 
     // Short distance (<100px) — just go direct, no A* needed
-    // Grid collision in GameScene will handle wall sliding
     if (directDist < 100) {
       return this.dirTo(p.pos, tx, ty);
     }
 
+    // Find best approach point — nearest walkable tile adjacent to target
+    // (can interact from any of 8 sides, pick the closest to player)
+    let goalX = tx, goalY = ty;
+    const T = 32; // CONFIG.TILE_SIZE
+    const ttx = Math.floor(tx / T), tty = Math.floor(ty / T);
+    if (this.grid.isBlocked(ttx, tty)) {
+      let bestD = Infinity;
+      for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+          if (dx === 0 && dy === 0) continue;
+          if (!this.grid.isBlocked(ttx + dx, tty + dy)) {
+            const nx = (ttx + dx) * T + T / 2, ny = (tty + dy) * T + T / 2;
+            const d = Math.hypot(nx - p.pos.x, ny - p.pos.y);
+            if (d < bestD) { bestD = d; goalX = nx; goalY = ny; }
+          }
+        }
+      }
+    }
+
     // Repath if needed
     if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 ||
-      (this.pathTarget && Math.hypot(tx - this.pathTarget.x, ty - this.pathTarget.y) > 60)) {
-      this.path = this.grid.findPath(p.pos.x, p.pos.y, tx, ty);
+      (this.pathTarget && Math.hypot(goalX - this.pathTarget.x, goalY - this.pathTarget.y) > 60)) {
+      this.path = this.grid.findPath(p.pos.x, p.pos.y, goalX, goalY);
       this.pathIdx = 0;
       this.repathTimer = 0.8 + Math.random() * 0.4;
-      this.pathTarget = { x: tx, y: ty };
+      this.pathTarget = { x: goalX, y: goalY };
     }
 
     if (this.path && this.pathIdx < this.path.length) {
