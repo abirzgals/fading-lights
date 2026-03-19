@@ -986,9 +986,8 @@ export class BotAI {
         const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
         // PathFollower returns (0,0) when arrived at nearest walkable side
         const arrived = dir.x === 0 && dir.y === 0;
-        const dist = ctx.player.pos.distance(target.pos);
 
-        if (arrived || dist < 48) {
+        if (arrived) {
           // At the target — attack and stay put
           attack = true;
           vx = 0; vy = 0;

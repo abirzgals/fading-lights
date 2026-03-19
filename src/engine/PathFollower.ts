@@ -51,11 +51,9 @@ export class PathFollower {
   ): { x: number; y: number } {
     const directDist = Math.hypot(toX - fromX, toY - fromY);
 
-    // Very close — go direct
-    if (directDist < T) {
-      const len = directDist;
-      if (len < 1) return { x: 0, y: 0 };
-      return { x: (toX - fromX) / len, y: (toY - fromY) / len };
+    // Already at target
+    if (directDist < 4) {
+      return { x: 0, y: 0 };
     }
 
     // Find best approach point — nearest walkable tile adjacent to target

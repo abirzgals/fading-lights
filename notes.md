@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.43: Fix bot getting stuck near obstacles — PathFollower + BotAI
+
+### Summary
+Two targeted fixes eliminating scenarios where the bot would move into walls or attack through solid obstacles instead of properly navigating around them.
+
+### Changes Made
+- `src/engine/PathFollower.ts` — Removed "direct movement if < 32px" shortcut. Now ALWAYS routes through A* regardless of distance. Returns (0,0) only when truly at target (< 4px). Previously a 30px straight-line distance through a wall would bypass A* and drive the bot directly into the obstacle.
+- `src/ai/BotAI.ts` (chop/mine) — Removed `dist < 48` fallback from the attack range check. Now relies exclusively on PathFollower's arrived signal (returns 0,0 when the bot reaches the nearest walkable side of the target). Previously a bot at 40px straight-line range would stop and attack even with a wall of rocks between it and the tree.
+
+### Rationale
+Both shortcuts were well-intentioned performance/convenience heuristics that broke down when obstacles existed between the bot and its target. Straight-line distance is meaningless in a tiled world with walls — only pathfinding-confirmed proximity should trigger movement stop or attack.
+
+### Next Steps
+- Monitor bot behavior on maps with dense obstacle clusters to confirm no new edge cases arise.
+- Consider whether the 4px "at target" threshold in PathFollower needs tuning for larger entities.
+
+---
+
 ## 2026-03-19 — v2.6.42: BFS wave algorithm for bot reachable-resource detection
 
 ### Summary
