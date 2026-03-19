@@ -540,6 +540,14 @@ export class GameScene extends ex.Scene {
 
     const player = this.level.player;
     const bf = this.level.bonfires[0];
+
+    // Heal player near bonfire — 5 HP per second
+    if (bf && bf.pos.distance(player.pos) < CONFIG.BONFIRE_BASE_RADIUS * 0.3) {
+      const hp = player.get(HealthComponent) as HealthComponent | null;
+      if (hp && hp.hp < hp.maxHp) {
+        hp.heal(5 * dt);
+      }
+    }
     // Allow feeding if: fuel not full OR still leveling up (even at full fuel, feed for XP)
     const isMaxLevel = this.campLevel >= CONFIG.FIRE_LEVELS.length - 1;
     const needsFuel = this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.9;
