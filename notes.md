@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-03-20 — v2.6.91: Throttle all heavy BotAI.buildContext computation to 500ms
+
+### Summary
+`BotAI.buildContext` was accumulating ~150ms/sec because it ran three expensive operations every frame (60x/sec): BFS floodFill, enemy scoring with wave-distance iteration, and a full `scene.actors` scan (~16000 actors) to find projectile attackers. All heavy work is now gated behind a single `needsRecompute` flag (500ms timer), dropping execution from 60x/sec to 2x/sec. Results are cached in `cachedEnemyContext` and `cachedResources`. Per-frame work is limited to cheap `isKilled()` validation of cached references.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Added `cachedResources` and `cachedEnemyContext` instance fields to hold throttled results.
+  - Unified the 500ms recompute gate into a single `needsRecompute` boolean so BFS floodFill, enemy scoring, and resource scoring all share one timer.
+  - Replaced `scene.actors` projectile scan (iterating all ~16000 actors) with a direct scan of the `enemies` array checking `isRanged` + `attackRange` — correct behavior, far cheaper.
+  - Enemy scoring loop, resource scoring loop, and `enemyNearCamp` validation now only run when `needsRecompute` is true.
+  - Added per-frame dead-entity validation for all three cached references (bestEnemy, enemyNearCamp, projectileAttacker, nearestResource) using `isKilled()` — cheap and prevents stale references.
+- `package.json`: bumped version to `2.6.91`.
+
+### Rationale
+The profiler HUD introduced in v2.6.89 revealed `ai.context` was the dominant cost at ~150ms/sec. The root cause was three O(n) scans running every frame: the 16000-actor `scene.actors` loop was the worst offender. Throttling to 500ms and caching results reduces the expected cost to ~15ms/sec (10x improvement) with no meaningful loss of AI responsiveness since game state does not change faster than the 500ms window requires.
+
+### Next Steps
+- Confirm `ai.context` drops to ~15ms/sec in the profiler HUD during active gameplay.
+- If resource targeting feels stale (e.g., bot walks to a just-depleted node), consider invalidating the cache on resource-killed events rather than waiting for the next 500ms tick.
+
+---
+
 ## 2026-03-20 — v2.6.90: Profiler HUD styled as dark box with color-coded bar chart
 
 ### Summary

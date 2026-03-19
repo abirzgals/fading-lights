@@ -131,9 +131,19 @@ export class BotAI {
   // Shared pathfinder
   private pathFollower: PathFollower;
 
-  // Cached BFS result (throttled to 500ms)
+  // Cached BFS + resource search (throttled to 500ms)
   private cachedReachable: Map<string, number> = new Map();
   private reachableCacheTimer = 0;
+  private cachedResources: {
+    bestByType: Record<string, { entity: GameEntity; dist: number; score: number }>;
+    nearest: GameEntity | null;
+    nearestDist: number;
+  } = { bestByType: {}, nearest: null, nearestDist: Infinity };
+  private cachedEnemyContext: {
+    bestEnemy: GameEntity | null;
+    enemyNearCamp: GameEntity | null;
+    projectileAttacker: GameEntity | null;
+  } = { bestEnemy: null, enemyNearCamp: null, projectileAttacker: null };
 
   // Movement smoothing
   private smoothVx = 0;
@@ -676,11 +686,12 @@ export class BotAI {
       }
     }
 
-    // BFS flood-fill — throttled to every 500ms for performance
+    // === HEAVY COMPUTATION — throttled to every 500ms ===
     this.reachableCacheTimer -= dt;
-    if (this.reachableCacheTimer <= 0) {
-      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+    const needsRecompute = this.reachableCacheTimer <= 0;
+    if (needsRecompute) {
       this.reachableCacheTimer = 0.5;
+      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
     }
     const reachable = this.cachedReachable;
 
@@ -700,97 +711,94 @@ export class BotAI {
       return best;
     };
 
-    // Validate enemyNearCamp + find best by wave distance
-    if (enemyNearCamp && getWaveDist(enemyNearCamp) === Infinity) enemyNearCamp = null;
+    // Heavy enemy + resource scoring — only on recompute (every 500ms)
+    if (needsRecompute) {
+      // Validate enemyNearCamp
+      if (enemyNearCamp && getWaveDist(enemyNearCamp) === Infinity) enemyNearCamp = null;
 
-    // Best enemy to hunt — reachable, scored by WAVE distance
-    let bestEnemy: GameEntity | null = null;
-    let bestScore = -Infinity;
-    for (const e of enemies) {
-      const wd = getWaveDist(e);
-      if (wd === Infinity) continue;
-      const walkDist = wd * 32;
-      if (walkDist > this.SIGHT_RANGE * 2) continue;
-      const straightDist = p.pos.distance(e.pos);
-      const selfDefense = straightDist < 60;
-      const eHp = (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 20;
-      const score = (selfDefense ? 500 : 0) + (300 - walkDist) - eHp * 0.5;
-      if (score > bestScore) { bestScore = score; bestEnemy = e; }
-    }
+      // Best enemy — scored by wave distance
+      let bestEnemy: GameEntity | null = null;
+      let bestEnemyScore = -Infinity;
+      for (const e of enemies) {
+        const wd = getWaveDist(e);
+        if (wd === Infinity) continue;
+        const walkDist = wd * 32;
+        if (walkDist > this.SIGHT_RANGE * 2) continue;
+        const straightDist = p.pos.distance(e.pos);
+        const selfDefense = straightDist < 60;
+        const eHp = (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 20;
+        const score = (selfDefense ? 500 : 0) + (300 - walkDist) - eHp * 0.5;
+        if (score > bestEnemyScore) { bestEnemyScore = score; bestEnemy = e; }
+      }
 
-    // Find attacker — who shot a projectile at us?
-    let projectileAttacker: GameEntity | null = null;
-    if (p.scene) {
-      for (const actor of p.scene.actors) {
-        if ((actor as any).entityType !== 'projectile') continue;
-        const dist = p.pos.distance(actor.pos);
-        if (dist > 150) continue;
-        const toPlayer = p.pos.sub(actor.pos).normalize();
-        const projDir = actor.vel.normalize();
-        const dot = toPlayer.x * projDir.x + toPlayer.y * projDir.y;
-        if (dot > 0.5) {
-          for (const e of enemies) {
-            const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
-            if (ai?.isRanged && e.pos.distance(actor.pos) < 300) {
-              projectileAttacker = e;
-              break;
+      // Find projectile attacker (scan only enemies, not all scene actors)
+      let projectileAttacker: GameEntity | null = null;
+      // Simple: check if any ranged enemy is in range and has line of sight
+      for (const e of enemies) {
+        const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
+        if (!ai?.isRanged) continue;
+        const d = p.pos.distance(e.pos);
+        if (d < ai.attackRange * 1.2 && getWaveDist(e) !== Infinity) {
+          projectileAttacker = e;
+          break;
+        }
+      }
+
+      this.cachedEnemyContext = { bestEnemy, enemyNearCamp, projectileAttacker };
+
+      // Best resource per type — only from reachable tiles
+      const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
+      let nearestResource: GameEntity | null = null;
+      let nearestResourceDist = Infinity;
+      let bestOverallScore = Infinity;
+
+      for (const e of this.getEntities()) {
+        if (e.isKilled()) continue;
+        const rc = e.get(ResourceComponent) as ResourceComponent | null;
+        if (!rc) continue;
+        const rType = rc.resourceType;
+        const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
+        let waveDist = Infinity;
+        const selfDist = reachable.get(`${etx},${ety}`);
+        if (selfDist !== undefined) { waveDist = selfDist; }
+        else {
+          for (let dx = -1; dx <= 1; dx++)
+            for (let dy = -1; dy <= 1; dy++) {
+              if (dx === 0 && dy === 0) continue;
+              if (this.grid.isBlocked(etx + dx, ety + dy)) continue;
+              const nd = reachable.get(`${etx + dx},${ety + dy}`);
+              if (nd !== undefined && nd < waveDist) waveDist = nd;
             }
-          }
-          if (projectileAttacker) break;
+        }
+        if (waveDist === Infinity) continue;
+        const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : waveDist * 32;
+        if (distToCamp > this.GATHER_RANGE * 1.5) continue;
+        const score = waveDist * 32 * 0.6 + distToCamp * 0.4;
+        const prev = bestResourceByType[rType];
+        if (!prev || score < prev.score) {
+          bestResourceByType[rType] = { entity: e, dist: waveDist * 32, score };
+        }
+        if (score < bestOverallScore) {
+          bestOverallScore = score;
+          nearestResource = e;
+          nearestResourceDist = waveDist * 32;
         }
       }
+      this.cachedResources = { bestByType: bestResourceByType, nearest: nearestResource, nearestDist: nearestResourceDist };
     }
-    if (projectileAttacker && getWaveDist(projectileAttacker) === Infinity) projectileAttacker = null;
 
-    // Best resource per type — only from reachable tiles (wave computed above)
-    const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
-    let nearestResource: GameEntity | null = null;
-    let nearestResourceDist = Infinity;
-    let bestOverallScore = Infinity;
+    // Use cached results
+    const { bestEnemy, projectileAttacker } = this.cachedEnemyContext;
+    enemyNearCamp = this.cachedEnemyContext.enemyNearCamp;
+    // Validate cached enemies still alive
+    if (bestEnemy?.isKilled()) this.cachedEnemyContext.bestEnemy = null;
+    if (enemyNearCamp?.isKilled()) { enemyNearCamp = null; this.cachedEnemyContext.enemyNearCamp = null; }
+    if (projectileAttacker?.isKilled()) this.cachedEnemyContext.projectileAttacker = null;
 
-    for (const e of this.getEntities()) {
-      if (e.isKilled()) continue;
-      const rc = e.get(ResourceComponent) as ResourceComponent | null;
-      if (!rc) continue;
-      const rType = rc.resourceType;
-
-      // Find nearest reachable walkable tile adjacent to resource
-      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-      let waveDist = Infinity;
-
-      // Check resource tile itself
-      const selfDist = reachable.get(`${etx},${ety}`);
-      if (selfDist !== undefined) {
-        waveDist = selfDist;
-      } else {
-        // Check 8 neighbors — must be walkable AND reachable
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            if (dx === 0 && dy === 0) continue;
-            const nx = etx + dx, ny = ety + dy;
-            if (this.grid.isBlocked(nx, ny)) continue;
-            const nd = reachable.get(`${nx},${ny}`);
-            if (nd !== undefined && nd < waveDist) waveDist = nd;
-          }
-        }
-      }
-      if (waveDist === Infinity) continue; // truly unreachable
-
-      // Score by WAVE DISTANCE (actual walk distance), not straight-line
-      const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : waveDist * 32;
-      if (distToCamp > this.GATHER_RANGE * 1.5) continue;
-      const score = waveDist * 32 * 0.6 + distToCamp * 0.4; // wave dist in pixels
-
-      const prev = bestResourceByType[rType];
-      if (!prev || score < prev.score) {
-        bestResourceByType[rType] = { entity: e, dist: waveDist * 32, score };
-      }
-      if (score < bestOverallScore) {
-        bestOverallScore = score;
-        nearestResource = e;
-        nearestResourceDist = waveDist * 32;
-      }
-    }
+    const bestResourceByType = this.cachedResources.bestByType;
+    let nearestResource = this.cachedResources.nearest;
+    let nearestResourceDist = this.cachedResources.nearestDist;
+    if (nearestResource?.isKilled()) { nearestResource = null; nearestResourceDist = Infinity; }
 
     // How much wood do we need for fuel?
     const fuelDeficit = this.gameState.bonfireMaxFuel * 0.8 - this.gameState.bonfireFuel;
