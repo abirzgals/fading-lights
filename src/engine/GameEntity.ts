@@ -32,8 +32,12 @@ export class GameEntity extends ex.Actor {
     return this;
   }
 
-  /** Drive all component updates each frame */
+  /** If true, skip component updates (for off-screen static entities) */
+  public culled = false;
+
+  /** Drive all component updates each frame — skipped if culled */
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
+    if (this.culled) return;
     for (const comp of this._updatableComponents) {
       comp.onPreUpdate?.(engine, deltaMs);
     }

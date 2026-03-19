@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-20 — v2.6.97: Safe viewport culling — entity stays in scene, culled flag skips component updates
+
+### Summary
+Replaced the previous scene.remove/add culling approach with a safe flag-based system. Off-screen static entities remain in the Excalibur scene graph at all times. A `culled` flag on `GameEntity` causes `onPreUpdate` to return immediately (skipping all component work), and `entity.graphics.visible = false` tells Excalibur to skip the draw call. The culling interval was relaxed from every 10 frames to every 15 frames.
+
+### Changes Made
+- `src/engine/GameEntity.ts`:
+  - Added `public culled = false` field.
+  - `onPreUpdate` now returns early if `this.culled` is true — zero component work for off-screen entities.
+- `src/scenes/GameScene.ts`:
+  - Removed `culledEntities: Set<GameEntity>` field — no longer needed.
+  - `viewportCull()` changed from `this.add(e)` / `this.remove(e)` to `e.culled = !inView` and `e.graphics.visible = inView`.
+  - Culling interval changed from every 10 frames to every 15 frames.
+- `package.json`: bumped version to `2.6.97`.
+
+### Rationale
+The scene.remove/add approach had critical correctness bugs: `kill()` would silently fail on removed actors, network-driven destruction events (other players destroying trees) would not fire `onPreKill` / `freeTiles`, and grid colliders could become orphaned. The new approach preserves full entity lifecycle — kill, events, and colliders all work normally. The CPU saving from skipping `onPreUpdate` component work (shadow calc, hit effects, etc.) is preserved. The remaining bottleneck is Excalibur's own scene-graph iteration over all actors, which cannot be eliminated without actually reducing actor count.
+
+### Next Steps
+- If actor-count bottleneck remains significant, investigate chunked or pooled actor strategies.
+- Monitor frame timing to confirm component-update savings are measurable at high entity counts.
+
+---
+
 ## 2026-03-20 — v2.6.96: Viewport culling — remove static entities off-screen from scene
 
 ### Summary

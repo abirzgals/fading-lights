@@ -46,7 +46,6 @@ export class GameScene extends ex.Scene {
 
   // Viewport culling for static entities
   private cullTimer = 0;
-  private culledEntities: Set<GameEntity> = new Set(); // entities currently removed from scene
   private perfTimings: Record<string, number> = {};
   private perfDisplay: Record<string, number> = {};
   private perfAccum: Record<string, number> = {};
@@ -213,15 +212,16 @@ export class GameScene extends ex.Scene {
     }
   }
 
-  // ======== VIEWPORT CULLING — add/remove static entities from scene ========
+  // ======== VIEWPORT CULLING — disable updates for off-screen static entities ========
+  // Entity stays in scene (kill/events/colliders work), only skips component onPreUpdate
   private viewportCull(): void {
     this.cullTimer++;
-    if (this.cullTimer % 10 !== 0) return; // every 10 frames
+    if (this.cullTimer % 15 !== 0) return; // every 15 frames
 
     const cam = this.camera;
     const zoom = cam.zoom;
     const vp = this.engine.screen.resolution;
-    const halfW = vp.width / zoom / 2 + T * 5; // 5 tile margin
+    const halfW = vp.width / zoom / 2 + T * 5;
     const halfH = vp.height / zoom / 2 + T * 5;
     const cx = cam.pos.x, cy = cam.pos.y;
     const left = cx - halfW, right = cx + halfW;
@@ -230,16 +230,8 @@ export class GameScene extends ex.Scene {
     for (const e of this.level.entities) {
       if (e.isKilled()) continue;
       const inView = e.pos.x > left && e.pos.x < right && e.pos.y > top && e.pos.y < bottom;
-
-      if (inView && this.culledEntities.has(e)) {
-        // Bring back into scene
-        this.add(e);
-        this.culledEntities.delete(e);
-      } else if (!inView && !this.culledEntities.has(e)) {
-        // Remove from scene (but keep in entities list)
-        this.remove(e);
-        this.culledEntities.add(e);
-      }
+      e.culled = !inView;
+      e.graphics.visible = inView;
     }
   }
 
