@@ -277,6 +277,8 @@ export class EntityFactory {
     const size = buildingType === 'TURRET' ? 18 : buildingType === 'OUTPOST' ? 22 : 20;
     if (buildingType === 'TURRET' && AssetLoader.turretSprite.isLoaded()) {
       building.graphics.use(AssetLoader.turretSprite.toSprite());
+    } else if (buildingType === 'OUTPOST' && AssetLoader.outpostSprite.isLoaded()) {
+      building.graphics.use(AssetLoader.outpostSprite.toSprite());
     } else {
       const colorMap: Record<string, string> = {
         TURRET: '#AA8844', OUTPOST: '#FFCC44', FORGE: '#CC6644',
