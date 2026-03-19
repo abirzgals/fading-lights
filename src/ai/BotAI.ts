@@ -55,6 +55,8 @@ export interface BotGameState {
   campLevel: number;
   campFuelAdded: number;
   availableBuildSpots: BotBuildSpot[];
+  /** Build spots blocked by resources that need clearing */
+  blockedBuildSpots: Array<{ wx: number; wy: number }>;
   /** Drops on the ground the bot can walk to */
   drops: BotDrop[];
 }
@@ -91,6 +93,8 @@ interface BotContext {
   /** Any nearest drop regardless of type */
   nearestDrop: BotDrop | null;
   nearestDropDist: number;
+  /** Resource blocking a build spot that needs clearing */
+  blockerResource: GameEntity | null;
   /** Build spot the bot can afford right now */
   affordableBuildSpot: BotBuildSpot | null;
   /** Build spot the bot should gather resources for */
@@ -159,6 +163,7 @@ export class BotAI {
     campLevel: 0,
     campFuelAdded: 0,
     availableBuildSpots: [],
+    blockedBuildSpots: [],
     drops: [],
   };
 
@@ -498,6 +503,16 @@ export class BotAI {
           check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null && ctx.fuelRatio < 0.85,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
+        // === CLEAR BUILD SPOT — destroy resource blocking a build spot ===
+        {
+          name: 'Clear Build Spot',
+          check: (ctx) => ctx.blockerResource !== null && ctx.hpRatio >= 0.4,
+          goal: (ctx) => ({
+            type: 'chop', target: ctx.blockerResource!,
+            x: ctx.blockerResource!.pos.x, y: ctx.blockerResource!.pos.y,
+            _treePath: `Clear spot (${ctx.blockerResource!.entityType})`,
+          }),
+        },
         // === BUILD — higher priority than leveling up ===
         {
           name: 'Build',
@@ -766,6 +781,21 @@ export class BotAI {
       }
     }
 
+    // Find resource blocking a build spot
+    let blockerResource: GameEntity | null = null;
+    for (const bs of this.gameState.blockedBuildSpots) {
+      // Find the nearest entity at this position that has a ResourceComponent
+      let bestBlocker: GameEntity | null = null;
+      let bestDist = 60; // search radius
+      for (const e of this.getEntities()) {
+        if (e.isKilled()) continue;
+        if (!e.get(ResourceComponent)) continue;
+        const d = Math.hypot(e.pos.x - bs.wx, e.pos.y - bs.wy);
+        if (d < bestDist) { bestDist = d; bestBlocker = e; }
+      }
+      if (bestBlocker) { blockerResource = bestBlocker; break; }
+    }
+
     // Build spot analysis — check INVENTORY ONLY (not drops on ground)
     const res = this.gameState.resources;
     let affordableBuildSpot: BotBuildSpot | null = null;
@@ -810,6 +840,7 @@ export class BotAI {
       nearestNeededDrop, nearestNeededDropDist: nearestNeededDropDist,
       nearestDrop, nearestDropDist: nearestDropDist,
       canLevelUp, woodForLevelUp,
+      blockerResource,
       affordableBuildSpot, gatherBuildSpot, gatherNeed,
       evasion, dt,
     };

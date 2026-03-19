@@ -162,7 +162,20 @@ export class GameScene extends ex.Scene {
         campFuelAdded: this.campFuelAdded,
         availableBuildSpots: this.buildSpots
           .filter(s => s.state === 'unlocked')
+          .filter(s => {
+            // Exclude spots with blocked tiles — bot should clear them first
+            const stx = Math.floor(s.wx / T), sty = Math.floor(s.wy / T);
+            return !this.level.grid.isBlocked(stx, sty);
+          })
           .map(s => ({ type: s.type, wx: s.wx, wy: s.wy, cost: BUILDINGS[s.type].cost })),
+        // Build spots that are blocked by resources — bot should clear these
+        blockedBuildSpots: this.buildSpots
+          .filter(s => s.state === 'unlocked')
+          .filter(s => {
+            const stx = Math.floor(s.wx / T), sty = Math.floor(s.wy / T);
+            return this.level.grid.isBlocked(stx, sty);
+          })
+          .map(s => ({ wx: s.wx, wy: s.wy })),
         drops: this.drops
           .filter(d => !d.isKilled() && !(d as any)._flyingToPlayer)
           .map(d => ({ x: d.pos.x, y: d.pos.y, type: (d as any).dropType as string })),
@@ -550,6 +563,10 @@ export class GameScene extends ex.Scene {
 
       // Auto-build for bot (or E key for human) when near unlocked spot
       if (spot.state === 'unlocked') {
+        // Check if spot tile is blocked by a resource — need to clear it first
+        const spotTx = Math.floor(spot.wx / T), spotTy = Math.floor(spot.wy / T);
+        if (this.level.grid.isBlocked(spotTx, spotTy)) continue; // tile blocked, can't build yet
+
         const dist = player.pos.distance(ex.vec(spot.wx, spot.wy));
         if (dist < CONFIG.INTERACT_RADIUS) {
           const def = BUILDINGS[spot.type];
