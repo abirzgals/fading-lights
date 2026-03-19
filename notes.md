@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-03-19 — v2.6.16: Rewrite shadow system to match original game
+
+### Summary
+Replaced the ellipse-based shadow approximation with a rectangle-based shadow that faithfully replicates the original game's shadow formulas. Shadows are now much more visible, correctly sized relative to each entity's sprite, and use the exact same length/alpha math as the original.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts`:
+  - Shadow graphic changed from a scaled `Circle` to a `Rectangle` sized at `width * 0.9` by `height * 0.7` of the entity's current sprite dimensions.
+  - Shadow length formula: `shadowLen = min(1.2, 400 / (dist + 50))` — closer to light produces a longer shadow, matching the original game exactly.
+  - Alpha formula: `opacity = max(0.05, 0.35 * edgeFade)` — 35% at center, fading to 5% at the light radius edge, matching the original.
+  - Shadow is rotated `angle + PI/2` (away from light, +90° for anchor orientation) and anchored at entity feet (`anchor.y = 0.9`).
+  - Shadow size dynamically updates each frame when the entity's active graphic changes dimensions (e.g., sprite sheet frame size changes).
+  - Z-offset tightened from `-0.5` to `-0.1` to stay just below the parent.
+  - Constructor parameter changed from `{ width, height }` (old ellipse dims) to `{ entityHeight }` (entity sprite height).
+- `src/entities/EntityFactory.ts`:
+  - Player: `ShadowCasterComponent({ entityHeight: 24 })`
+  - Enemies: `ShadowCasterComponent({ entityHeight: def.size })`
+  - Trees: `ShadowCasterComponent({ entityHeight: 40 })`
+
+### Rationale
+The previous circle-scaled-to-ellipse approach produced a barely visible shadow at incorrect angles. The original game used a flat rectangle at the entity's feet stretched away from the light — this commit restores that behavior using the same distance and alpha formulas, making shadows immediately visible and physically correct.
+
+### Next Steps
+- Evaluate whether a slight blur or gradient on the rectangle would further soften the shadow edge.
+- Consider exposing a per-entity shadow opacity multiplier for fine-tuning (e.g., flying enemies casting faint shadows).
+
+---
+
+## 2026-03-19 — v2.6.15: Debug overlay A* paths — lines + dots
+
+### Summary
+Improved the debug overlay path visualization in GameScene. Waypoints are now connected by thin line segments drawn from the entity's current position through each consecutive waypoint, in addition to the existing dots. This makes the intended path direction and continuity immediately readable at a glance.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Extracted a `drawPath()` helper function (local const inside `renderDebugOverlay`) accepting the waypoint array, start index, start position, dot color, and line color.
+  - Lines: for each pair of consecutive points (starting from the entity's current world position to the first waypoint, then waypoint-to-waypoint), a `Rectangle` actor of width equal to the segment length and height 1.5px is created, centered on the midpoint, and rotated to `Math.atan2(dy, dx)`. Segments shorter than 1px are skipped.
+  - Dots: `Circle` radius increased from 2 to 3; z-index raised to 8002 (above lines at 8001) so they always render on top.
+  - Player bot path: green lines (`rgba(0,255,0,0.4)`) and green dots (`rgba(0,255,0,0.8)`).
+  - Enemy paths: orange lines (`rgba(255,100,0,0.3)`) and orange dots (`rgba(255,100,0,0.7)`).
+  - Both paths now call the shared `drawPath()` helper, removing the duplicate loop logic.
+
+### Rationale
+Dots alone made it hard to determine path direction or spot gaps between waypoints — especially when waypoints are far apart. Connected line segments immediately convey direction and segment length, making it easier to diagnose pathfinding quality and spacing during development.
+
+### Next Steps
+- Consider adding arrowheads at line endpoints to make direction even clearer.
+- Evaluate whether per-layer toggles (blocked tiles / player path / enemy paths) would further reduce visual noise during focused debugging.
+
+---
+
 ## 2026-03-19 — v2.6.14: Debug overlay + pickup radius increase
 
 ### Summary
