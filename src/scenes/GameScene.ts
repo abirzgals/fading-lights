@@ -214,40 +214,19 @@ export class GameScene extends ex.Scene {
         // Play attack animation with damage callback
         if (anim) {
           anim.playAttack(() => {
-            // DAMAGE FRAME — deal damage to nearest enemy or resource
-            // Enemies
+            // DAMAGE FRAME — deal damage to nearest enemy AND nearest resource in range
+
+            // Enemies — nearest within melee range
             const nearest = this.level.enemies
               .filter(e => !e.isKilled() && !e.isDying && e.pos.distance(player.pos) < melee.range)
               .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
             if (nearest) melee.startAttack(nearest);
 
-            // Resources
+            // Resources — hit nearest within 52px
             const nearRes = this.level.entities
-              .filter(e => !e.isKilled() && e.get(ResourceComponent))
+              .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 52)
               .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
-            if (nearRes && nearRes.pos.distance(player.pos) < 52) {
-              const hp = nearRes.get(HealthComponent) as HealthComponent | null;
-              const res = nearRes.get(ResourceComponent) as ResourceComponent | null;
-              if (hp && res) {
-                hp.damage(10);
-                // Hit sparks — color based on resource type
-                this.spawnHitSparks(nearRes.pos.x, nearRes.pos.y, res.resourceType);
-                if (!hp.alive) {
-                  // Spawn drops on the ground
-                  for (let i = 0; i < res.dropAmount; i++) {
-                    const drop = EntityFactory.createDrop(this, nearRes.pos.x, nearRes.pos.y, res.resourceType as any);
-                    this.drops.push(drop);
-                  }
-                  this.spawnFloatingText(nearRes.pos.x, nearRes.pos.y - 16,
-                    `+${res.dropAmount} ${res.resourceType}`, '#44FF44');
-                  // Spawn stump for trees before killing
-                  if (nearRes.entityType === 'tree') {
-                    this.spawnStump(nearRes.pos.x, nearRes.pos.y);
-                  }
-                  nearRes.kill();
-                }
-              }
-            }
+            if (nearRes) this.damageResource(nearRes);
           });
         }
       }
@@ -340,6 +319,29 @@ export class GameScene extends ex.Scene {
       // Gravity-like deceleration + fade
       spark.actions.fade(0, 300 + Math.random() * 200).die();
       this.add(spark);
+    }
+  }
+
+  /** Damage a resource entity (tree, stone, metal) */
+  private damageResource(entity: GameEntity): void {
+    const hp = entity.get(HealthComponent) as HealthComponent | null;
+    const res = entity.get(ResourceComponent) as ResourceComponent | null;
+    if (!hp || !res) return;
+
+    hp.damage(10);
+    this.spawnHitSparks(entity.pos.x, entity.pos.y, res.resourceType);
+
+    if (!hp.alive) {
+      for (let i = 0; i < res.dropAmount; i++) {
+        const drop = EntityFactory.createDrop(this, entity.pos.x, entity.pos.y, res.resourceType as any);
+        this.drops.push(drop);
+      }
+      this.spawnFloatingText(entity.pos.x, entity.pos.y - 16,
+        `+${res.dropAmount} ${res.resourceType}`, '#44FF44');
+      if (entity.entityType === 'tree') {
+        this.spawnStump(entity.pos.x, entity.pos.y);
+      }
+      entity.kill();
     }
   }
 

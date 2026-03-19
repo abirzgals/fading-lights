@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.53: Refactor resource attack — extract damageResource() method
+
+### Summary
+Cleaned up the resource damage logic in `GameScene.ts` by extracting it into a dedicated private method. Behavior is unchanged: attacking hits the nearest resource entity within 52px.
+
+### Changes Made
+- `src/scenes/GameScene.ts` — Extracted inline resource damage block from the attack callback into a new `private damageResource(entity: GameEntity): void` method. The method handles HP damage, hit sparks, drop spawning, floating text, stump spawning, and entity kill in one place. The attack callback now filters + sorts for the nearest resource within 52px, then delegates to `damageResource()`.
+- `package.json` — Version bumped to 2.6.53.
+
+### Rationale
+The previous inline block was ~20 lines of interleaved logic sitting inside a nested callback. Extracting it to a named method makes the callback readable at a glance and gives the damage logic a single, testable home. No functional change was introduced.
+
+### Next Steps
+- `damageResource()` could later be extended to support variable damage values (e.g., weapon stats) without touching the call site.
+
+---
+
 ## 2026-03-19 — v2.6.52: Fix attack animation stuck in attacking state forever
 
 ### Summary
