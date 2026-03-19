@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.35: Fix tree collider position — collider at trunk level (ty-1)
+
+### Summary
+Tree colliders were being registered one tile below the trunk, overlapping roads and clearings. The collider is now placed at ty-1, matching the trunk's actual visual position. The previous wrong-direction buffer zone (ty+1/ty+2) is removed.
+
+### Root Cause
+Tree visuals are drawn at `ty * T - T` (one tile above the grid row). The collider was registered at `ty`, which is one tile below the visual trunk — landing directly on adjacent roads or clearings. The buffer zone added in v2.6.34 compensated in the wrong direction and created awkward planting gaps.
+
+### Changes Made
+- `src/world/LevelScript.ts` — Collider grid position changed from `ty` to `colTy = ty - 1`. Loop starts at `ty = 3` so `ty - 1` is always a valid tile. Skip check now tests `isPath(tx, ty-1) || isClearing(tx, ty-1)` instead of the ty+1/ty+2 buffer. `grid.isBlocked` and `treeByTile` map key both use `colTy`.
+
+### Rationale
+Placing the collider at ty-1 aligns it with the rendered trunk position. This eliminates phantom collision walls on roads while correctly blocking the tile the tree visually occupies. The wrong-direction buffer is no longer needed.
+
+### Next Steps
+- Verify tree colliders visually align with trunks in forest/road transition areas.
+- Check `treeByTile` gap-fill logic still assigns correctly with the updated tile key.
+
+---
+
 ## 2026-03-19 — v2.6.34: Tree planting 2-tile buffer above paths/clearings
 
 ### Summary
