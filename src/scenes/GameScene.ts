@@ -43,6 +43,9 @@ export class GameScene extends ex.Scene {
   private fpsTimer = 0;
   private fpsDisplay = 0;
   private hudUpdateTimer = 0;
+  private lastFrameTime = 0;
+  private frameTimeAccum = 0;
+  private frameTimeDisplay = 0;
 
   // Viewport culling for static entities
   private cullTimer = 0;
@@ -172,13 +175,22 @@ export class GameScene extends ex.Scene {
 
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    // Frame time measurement (includes Excalibur render)
+    const now = performance.now();
+    if (this.lastFrameTime > 0) {
+      this.frameTimeAccum += now - this.lastFrameTime;
+    }
+    this.lastFrameTime = now;
+
     // FPS counter + profiling
     this.fpsFrames++;
     this.fpsTimer += dt;
     if (this.fpsTimer >= 1) {
       this.fpsDisplay = this.fpsFrames;
+      this.frameTimeDisplay = Math.round(this.frameTimeAccum / Math.max(1, this.fpsFrames));
       this.fpsFrames = 0;
       this.fpsTimer = 0;
+      this.frameTimeAccum = 0;
       this.perfDisplay = { ...this.perfAccum };
       this.perfAccum = {};
     }
@@ -1407,7 +1419,7 @@ export class GameScene extends ex.Scene {
     const sceneActors = this.actors.length;
     const fpsColor = this.fpsDisplay >= 50 ? '#44FF44' : this.fpsDisplay >= 30 ? '#FFAA00' : '#FF4444';
     this.hudEl.innerHTML = `
-      <span style="color:${fpsColor}">${this.fpsDisplay} FPS</span> <span style="color:#666">${sceneActors} actors</span><br>
+      <span style="color:${fpsColor}">${this.fpsDisplay} FPS</span> <span style="color:#666">${sceneActors} actors · ${this.frameTimeDisplay}ms/frame</span><br>
       <span style="color:#44FF44">HP [${hpBar}] ${Math.round(hp)}/${maxHp}</span><br>
       <span style="color:#FF8800">FIRE [${fuelBar}] ${fuelPct}%</span><br>
       <span style="color:#CC66FF">CAMP [${lvlBar}] ${lvlLabel}</span><br>
@@ -1422,7 +1434,8 @@ export class GameScene extends ex.Scene {
       ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}
       ${Object.keys(this.perfDisplay).length > 0 ? `<br>
       <div style="background:rgba(0,0,0,0.75);border:1px solid #333;border-radius:4px;padding:4px 8px;margin-top:4px;font-size:10px;line-height:1.6;display:inline-block">
-        <span style="color:#888">PERF (1s totals)</span><br>
+        <span style="color:#888">PERF (1s) · avg ${this.frameTimeDisplay}ms/frame</span><br>
+        <span style="color:#FF8844">ENGINE     ${String(Math.max(0, Math.round(this.frameTimeDisplay * this.fpsDisplay - Object.values(this.perfDisplay).reduce((a, b) => a + b, 0)))).padStart(4)}ms <span style="color:#FF884480">${'█'.repeat(Math.min(20, Math.round(Math.max(0, this.frameTimeDisplay * this.fpsDisplay - Object.values(this.perfDisplay).reduce((a, b) => a + b, 0)) / 50)))}</span></span><br>
         ${Object.entries(this.perfDisplay)
           .sort((a, b) => b[1] - a[1])
           .map(([k, v]) => {

@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-20 — v2.6.98: Full frame time measurement to isolate Excalibur overhead
+
+### Summary
+Added wall-clock frame time instrumentation to `GameScene` to expose where the remaining ~39ms/frame budget goes. The new metrics distinguish between code we own (already measured via `perfAccum`) and Excalibur's internal overhead (render, scene-graph traversal, z-sort, entity iteration).
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `lastFrameTime`, `frameTimeAccum`, `frameTimeDisplay` fields.
+  - `onPreUpdate` records `performance.now()` delta between successive calls; accumulates over one second and averages.
+  - HUD updated: actor count line now appends `· Xms/frame`.
+  - PERF box header now shows `avg Xms/frame`.
+  - New `ENGINE Xms` row = total frame time minus all profiled code time — directly shows Excalibur's iteration/render cost.
+- `package.json`: bumped version to `2.6.98`.
+
+### Rationale
+Prior profiling showed our update code accounts for roughly 1ms/frame, yet the game runs at ~25 FPS (~40ms/frame). The missing time was invisible. This change surfaces the ENGINE row so we can confirm whether Excalibur iterating ~16 000 scene actors (even culled ones) or GPU/shader work is the real bottleneck.
+
+### Next Steps
+- Read ENGINE ms at high entity counts to confirm or rule out scene-graph iteration as bottleneck.
+- If ENGINE dominates, investigate reducing live actor count further (pooling, chunking, or true removal with lifecycle fixes).
+- If ENGINE is small, investigate GPU/shader load (overdraw, post-processing).
+
+---
+
 ## 2026-03-20 — v2.6.97: Safe viewport culling — entity stays in scene, culled flag skips component updates
 
 ### Summary
