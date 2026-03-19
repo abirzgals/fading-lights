@@ -62,6 +62,9 @@ export class GameScene extends ex.Scene {
     building?: GameEntity;
   }> = [];
   private buildings: GameEntity[] = [];
+  private debugMode = false;
+  private debugActors: ex.Actor[] = [];
+  private debugCheckbox: HTMLInputElement | null = null;
 
   onInitialize(engine: ex.Engine): void {
     console.log('[GameScene] initializing...');
@@ -102,6 +105,9 @@ export class GameScene extends ex.Scene {
       }
     });
 
+    // Debug checkbox
+    this.createDebugCheckbox();
+
     console.log(`[GameScene] initialized — ${this.level.entities.length} entities, ${this.level.enemies.length} enemies`);
   }
 
@@ -116,6 +122,7 @@ export class GameScene extends ex.Scene {
     this.updateFog();
     this.depthSort();
     this.updateEnemyHPBars();
+    if (this.debugMode) this.renderDebugOverlay();
     this.updateHUD();
   }
 
@@ -617,6 +624,95 @@ export class GameScene extends ex.Scene {
     }
   }
 
+  // ======== DEBUG OVERLAY ========
+
+  private createDebugCheckbox(): void {
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:10001;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'debug-toggle';
+    cb.style.cssText = 'cursor:pointer;';
+    cb.addEventListener('change', () => {
+      this.debugMode = cb.checked;
+      if (!this.debugMode) this.clearDebugOverlay();
+    });
+    const label = document.createElement('label');
+    label.htmlFor = 'debug-toggle';
+    label.textContent = ' Debug';
+    label.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
+    wrap.appendChild(cb);
+    wrap.appendChild(label);
+    document.body.appendChild(wrap);
+    this.debugCheckbox = cb;
+    (this as any)._debugWrap = wrap;
+  }
+
+  private clearDebugOverlay(): void {
+    for (const a of this.debugActors) a.kill();
+    this.debugActors = [];
+  }
+
+  private renderDebugOverlay(): void {
+    this.clearDebugOverlay();
+    const cam = this.camera;
+    const vp = this.engine.screen.resolution;
+    const zoom = cam.zoom;
+
+    // Visible tile range
+    const camX = cam.pos.x, camY = cam.pos.y;
+    const halfW = vp.width / zoom / 2 + T, halfH = vp.height / zoom / 2 + T;
+    const minTX = Math.max(0, Math.floor((camX - halfW) / T));
+    const maxTX = Math.min(this.level.grid.getSize() - 1, Math.ceil((camX + halfW) / T));
+    const minTY = Math.max(0, Math.floor((camY - halfH) / T));
+    const maxTY = Math.min(this.level.grid.getSize() - 1, Math.ceil((camY + halfH) / T));
+
+    // Draw blocked tiles as red semi-transparent
+    for (let tx = minTX; tx <= maxTX; tx++) {
+      for (let ty = minTY; ty <= maxTY; ty++) {
+        if (!this.level.grid.isBlocked(tx, ty)) continue;
+        const a = new ex.Actor({
+          pos: ex.vec(tx * T + T / 2, ty * T + T / 2),
+          anchor: ex.vec(0.5, 0.5),
+        });
+        a.graphics.use(new ex.Rectangle({ width: T - 1, height: T - 1, color: ex.Color.fromRGB(255, 0, 0, 0.2) }));
+        a.z = 8000;
+        this.add(a);
+        this.debugActors.push(a);
+      }
+    }
+
+    // Draw A* paths for player bot
+    if (this.botAI && (this.botAI as any).path) {
+      const path = (this.botAI as any).path as Array<{ x: number; y: number }>;
+      const idx = (this.botAI as any).pathIdx as number ?? 0;
+      for (let i = idx; i < path.length; i++) {
+        const wp = path[i];
+        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
+        dot.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromRGB(0, 255, 0, 0.6) }));
+        dot.z = 8001;
+        this.add(dot);
+        this.debugActors.push(dot);
+      }
+    }
+
+    // Draw A* paths for enemies
+    for (const e of this.level.enemies) {
+      if (e.isKilled()) continue;
+      const ePath = (e as any)._aiPath as Array<{ x: number; y: number }> | null;
+      const eIdx = (e as any)._aiPathIdx as number ?? 0;
+      if (!ePath) continue;
+      for (let i = eIdx; i < ePath.length; i++) {
+        const wp = ePath[i];
+        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
+        dot.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromRGB(255, 100, 0, 0.5) }));
+        dot.z = 8001;
+        this.add(dot);
+        this.debugActors.push(dot);
+      }
+    }
+  }
+
   // ======== HUD ========
 
   private hudEl!: HTMLDivElement;
@@ -657,6 +753,8 @@ export class GameScene extends ex.Scene {
   }
   onDeactivate(): void {
     if (this.hudEl) this.hudEl.remove();
+    if ((this as any)._debugWrap) (this as any)._debugWrap.remove();
+    this.clearDebugOverlay();
     this.botAI?.removeDebugHUD();
   }
 }

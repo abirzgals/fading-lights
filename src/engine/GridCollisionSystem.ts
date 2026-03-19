@@ -15,6 +15,8 @@ export class GridCollisionSystem {
     this.grid = new Uint8Array(gridSize * gridSize).fill(1); // all walkable
   }
 
+  getSize(): number { return this.size; }
+
   isBlocked(tx: number, ty: number): boolean {
     if (tx < 0 || ty < 0 || tx >= this.size || ty >= this.size) return true;
     return this.grid[ty * this.size + tx] === 0;

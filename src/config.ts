@@ -33,7 +33,7 @@ export const CONFIG = {
 
   // Combat
   ENEMY_MELEE_RANGE: 8,
-  PICKUP_RADIUS: 40,
+  PICKUP_RADIUS: 50,
   INTERACT_RADIUS: 60,
 
   // Fire levels: cumulative fuel added for each level
