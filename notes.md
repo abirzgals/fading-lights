@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-20 — v2.6.89: BotAI sub-profiling — break down the "input" stage
+
+### Summary
+Added per-phase timing inside `BotAI.update()` to reveal where the ~150ms "input" profiler slot is actually being spent. Three buckets are recorded each frame: `ai.context` (floodFill + resource/enemy scoring inside `buildContext`), `ai.tree` (decision tree evaluation), and `ai.execute` (goal execution — pathfinding and movement). `BotAI` stores these in `_lastPerfBreakdown` and `GameScene` reads that field immediately after the `profileStep('input', ...)` call, accumulating the values into `perfAccum` with an `"ai."` prefix so they surface in the existing HUD profiler display alongside all other stages.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Added public field `_lastPerfBreakdown: Record<string, number>` (written every frame, read by GameScene).
+  - Wrapped `buildContext`, `evaluateTree`, and `executeGoal` calls with `performance.now()` timings stored into a local `perf` object, then assigned to `_lastPerfBreakdown` at the end of `update()`.
+- `src/scenes/GameScene.ts`:
+  - After `profileStep('input', ...)`, checks for `botAI._lastPerfBreakdown` and iterates its entries, accumulating each under `"ai." + key` in `perfAccum`.
+
+### Rationale
+The top-level profiler showed "input" consuming ~150ms but gave no indication of which BotAI phase was responsible. The sub-profile breaks that black box into three measurable parts without requiring any external tooling, following the same accumulate-and-display pattern already in place for the main profiler.
+
+### Next Steps
+- Use the new `ai.context`, `ai.tree`, `ai.execute` readings to pinpoint which phase warrants optimisation (likely `ai.context` due to floodFill).
+- Consider caching floodFill results between frames when the map has not changed.
+
+---
+
 ## 2026-03-19 — v2.6.88: Per-frame performance profiler in GameScene update loop
 
 ### Summary
