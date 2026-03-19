@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-03-19 — v2.5.13: Pixel art textures for drops and resource deposits
+
+### Summary
+Replaced procedural rectangle/circle drop rendering and small placeholder deposit sprites with proper pixel art assets generated via PixelLab MCP. Drops are now 32x32 PNGs and resource deposits are 48x48 PNGs, giving all resource objects a consistent hand-crafted look.
+
+### Changes Made
+- `public/assets/pixelart/wood_drop.png` — New 32x32 firewood log/bark piece texture
+- `public/assets/pixelart/stone_drop.png` — New 32x32 grey stone chunk texture
+- `public/assets/pixelart/metal_drop.png` — New 32x32 copper/bronze ore chunk texture
+- `public/assets/pixelart/stone_deposit_new.png` — New 48x48 rocky boulder with mineral veins (replaces 20x16 placeholder)
+- `public/assets/pixelart/metal_ore_new.png` — New 48x48 metal ore formation with metallic veins (replaces 20x16 placeholder)
+- `src/engine/AssetLoader.ts`:
+  - Added `woodDrop`, `stoneDrop`, `metalDrop` image source entries
+  - Updated `stoneDeposit` and `metalOre` sources to point at the new 48x48 textures
+- `src/entities/EntityFactory.ts`:
+  - `createDrop()`: now uses pixel art textures (woodDrop / stoneDrop / metalDrop) instead of procedural colored shapes
+  - `createStone()` / `createMetal()`: anchor updated to 0.6 for better visual grounding; fallback sizes increased to match the larger sprites
+- `src/scenes/GameScene.ts`:
+  - `spawnParabolicStick()`: uses `wood_drop` texture for the animated stick projectile instead of a plain brown rectangle
+- `package.json`: version bumped 2.5.12 → 2.5.13
+
+### Rationale
+The previous drop rendering used Excalibur `Rectangle`/`Circle` graphics drawn in code — quick to implement but visually inconsistent with the rest of the game's pixel art aesthetic. The deposit sprites were tiny 20x16 placeholder images that looked out of place next to the player and enemy sprites. Using PixelLab-generated assets at consistent resolutions (32x32 for pickups, 48x48 for world objects) brings resource visuals in line with the overall art direction and makes loot drops immediately recognisable at a glance.
+
+### Next Steps
+- Audit remaining procedural graphics (e.g., bonfire base, camp structures) for pixel art replacement candidates
+- Consider adding a subtle idle animation (bob or shimmer) on floor drops to improve visibility
+- Verify the new deposit anchor (0.6) feels right on all tile backgrounds, especially near walls
+
+---
+
 ## 2026-03-19 — v2.5.12: Visual feedback for drop pickup and bonfire feeding
 
 ### Summary
