@@ -14,6 +14,9 @@ import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { BonfireAnimComponent } from '../components/BonfireAnimComponent';
+import { BuildingComponent } from '../components/BuildingComponent';
+import { BuildingType, BuildingDef } from '../types';
+import { BUILDINGS } from '../config';
 
 /**
  * Entity factory — creates game entities by assembling components.
@@ -216,6 +219,98 @@ export class EntityFactory {
 
     scene.add(drop);
     return drop;
+  }
+
+  /** Create a ghost build spot indicator (semi-transparent, pulsing) */
+  static createBuildSpotGhost(scene: ex.Scene, x: number, y: number, buildingType: BuildingType): GameEntity {
+    const ghost = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
+    ghost.entityType = 'build_spot';
+    (ghost as any).buildingType = buildingType;
+
+    const def = BUILDINGS[buildingType];
+    const size = buildingType === 'TURRET' ? 16 : buildingType === 'OUTPOST' ? 20 : 18;
+    ghost.graphics.use(new ex.Rectangle({
+      width: size, height: size,
+      color: ex.Color.fromHex('#88AAFF'),
+    }));
+    ghost.graphics.opacity = 0.3;
+
+    // Pulsing effect
+    let pulse = Math.random() * Math.PI * 2;
+    ghost.on('preupdate', () => {
+      pulse += 0.03;
+      ghost.graphics.opacity = 0.2 + Math.sin(pulse) * 0.1;
+    });
+
+    // Label
+    const label = new ex.Label({
+      text: def.name,
+      pos: ex.vec(x, y - size / 2 - 8),
+      font: new ex.Font({ family: 'monospace', size: 6, color: ex.Color.fromHex('#88AAFF'), textAlign: ex.TextAlign.Center }),
+      anchor: ex.vec(0.5, 0.5),
+    });
+    label.z = 9998;
+    scene.add(label);
+    // Track label with ghost
+    ghost.on('preupdate', () => { label.pos = ghost.pos.add(ex.vec(0, -size / 2 - 8)); });
+    ghost.on('kill', () => label.kill());
+    (ghost as any)._label = label;
+
+    scene.add(ghost);
+    return ghost;
+  }
+
+  /** Create a built building entity */
+  static createBuilding(scene: ex.Scene, x: number, y: number, buildingType: BuildingType): GameEntity {
+    const def = BUILDINGS[buildingType];
+    const building = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.5) });
+    building.entityType = 'building';
+    (building as any).buildingType = buildingType;
+
+    // Visual by type
+    const colorMap: Record<string, string> = {
+      TURRET: '#AA8844', OUTPOST: '#FFCC44', FORGE: '#CC6644',
+      WEAPON_SHOP: '#AAAACC', ARMOR_WORKSHOP: '#8888AA', FRIEND_HUT: '#66AA66',
+    };
+    const size = buildingType === 'TURRET' ? 18 : buildingType === 'OUTPOST' ? 22 : 20;
+    building.graphics.use(new ex.Rectangle({
+      width: size, height: size,
+      color: ex.Color.fromHex(colorMap[buildingType] ?? '#888888'),
+    }));
+
+    building.addComponent(new HealthComponent(def.hp));
+    building.addComponent(new BuildingComponent(buildingType));
+    building.addComponent(new GridOccupancyComponent({
+      tx: Math.floor(x / CONFIG.TILE_SIZE),
+      ty: Math.floor(y / CONFIG.TILE_SIZE),
+    }));
+
+    // Add light for outpost
+    if (buildingType === 'OUTPOST' && def.lightRadius) {
+      building.addComponent(new LightSourceComponent({
+        radius: def.lightRadius, intensity: 0.8, softness: 0.5,
+        tintR: 0.8, tintG: 0.4, tintB: 0.1, tintA: 0.08,
+      }));
+    }
+
+    // Build animation
+    building.scale = ex.vec(0, 0);
+    building.actions.scaleTo(ex.vec(1, 1), ex.vec(3, 3));
+
+    // Name label
+    const label = new ex.Label({
+      text: def.name,
+      pos: ex.vec(x, y - size / 2 - 8),
+      font: new ex.Font({ family: 'monospace', size: 6, color: ex.Color.White, textAlign: ex.TextAlign.Center }),
+      anchor: ex.vec(0.5, 0.5),
+    });
+    label.z = 9998;
+    scene.add(label);
+    building.on('preupdate', () => { label.pos = building.pos.add(ex.vec(0, -size / 2 - 8)); label.z = building.z + 0.1; });
+    building.on('kill', () => label.kill());
+
+    scene.add(building);
+    return building;
   }
 
   static createBonfire(scene: ex.Scene, x: number, y: number): GameEntity {

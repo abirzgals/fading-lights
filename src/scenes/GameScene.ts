@@ -4,8 +4,8 @@ import { FogOfWarPostProcessor, FogLight } from '../engine/FogOfWarPostProcessor
 import { EntityFactory } from '../entities/EntityFactory';
 import { AssetLoader } from '../engine/AssetLoader';
 import { Level1Script, LevelData } from '../world/LevelScript';
-import { CONFIG, ENEMIES } from '../config';
-import { EnemyType } from '../types';
+import { CONFIG, ENEMIES, BUILDINGS } from '../config';
+import { EnemyType, BuildingType } from '../types';
 import { audioEngine } from '../engine/AudioEngine';
 
 // Components for queries
@@ -18,6 +18,8 @@ import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { BotAI, BotGameState } from '../ai/BotAI';
 import { EnemyBrainSystem } from '../ai/EnemyBrainSystem';
 import { setGridSystem } from '../components/GridOccupancyComponent';
+import { BuildingComponent } from '../components/BuildingComponent';
+import { LightSourceComponent } from '../components/LightSourceComponent';
 
 const T = CONFIG.TILE_SIZE;
 
@@ -33,18 +35,32 @@ export class GameScene extends ex.Scene {
   private botEnabled = true;
   private enemyBrains!: EnemyBrainSystem;
 
-  // Game state (will move to GameStateComponent later)
+  // Game state
   private hp: number = 1000;
   private resources = { wood: 5, stone: 0, metal: 0, gold: 0 };
   private bonfireFuel = 80;
+  private campFuelAdded = 0;   // cumulative fuel (never decreases — drives level progression)
+  private campLevel = 0;       // current bonfire level (0-5)
   private kills = 0;
   private spawnTimer = 0;
-  private waveTimer = 0;       // total elapsed time in seconds
-  private waveNumber = 0;      // current wave (increases each minute)
-  private totalSpawned = 0;    // total enemies spawned this level
+  private waveTimer = 0;
+  private waveNumber = 0;
+  private totalSpawned = 0;
   private readonly MAX_ALIVE = 10;
-  private feedCooldown = 0;  // cooldown between feeding sticks (seconds)
+  private feedCooldown = 0;
   private drops: GameEntity[] = [];
+  private armorBonus = 0;      // damage reduction from Armor Workshop
+
+  // Build spots
+  private buildSpots: Array<{
+    type: BuildingType;
+    unlockLevel: number;
+    wx: number; wy: number;
+    state: 'locked' | 'unlocked' | 'built';
+    ghost?: GameEntity;
+    building?: GameEntity;
+  }> = [];
+  private buildings: GameEntity[] = [];
 
   onInitialize(engine: ex.Engine): void {
     console.log('[GameScene] initializing...');
@@ -62,6 +78,9 @@ export class GameScene extends ex.Scene {
 
     audioEngine.startMusic();
     audioEngine.startFireCrackle();
+
+    // Initialize build spots around main bonfire
+    this.initBuildSpots();
 
     // Enemy AI system
     this.enemyBrains = new EnemyBrainSystem(this.level.grid);
@@ -92,6 +111,7 @@ export class GameScene extends ex.Scene {
     this.runSpawning(dt);
     this.runDropPickup();
     this.runBonfire(dt);
+    this.runBuildSpots();
     this.updateFog();
     this.depthSort();
     this.updateHUD();
@@ -348,7 +368,7 @@ export class GameScene extends ex.Scene {
     }
   }
 
-  // ======== BONFIRE ========
+  // ======== BONFIRE + LEVEL SYSTEM ========
 
   private runBonfire(dt: number): void {
     this.bonfireFuel = Math.max(0, this.bonfireFuel - CONFIG.BONFIRE_BURN_RATE * dt);
@@ -363,14 +383,107 @@ export class GameScene extends ex.Scene {
       this.resources.wood--;
       const added = Math.min(CONFIG.FUEL_PER_WOOD, CONFIG.BONFIRE_MAX_FUEL - this.bonfireFuel);
       this.bonfireFuel = Math.min(CONFIG.BONFIRE_MAX_FUEL, this.bonfireFuel + CONFIG.FUEL_PER_WOOD);
-      this.feedCooldown = 0.5; // 0.5s between each stick
+      this.campFuelAdded += CONFIG.FUEL_PER_WOOD; // cumulative — never decreases
+      this.feedCooldown = 0.5;
 
-      // Parabolic stick animation: player → bonfire
+      // Parabolic stick animation
       this.spawnParabolicStick(player.pos.x, player.pos.y - 8, bf.pos.x, bf.pos.y - 4);
+      this.spawnFloatingText(bf.pos.x, bf.pos.y - 20, `+${Math.round(added)} fuel`, '#FF8800');
 
-      // Notification over bonfire
-      this.spawnFloatingText(bf.pos.x, bf.pos.y - 20,
-        `+${Math.round(added)} fuel`, '#FF8800');
+      // Check for level-up
+      this.checkBonfireLevelUp(bf);
+    }
+  }
+
+  private checkBonfireLevelUp(bf: GameEntity): void {
+    const levels = CONFIG.FIRE_LEVELS;
+    while (this.campLevel < levels.length - 1 &&
+           this.campFuelAdded >= levels[this.campLevel + 1]) {
+      this.campLevel++;
+      console.log(`[Bonfire] Level UP! Now level ${this.campLevel}`);
+
+      // Notification
+      this.spawnFloatingText(bf.pos.x, bf.pos.y - 32,
+        `CAMP LEVEL ${this.campLevel}!`, '#CC66FF');
+
+      // Darkness stirs warning (level 2+)
+      if (this.campLevel >= 2) {
+        setTimeout(() => {
+          this.spawnFloatingText(bf.pos.x, bf.pos.y - 44,
+            'THE DARKNESS STIRS...', '#FF2222');
+        }, 800);
+      }
+    }
+  }
+
+  // ======== BUILD SPOTS ========
+
+  private initBuildSpots(): void {
+    const bf = this.level.bonfires[0];
+    if (!bf) return;
+
+    for (const spot of CONFIG.BUILD_SPOTS) {
+      const rad = (spot.angle * Math.PI) / 180;
+      const wx = bf.pos.x + Math.cos(rad) * spot.dist * T;
+      const wy = bf.pos.y + Math.sin(rad) * spot.dist * T;
+
+      this.buildSpots.push({
+        type: spot.type as BuildingType,
+        unlockLevel: spot.unlockLevel,
+        wx, wy,
+        state: 'locked',
+      });
+    }
+  }
+
+  private runBuildSpots(): void {
+    const player = this.level.player;
+
+    for (const spot of this.buildSpots) {
+      // Unlock new spots when camp levels up
+      if (spot.state === 'locked' && this.campLevel >= spot.unlockLevel) {
+        spot.state = 'unlocked';
+        spot.ghost = EntityFactory.createBuildSpotGhost(this, spot.wx, spot.wy, spot.type);
+      }
+
+      // Auto-build for bot (or E key for human) when near unlocked spot
+      if (spot.state === 'unlocked') {
+        const dist = player.pos.distance(ex.vec(spot.wx, spot.wy));
+        if (dist < CONFIG.INTERACT_RADIUS) {
+          const def = BUILDINGS[spot.type];
+          if (this.canAfford(def.cost)) {
+            // Build it!
+            this.deductCost(def.cost);
+            if (spot.ghost) { spot.ghost.kill(); spot.ghost = undefined; }
+            spot.building = EntityFactory.createBuilding(this, spot.wx, spot.wy, spot.type);
+            spot.state = 'built';
+            this.buildings.push(spot.building);
+
+            // Init building component
+            const bc = spot.building.get(BuildingComponent) as BuildingComponent | null;
+            if (bc) bc.init(this, () => this.level.enemies);
+
+            // Apply passive effects
+            if (spot.type === 'ARMOR_WORKSHOP') this.armorBonus = 0.3;
+
+            this.spawnFloatingText(spot.wx, spot.wy - 20, `${def.name} built!`, '#44FF44');
+            console.log(`[Build] ${def.name} built at (${Math.round(spot.wx)}, ${Math.round(spot.wy)})`);
+          }
+        }
+      }
+    }
+  }
+
+  private canAfford(cost: Partial<Record<string, number>>): boolean {
+    for (const [res, amt] of Object.entries(cost)) {
+      if ((this.resources as any)[res] < (amt ?? 0)) return false;
+    }
+    return true;
+  }
+
+  private deductCost(cost: Partial<Record<string, number>>): void {
+    for (const [res, amt] of Object.entries(cost)) {
+      (this.resources as any)[res] -= amt ?? 0;
     }
   }
 
@@ -382,12 +495,24 @@ export class GameScene extends ex.Scene {
     const player = this.level.player;
     for (const bf of this.level.bonfires) {
       const fuelFrac = this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL;
-      const radius = CONFIG.BONFIRE_MIN_RADIUS + fuelFrac * (CONFIG.BONFIRE_BASE_RADIUS - CONFIG.BONFIRE_MIN_RADIUS);
+      const levelMult = 1.0 + this.campLevel * 0.5; // +50% per level
+      const baseRadius = CONFIG.BONFIRE_MIN_RADIUS + fuelFrac * (CONFIG.BONFIRE_BASE_RADIUS - CONFIG.BONFIRE_MIN_RADIUS);
+      const radius = baseRadius * levelMult;
       const t = performance.now(), seed = bf.pos.x * 7.3 + bf.pos.y * 13.1;
       const screen = this.engine.worldToScreenCoordinates(bf.pos.add(ex.vec(
         Math.sin(t * 0.003 + seed) * 4, Math.cos(t * 0.004 + seed * 1.3) * 3)));
       lights.push({ x: screen.x, y: screen.y, radius: radius * zoom, intensity: 1.0, softness: 0.5,
         tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12 });
+    }
+    // Outpost lights
+    for (const b of this.buildings) {
+      if (b.isKilled()) continue;
+      const light = b.get(LightSourceComponent) as LightSourceComponent | null;
+      if (light) {
+        const bs = this.engine.worldToScreenCoordinates(b.pos);
+        lights.push({ x: bs.x, y: bs.y, radius: light.radius * zoom, intensity: light.intensity, softness: light.softness,
+          tintR: light.tintR, tintG: light.tintG, tintB: light.tintB, tintA: light.tintA });
+      }
     }
     const ps = this.engine.worldToScreenCoordinates(player.pos);
     lights.push({ x: ps.x, y: ps.y, radius: 60 * zoom, intensity: 0.85, softness: 0.5,
@@ -416,9 +541,22 @@ export class GameScene extends ex.Scene {
     const fuelPct = Math.round(this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL * 100);
     const hpBar = '█'.repeat(Math.min(10, Math.round(this.hp / 100))) + '░'.repeat(Math.max(0, 10 - Math.round(this.hp / 100)));
     const fuelBar = '█'.repeat(Math.round(fuelPct / 10)) + '░'.repeat(10 - Math.round(fuelPct / 10));
+    // Camp level progress
+    const levels = CONFIG.FIRE_LEVELS;
+    const isMax = this.campLevel >= levels.length - 1;
+    let lvlProgress = 100;
+    if (!isMax) {
+      const prev = levels[this.campLevel];
+      const next = levels[this.campLevel + 1];
+      lvlProgress = Math.round(((this.campFuelAdded - prev) / (next - prev)) * 100);
+    }
+    const lvlBar = '█'.repeat(Math.round(lvlProgress / 10)) + '░'.repeat(10 - Math.round(lvlProgress / 10));
+    const lvlLabel = isMax ? `Lv.${this.campLevel} MAX` : `Lv.${this.campLevel}`;
+
     this.hudEl.innerHTML = `
       <span style="color:#44FF44">HP [${hpBar}] ${Math.round(this.hp)}</span><br>
       <span style="color:#FF8800">FIRE [${fuelBar}] ${fuelPct}%</span><br>
+      <span style="color:#CC66FF">CAMP [${lvlBar}] ${lvlLabel}</span><br>
       <span style="color:#AA8844">Wood ${this.resources.wood}</span> ·
       <span style="color:#888">Stone ${this.resources.stone}</span> ·
       <span style="color:#CC8844">Metal ${this.resources.metal}</span> ·

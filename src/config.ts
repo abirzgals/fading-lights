@@ -36,8 +36,21 @@ export const CONFIG = {
   PICKUP_RADIUS: 40,
   INTERACT_RADIUS: 60,
 
-  // Fire levels: fuel needed for each level
+  // Fire levels: cumulative fuel added for each level
   FIRE_LEVELS: [0, 25, 60, 110, 175, 275] as readonly number[],
+
+  // Build spots around bonfire (angle in degrees, dist in tiles)
+  BUILD_SPOTS: [
+    { type: 'TURRET'         as BuildingType, angle: 0,    dist: 3, unlockLevel: 1 },
+    { type: 'TURRET'         as BuildingType, angle: 180,  dist: 3, unlockLevel: 1 },
+    { type: 'OUTPOST'        as BuildingType, angle: 90,   dist: 4, unlockLevel: 2 },
+    { type: 'FORGE'          as BuildingType, angle: 270,  dist: 3, unlockLevel: 2 },
+    { type: 'ARMOR_WORKSHOP' as BuildingType, angle: 45,   dist: 4, unlockLevel: 3 },
+    { type: 'WEAPON_SHOP'    as BuildingType, angle: 135,  dist: 3, unlockLevel: 3 },
+    { type: 'OUTPOST'        as BuildingType, angle: 225,  dist: 4, unlockLevel: 4 },
+    { type: 'TURRET'         as BuildingType, angle: 315,  dist: 3, unlockLevel: 4 },
+    { type: 'FRIEND_HUT'    as BuildingType, angle: 160,  dist: 4, unlockLevel: 5 },
+  ],
 } as const;
 
 export const WEAPONS: Record<string, WeaponDef> = {

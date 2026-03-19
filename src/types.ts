@@ -65,6 +65,14 @@ export interface BuildingDef {
   spawnsAlly?: boolean;
 }
 
+/** Build spot configuration */
+export interface BuildSpotConfig {
+  type: BuildingType;
+  angle: number;
+  dist: number;
+  unlockLevel: number;
+}
+
 /** Light source data for fog shader */
 export interface LightData {
   sx: number;   // screen X
