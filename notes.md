@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.74: Fix BotAI — walk directly toward target when PathFollower arrives too far away
+
+### Summary
+When PathFollower reported "arrived" but the bot was still outside attack range (>50px for resources, >ATTACK_REACH for enemies), the bot was previously setting `goalAge=999` and giving up entirely. The fix changes that branch to instead walk the bot directly toward the target using a normalized direction vector. Grid collision handles wall sliding, so the bot will slide along rocks and close the remaining gap rather than abandoning the goal.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Kill goal — replaced `goalAge = 999` on `arrived && dist >= ATTACK_REACH` with a direct-walk vector toward the enemy.
+- `src/ai/BotAI.ts`: Chop/mine goal — restructured `arrived` branch: when `distToTarget < 50` attack as before; otherwise walk directly toward the resource instead of giving up.
+
+### Rationale
+The target was genuinely reachable — the bot just needed a small amount of direct movement to close the last few pixels that A* pathing left unresolved (e.g., bot stopped one tile short of a resource node). Abandoning the goal in that case caused the bot to stall repeatedly without ever attacking.
+
+### Next Steps
+- Monitor whether the direct-walk fallback causes any cases where the bot loops forever against a truly wall-blocked target (the `unreachable` flag should catch those, but worth observing).
+- Consider a short timeout on the direct-walk phase to self-abort if no progress is made.
+
+---
+
 ## 2026-03-19 — v2.6.73: Validate all enemy targets against wave reachability in BotAI
 
 ### Summary

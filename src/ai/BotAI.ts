@@ -993,7 +993,12 @@ export class BotAI {
           // A* pathfind to enemy
           const dir = this.moveToWithPathfinding(enemy.pos.x, enemy.pos.y);
           if (this.pathFollower.unreachable) { this.goalAge = 999; break; }
-          if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) { this.goalAge = 999; break; }
+          if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) {
+            // Walk directly — grid collision will slide along walls
+            const toE = this.dirTo(ctx.player.pos, enemy.pos.x, enemy.pos.y);
+            vx = toE.x; vy = toE.y;
+            break;
+          }
           vx = dir.x; vy = dir.y;
           // Evasion while approaching — weave to avoid projectiles
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
@@ -1051,15 +1056,17 @@ export class BotAI {
         }
 
         if (this.pathFollower.arrived) {
-          // Arrived at approach tile — check if close enough to attack
-          if (distToTarget >= 50) {
-            // Arrived but still too far — target unreachable from here
-            this.goalAge = 999;
-            break;
+          if (distToTarget < 50) {
+            // Close enough — attack
+            attack = true;
+            const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+            vx = toRes.x * 0.01; vy = toRes.y * 0.01;
+          } else {
+            // Arrived at approach tile but still too far — walk directly toward target
+            // Grid collision will slide along walls
+            const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+            vx = toRes.x; vy = toRes.y;
           }
-          attack = true;
-          const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
-          vx = toRes.x * 0.01; vy = toRes.y * 0.01;
         } else {
           // Still moving toward target
           vx = dir.x; vy = dir.y;
