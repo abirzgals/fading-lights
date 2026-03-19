@@ -5,6 +5,7 @@ import { HealthComponent } from '../components/HealthComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { AssetLoader } from '../engine/AssetLoader';
 import { EntityFactory } from '../entities/EntityFactory';
+import { ShadowCasterComponent } from '../components/ShadowCasterComponent';
 import { CONFIG, ENEMIES } from '../config';
 import { EnemyType } from '../types';
 
@@ -210,6 +211,7 @@ export class NetworkSync {
         walkFrameRate: 10,
         fallback: { width: 16, height: 24, color: ex.Color.fromHex('#44AAFF') },
       }));
+      entity.addComponent(new ShadowCasterComponent({ feetOffset: 10 }));
       this.scene.add(entity);
 
       const name = msg.fromName ?? `P${peerId}`;
