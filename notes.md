@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.83: Sync drop pickup fly animation to all clients
+
+### Summary
+Drop pickups now show the fly animation on every connected client, not just the player who picked up the item. The network message was extended to carry the picking player's world position, and remote clients use that to play the same arc + shrink animation (300 ms) before removing the drop.
+
+### Changes Made
+- `src/network/NetworkSync.ts`:
+  - `sendDropPickup()` now accepts `playerX, playerY` and includes `px, py` in the network message.
+  - `onDropPickup` callback signature extended to include `playerX, playerY`.
+  - `onDropPickupMsg` forwards the new fields to the callback.
+- `src/scenes/GameScene.ts`:
+  - Local pickup call passes `player.pos.x, player.pos.y` to `sendDropPickup`.
+  - `onDropPickup` handler now runs the full fly animation (arc + shrink via `preupdate`) on the remote drop before killing it, instead of immediately deleting it.
+
+### Rationale
+Remote clients previously saw drops disappear instantly when another player collected them, which looked jarring. Reusing the same 300 ms fly animation makes the pickup feel consistent regardless of which client is watching.
+
+---
+
 ## 2026-03-19 — v2.6.82: Complete multiplayer synchronization — drops, buildings, full state
 
 ### Summary
