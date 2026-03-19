@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.56: Improve HitEffectComponent — rotation shake + scale/opacity flash
+
+### Summary
+Overhauled the two hit-feedback modes in `HitEffectComponent`. Tree shake now rotates around the anchor point (trunk base) for natural leaf sway instead of shifting `pos.x`. Stone/metal flash replaces the broken white-tint approach with a two-pulse scale + opacity blink.
+
+### Changes Made
+- `src/components/HitEffectComponent.ts` — Shake mode: oscillates `actor.rotation` with decaying amplitude (±4.5 degrees over 300ms); rotation pivots at the trunk base because the sprite anchor is (0.5, 0.8), so the crown sways naturally. Flash mode: replaced `g.tint = ex.Color.White` (which had no visible effect because Excalibur tints multiply, and White = no change) with a two-pulse pattern — grow to 1.12x scale + dim to 0.6 opacity, then a smaller 1.05x pulse, resetting fully after 150ms. Internal timer/phase state consolidated from four fields down to two.
+- `package.json` — Version bumped to 2.6.56.
+
+### Rationale
+The original `pos.x` shake was jarring and left the entity displaced if the frame budget was missed. Rotation around the trunk base is physically correct for a tree and matches how Excalibur's anchor system works. The white-tint flash was silently broken since day one — multiplying by White is a no-op in Excalibur's rendering pipeline. The scale+opacity approach is engine-agnostic and clearly perceptible without being disruptive.
+
+### Next Steps
+- The 30px facing bonus in `GameScene` targeting may need tuning once the improved shake is playtested with dense tree clusters.
+- Consider adding a separate flash variant for player/enemy melee hits now that the pattern is proven.
+
+---
+
 ## 2026-03-19 — v2.6.55: HitEffectComponent — shake/flash on resource hit + facing-priority targeting
 
 ### Summary
