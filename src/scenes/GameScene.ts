@@ -398,6 +398,8 @@ export class GameScene extends ex.Scene {
     // Pick random stump variant
     const variants = AssetLoader.stumpVariants;
     const variant = variants[Math.floor(Math.random() * variants.length)];
+    // Draw stump at 25% size (textures are 32x32, we want ~8x8)
+    stump.scale = ex.vec(0.25, 0.25);
     if (variant?.isLoaded()) {
       stump.graphics.use(variant.toSprite());
     } else {
