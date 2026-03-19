@@ -14,6 +14,7 @@ import { MeleeAttackComponent } from '../components/MeleeAttackComponent';
 import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { BonfireAnimComponent } from '../components/BonfireAnimComponent';
+import { ShadowCasterComponent } from '../components/ShadowCasterComponent';
 import { BuildingComponent } from '../components/BuildingComponent';
 import { BuildingType, BuildingDef } from '../types';
 import { BUILDINGS } from '../config';
@@ -44,6 +45,7 @@ export class EntityFactory {
     player.addComponent(new MeleeAttackComponent({
       damage: 10, range: 32, cooldownMs: 800, damageFrame: 2, totalFrames: 3, arcDeg: 120,
     }));
+    player.addComponent(new ShadowCasterComponent({ width: 16, height: 6 }));
 
     scene.add(player);
 
@@ -118,6 +120,9 @@ export class EntityFactory {
       }));
     }
 
+    // Shadow
+    enemy.addComponent(new ShadowCasterComponent({ width: def.size, height: Math.max(4, def.size * 0.3) }));
+
     // Fade in
     enemy.graphics.opacity = 0;
     enemy.actions.fade(1, 600);
@@ -140,6 +145,7 @@ export class EntityFactory {
     tree.addComponent(new HealthComponent(30));
     tree.addComponent(new GridOccupancyComponent({ tx, ty }));
     tree.addComponent(new ResourceComponent('wood', CONFIG.WOOD_PER_TREE));
+    tree.addComponent(new ShadowCasterComponent({ width: 18, height: 8 }));
 
     scene.add(tree);
     return tree;

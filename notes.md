@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.3: Dynamic shadow rendering system
+
+### Summary
+Added a `ShadowCasterComponent` that renders a soft ellipse shadow beneath every game entity. Shadows are directionally stretched away from the nearest active light source (bonfire or outpost building), scale in length with proximity to the light, and fade out at the edge of a light's radius. The component is wired onto players, enemies, and trees, and GameScene updates the shared static light list each frame.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts` (new): Excalibur `Component` that spawns a child `Actor` rendered as a dark ellipse (circle scaled on Y) at z - 0.5 below its owner. Each `onPreUpdate` it locates the nearest light source within range, computes the angle away from it, offsets the shadow actor to the entity's feet in that direction, stretches the scale proportionally to proximity, and fades opacity between 5% (edge) and 30% (center). Light sources are injected via the static `ShadowCasterComponent.lightSources` array to avoid per-component scene queries.
+- `src/entities/EntityFactory.ts`: Added `ShadowCasterComponent` to player (16x6), enemies (width = `def.size`, height = `max(4, size * 0.3)`), and trees (18x8).
+- `src/scenes/GameScene.ts`: In the existing per-frame update loop, constructs a `shadowLights` array from all active bonfires (using the same fuel/level radius formula as the fog system) and any buildings with a `LightSourceComponent`, then assigns it to `ShadowCasterComponent.lightSources`.
+
+### Rationale
+The game already has a dynamic fog/light system but shadows were absent, making entities look flat and disconnected from the ground. Ellipse shadows with direction from light sources add readable depth and reinforce which light is illuminating each character. Using a scaled Circle avoids Excalibur's lack of a native Ellipse graphic. Sharing light sources via a static property rather than querying the scene per-entity keeps the update O(entities * lights) with no additional scene traversal cost.
+
+### Next Steps
+- Tune shadow length and opacity constants based on playtesting feedback
+- Consider hiding shadows for entities outside any light radius (currently they disappear naturally at opacity < 0.05)
+- Evaluate adding a subtle shadow to projectiles
+
+---
+
 ## 2026-03-19 — v2.6.2: Melee enemies fight to death; bonfire blocks tile
 
 ### Summary

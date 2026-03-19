@@ -20,6 +20,7 @@ import { EnemyBrainSystem } from '../ai/EnemyBrainSystem';
 import { setGridSystem } from '../components/GridOccupancyComponent';
 import { BuildingComponent } from '../components/BuildingComponent';
 import { LightSourceComponent } from '../components/LightSourceComponent';
+import { ShadowCasterComponent } from '../components/ShadowCasterComponent';
 
 const T = CONFIG.TILE_SIZE;
 
@@ -494,6 +495,22 @@ export class GameScene extends ex.Scene {
     const lights: FogLight[] = [];
     const zoom = this.camera.zoom;
     const player = this.level.player;
+
+    // Update shadow light sources (world coordinates)
+    const shadowLights: Array<{ x: number; y: number; radius: number }> = [];
+    for (const bf of this.level.bonfires) {
+      const fuelFrac = this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL;
+      const levelMult = 1.0 + this.campLevel * 0.5;
+      const r = (CONFIG.BONFIRE_MIN_RADIUS + fuelFrac * (CONFIG.BONFIRE_BASE_RADIUS - CONFIG.BONFIRE_MIN_RADIUS)) * levelMult;
+      shadowLights.push({ x: bf.pos.x, y: bf.pos.y, radius: r });
+    }
+    for (const b of this.buildings) {
+      if (b.isKilled()) continue;
+      const light = b.get(LightSourceComponent) as LightSourceComponent | null;
+      if (light) shadowLights.push({ x: b.pos.x, y: b.pos.y, radius: light.radius });
+    }
+    ShadowCasterComponent.lightSources = shadowLights;
+
     for (const bf of this.level.bonfires) {
       const fuelFrac = this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL;
       const levelMult = 1.0 + this.campLevel * 0.5; // +50% per level
