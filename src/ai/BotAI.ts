@@ -686,26 +686,43 @@ export class BotAI {
       }
     }
 
-    // Best resource per type — balanced score (player dist + camp dist)
-    // Stores references to actual GameEntity — auto-invalidates when entity is killed
+    // BFS flood-fill from player — find all reachable tiles (wave algorithm)
+    // Only resources on reachable tiles are valid candidates
+    const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+
+    // Best resource per type — only from reachable tiles
     const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
+    let bestOverallScore = Infinity;
+
     for (const e of this.getEntities()) {
       if (e.isKilled()) continue;
       const rc = e.get(ResourceComponent) as ResourceComponent | null;
       if (!rc) continue;
       const rType = rc.resourceType;
+
+      // Check if resource tile (or any adjacent tile) is reachable
+      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
+      let isReachable = false;
+      for (let dx = -1; dx <= 1 && !isReachable; dx++) {
+        for (let dy = -1; dy <= 1 && !isReachable; dy++) {
+          if (reachable.has(`${etx + dx},${ety + dy}`)) isReachable = true;
+        }
+      }
+      if (!isReachable) continue; // can't reach this resource — skip
+
       const distToPlayer = p.pos.distance(e.pos);
       const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : distToPlayer;
       if (distToCamp > this.GATHER_RANGE * 1.5) continue;
       const score = distToPlayer * 0.6 + distToCamp * 0.4;
+
       const prev = bestResourceByType[rType];
       if (!prev || score < prev.score) {
         bestResourceByType[rType] = { entity: e, dist: distToPlayer, score };
       }
-      // Also track overall nearest
-      if (score < (nearestResource ? p.pos.distance(nearestResource.pos) * 0.6 + (bonfire ? nearestResource.pos.distance(bonfire.pos) : 0) * 0.4 : Infinity)) {
+      if (score < bestOverallScore) {
+        bestOverallScore = score;
         nearestResource = e;
         nearestResourceDist = distToPlayer;
       }

@@ -38,6 +38,40 @@ export class GridCollisionSystem {
     return { tx: Math.floor(wx / this.tileSize), ty: Math.floor(wy / this.tileSize) };
   }
 
+  /** BFS flood-fill from a world position. Returns set of reachable tile keys "tx,ty" within maxTiles. */
+  floodFill(wx: number, wy: number, maxTiles: number = 200): Set<string> {
+    const T = this.tileSize;
+    const sx = Math.floor(wx / T), sy = Math.floor(wy / T);
+    const visited = new Set<string>();
+    const queue: Array<{ x: number; y: number }> = [];
+
+    if (this.isBlocked(sx, sy)) {
+      // Start from nearest walkable
+      const fix = this.pushOutOfBlocked(wx, wy);
+      if (!fix) return visited;
+      const fx = Math.floor(fix.x / T), fy = Math.floor(fix.y / T);
+      visited.add(`${fx},${fy}`);
+      queue.push({ x: fx, y: fy });
+    } else {
+      visited.add(`${sx},${sy}`);
+      queue.push({ x: sx, y: sy });
+    }
+
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+    while (queue.length > 0 && visited.size < maxTiles) {
+      const cur = queue.shift()!;
+      for (const [dx, dy] of dirs) {
+        const nx = cur.x + dx, ny = cur.y + dy;
+        const key = `${nx},${ny}`;
+        if (visited.has(key)) continue;
+        if (this.isBlocked(nx, ny)) continue;
+        visited.add(key);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+    return visited;
+  }
+
   /** If position is inside a blocked tile, return nearest walkable position. Otherwise return null. */
   pushOutOfBlocked(wx: number, wy: number): { x: number; y: number } | null {
     const T = this.tileSize;
