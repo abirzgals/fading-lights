@@ -993,12 +993,20 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
 
-        // Always run pathfinder — it handles everything
+        // If close enough to attack (within 2 tiles), just attack — don't re-path
+        const dist = ctx.player.pos.distance(target.pos);
+        if (dist < 56) {
+          attack = true;
+          vx = 0; vy = 0;
+          break;
+        }
+
+        // Move toward target
         const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
 
         // Unreachable — can't path to this resource, give up goal
         if (this.pathFollower.unreachable) {
-          this.goalAge = 999; // force re-evaluation next frame
+          this.goalAge = 999;
           break;
         }
 
