@@ -651,12 +651,12 @@ export class BotAI {
         const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
         if (ai && ai.damage >= 15) strongEnemyClose = true;
       }
-      // Enemy near bonfire — defend camp
+      // Enemy near bonfire — defend camp (reachability checked after wave)
       if (bonfire) {
         const campDist = e.pos.distance(bonfire.pos);
         if (campDist < this.CAMP_DEFENSE_RANGE && campDist < enemyNearCampDist) {
           enemyNearCampDist = campDist;
-          enemyNearCamp = e;
+          enemyNearCamp = e; // will be validated by wave below
         }
       }
     }
@@ -711,6 +711,19 @@ export class BotAI {
         }
       }
     }
+
+    // Validate all targets against wave reachability
+    const isEnemyReachable = (e: GameEntity): boolean => {
+      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
+      if (reachable.has(`${etx},${ety}`)) return true;
+      for (let ddx = -1; ddx <= 1; ddx++)
+        for (let ddy = -1; ddy <= 1; ddy++)
+          if ((ddx !== 0 || ddy !== 0) && !this.grid.isBlocked(etx + ddx, ety + ddy) && reachable.has(`${etx + ddx},${ety + ddy}`))
+            return true;
+      return false;
+    };
+    if (enemyNearCamp && !isEnemyReachable(enemyNearCamp)) enemyNearCamp = null;
+    if (projectileAttacker && !isEnemyReachable(projectileAttacker)) projectileAttacker = null;
 
     // Best resource per type — only from reachable tiles (wave computed above)
     const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
