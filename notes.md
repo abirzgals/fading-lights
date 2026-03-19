@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.86: FPS counter in HUD — color-coded by performance tier
+
+### Summary
+Added a live FPS counter to the top of the HUD info panel. The counter updates once per second and changes color based on performance: green at 50+ fps, yellow at 30-49 fps, red below 30 fps. This gives an at-a-glance read on frame rate during play without needing external tooling.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added three fields: `fpsFrames`, `fpsTimer`, `fpsDisplay` to accumulate and sample frame count each second.
+  - In `onPreUpdate`, increments `fpsFrames` and `fpsTimer` each tick; when the timer reaches 1 second, snapshots `fpsDisplay` and resets both accumulators.
+  - In the HUD render method, inserts a color-coded `<span>` as the first line: green (#44FF44) for ≥50 fps, yellow (#FFAA00) for ≥30 fps, red (#FF4444) for <30 fps.
+
+### Rationale
+Frame-rate visibility helps identify performance regressions during development and gives players feedback when the game is struggling. The one-second sampling interval keeps the display stable and readable without per-frame flicker.
+
+### Next Steps
+- Consider toggling the FPS display off in production builds or behind a debug flag.
+
+---
+
 ## 2026-03-19 — v2.6.85: Mobile performance optimizations — remove hot-path allocations and static actor overhead
 
 ### Summary
