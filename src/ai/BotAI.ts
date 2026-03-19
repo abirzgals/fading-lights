@@ -1067,16 +1067,26 @@ export class BotAI {
       }
 
       case 'pickup': {
-        // Check if any drop still exists near target — if not, goal is done
-        const hasDropNearby = this.gameState.drops.some(d =>
-          Math.hypot(d.x - goal.x!, d.y - goal.y!) < 40
-        );
-        if (!hasDropNearby) {
-          this.goalAge = 999; // drop collected — re-evaluate
+        // Find the actual nearest drop (use current position, not cached goal coords)
+        let closestDrop: { x: number; y: number } | null = null;
+        let closestDropDist = Infinity;
+        for (const d of this.gameState.drops) {
+          const dd = Math.hypot(d.x - ctx.player.pos.x, d.y - ctx.player.pos.y);
+          if (dd < closestDropDist) { closestDropDist = dd; closestDrop = d; }
+        }
+        if (!closestDrop) {
+          this.goalAge = 999; // no drops left
           break;
         }
-        const dir = this.moveToWithPathfinding(goal.x!, goal.y!);
-        vx = dir.x; vy = dir.y;
+        // Walk directly to drop — no A* needed, drops are on walkable tiles
+        const ddx = closestDrop.x - ctx.player.pos.x;
+        const ddy = closestDrop.y - ctx.player.pos.y;
+        const ddLen = Math.hypot(ddx, ddy);
+        if (ddLen > 4) {
+          vx = ddx / ddLen; vy = ddy / ddLen;
+        }
+        // Update goal coords for debug intent line
+        goal.x = closestDrop.x; goal.y = closestDrop.y;
         break;
       }
 

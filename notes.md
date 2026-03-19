@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.60: Fix pickup goal — bot walks directly to nearest drop each frame
+
+### Summary
+The bot pickup goal no longer uses A* pathfinding to reach drops. Instead it finds the nearest drop from the current player position on every frame and walks directly toward it. The goal coordinates are also updated each frame for the debug intent line. If no drops remain the goal is immediately abandoned and re-evaluated.
+
+### Changes Made
+- `src/ai/BotAI.ts`
+  - `case 'pickup'`: replaced `moveToWithPathfinding(goal.x!, goal.y!)` with a direct per-frame nearest-drop search using the current player position.
+  - Bot iterates `this.gameState.drops`, finds the closest by Euclidean distance, and sets `vx`/`vy` to the normalised direction vector when further than 4 px.
+  - `goal.x` and `goal.y` are updated to the closest drop position every tick so the debug intent line stays accurate.
+  - Removed the stale `hasDropNearby` check (which tested proximity to the old cached goal coordinates) and replaced it with a simple `!closestDrop` guard.
+- `package.json` — Version bumped to 2.6.60.
+
+### Rationale
+`moveToWithPathfinding` could report `arrived` or `unreachable` for drops that were nearby but not exactly on a pathfinding node, causing the bot to stall or bail out of the goal prematurely. Drops always land on walkable tiles, so no obstacle avoidance is necessary — a direct walk vector is both simpler and more reliable.
+
+### Next Steps
+- Monitor whether the 4 px arrival threshold is sufficient for the bot to actually collect the drop via the existing pickup trigger radius.
+- Consider a similar direct-walk approach for any other goal types targeting objects known to be on walkable tiles.
+
 ## 2026-03-19 — v2.6.59: Filter unreachable enemies via wave flood-fill in BotAI
 
 ### Summary
