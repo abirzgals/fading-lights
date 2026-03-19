@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.39: Fix BotAI direct-move threshold 100px -> 32px
+
+### Summary
+Reduced the distance threshold that bypasses A* pathfinding from 100px down to 32px (one tile). Bots were walking straight into walls and getting stuck whenever an obstacle sat between them and their target at close range.
+
+### Root Cause
+`moveToWithPathfinding()` had a short-circuit: if the straight-line distance was under 100px it skipped A* and moved directly. At that range the bot can easily be separated from its target by a wall or object, resulting in it pressing into the obstacle indefinitely.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Direct-move threshold lowered from `< 100` to `< 32`. A* is now used for any distance beyond the same tile.
+
+### Rationale
+32px is one tile width, meaning the bot and target are in the same grid cell. At that scale there is no room for an obstacle to intervene, so skipping A* is safe. Anything farther should route properly.
+
+### Next Steps
+- Monitor whether any edge cases remain where 32px still allows wall-clipping at tile boundaries.
+
+---
+
 ## 2026-03-19 — v2.6.38: Fix bot pathfinding to approach blocked tiles from nearest side
 
 ### Summary
