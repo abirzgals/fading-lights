@@ -682,34 +682,60 @@ export class GameScene extends ex.Scene {
       }
     }
 
-    // Draw A* paths for player bot
+    // Draw A* paths with lines + dots
+    const drawPath = (
+      points: Array<{ x: number; y: number }>,
+      startIdx: number,
+      startPos: { x: number; y: number },
+      dotColor: ex.Color,
+      lineColor: ex.Color,
+    ) => {
+      let prevX = startPos.x, prevY = startPos.y;
+      for (let i = startIdx; i < points.length; i++) {
+        const wp = points[i];
+        // Line from prev to current
+        const dx = wp.x - prevX, dy = wp.y - prevY;
+        const len = Math.hypot(dx, dy);
+        if (len > 1) {
+          const line = new ex.Actor({
+            pos: ex.vec((prevX + wp.x) / 2, (prevY + wp.y) / 2),
+            anchor: ex.vec(0.5, 0.5),
+          });
+          line.graphics.use(new ex.Rectangle({ width: len, height: 1.5, color: lineColor }));
+          line.rotation = Math.atan2(dy, dx);
+          line.z = 8001;
+          this.add(line);
+          this.debugActors.push(line);
+        }
+        // Dot at waypoint
+        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
+        dot.graphics.use(new ex.Circle({ radius: 3, color: dotColor }));
+        dot.z = 8002;
+        this.add(dot);
+        this.debugActors.push(dot);
+        prevX = wp.x; prevY = wp.y;
+      }
+    };
+
+    // Player bot path (green)
     if (this.botAI && (this.botAI as any).path) {
       const path = (this.botAI as any).path as Array<{ x: number; y: number }>;
       const idx = (this.botAI as any).pathIdx as number ?? 0;
-      for (let i = idx; i < path.length; i++) {
-        const wp = path[i];
-        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
-        dot.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromRGB(0, 255, 0, 0.6) }));
-        dot.z = 8001;
-        this.add(dot);
-        this.debugActors.push(dot);
-      }
+      const player = this.level.player;
+      drawPath(path, idx, { x: player.pos.x, y: player.pos.y },
+        ex.Color.fromRGB(0, 255, 0, 0.8),
+        ex.Color.fromRGB(0, 255, 0, 0.4));
     }
 
-    // Draw A* paths for enemies
+    // Enemy paths (orange)
     for (const e of this.level.enemies) {
       if (e.isKilled()) continue;
       const ePath = (e as any)._aiPath as Array<{ x: number; y: number }> | null;
       const eIdx = (e as any)._aiPathIdx as number ?? 0;
       if (!ePath) continue;
-      for (let i = eIdx; i < ePath.length; i++) {
-        const wp = ePath[i];
-        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
-        dot.graphics.use(new ex.Circle({ radius: 2, color: ex.Color.fromRGB(255, 100, 0, 0.5) }));
-        dot.z = 8001;
-        this.add(dot);
-        this.debugActors.push(dot);
-      }
+      drawPath(ePath, eIdx, { x: e.pos.x, y: e.pos.y },
+        ex.Color.fromRGB(255, 100, 0, 0.7),
+        ex.Color.fromRGB(255, 100, 0, 0.3));
     }
   }
 
