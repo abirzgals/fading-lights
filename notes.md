@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.59: Filter unreachable enemies via wave flood-fill in BotAI
+
+### Summary
+Enemy selection in the bot AI now uses the same wave flood-fill reachability check that was already applied to resources. Enemies that cannot be reached by the pathfinder are excluded before scoring. Kill goal execution also gains two bail-out conditions: path declared unreachable, or arrived but still outside attack range. The flood-fill itself was moved earlier in the context builder so both the enemy pass and the resource pass share one computation.
+
+### Changes Made
+- `src/ai/BotAI.ts`
+  - Wave flood-fill (`grid.floodFill`) relocated to run before the `bestEnemy` loop instead of just before the resource loop, eliminating duplicate BFS work.
+  - `bestEnemy` loop: after sight-range check, tests whether the enemy tile (or any non-blocked adjacent tile) is present in the reachable wave set; enemies that fail are skipped with `continue`.
+  - Kill goal `case 'kill'`: added `isDying` guard alongside `isKilled` at entry. After calling `moveToWithPathfinding`, two new bail-outs force `goalAge = 999` to abandon the goal — `pathFollower.unreachable` (no path exists at all) and `pathFollower.arrived && dist >= ATTACK_REACH` (arrived at closest navigable point but enemy is still out of reach).
+  - Removed two stale inline comments that were no longer accurate.
+- `package.json` — Version bumped to 2.6.59.
+
+### Rationale
+Bots were pathing toward enemies behind walls or across impassable terrain, wasting goal budget and producing visually broken behaviour (bot stands at a wall perpetually). Reusing the existing wave result for enemy filtering mirrors how resources are already handled and keeps the reachability logic consistent. The kill-goal bail-outs prevent the bot from getting stuck in an infinite approach loop when geometry means it literally cannot reach the target.
+
+### Next Steps
+- Verify the adjacent-tile reachability check (1-tile neighbourhood) does not create false negatives for enemies standing on wall-edge tiles with only diagonal exits.
+- Consider exposing a dedicated `canReach(pos)` helper on the grid/pathfinder to centralise this pattern rather than repeating tile-neighbourhood logic at each call site.
+
 ## 2026-03-19 — v2.6.58: Stronger hit effects — bigger tree shake and 3-phase stone/metal flash
 
 ### Summary
