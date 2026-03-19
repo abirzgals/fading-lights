@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.57: Fix bot stopping 2 tiles from target (BotAI adjacency check)
+
+### Summary
+BotAI for chop/mine tasks now verifies true adjacency after `PathFollower.arrived`. If the pathfinder reports arrival at an approach tile that is not a direct neighbor of the resource (dx > 1 or dy > 1), the bot forces `goalAge = 999` to trigger re-evaluation and selection of a closer or more reachable resource tile.
+
+### Changes Made
+- `src/ai/BotAI.ts` — In the chop/mine arrived branch, added an `isDirectNeighbor` guard. If arrived but not adjacent, sets `goalAge = 999` and breaks out of the action loop, forcing goal re-evaluation on the next tick instead of standing frozen at the approach tile.
+- `package.json` — Version bumped to 2.6.57.
+
+### Rationale
+`PathFollower.arrived` fires when the bot reaches the end of its computed path, but the path endpoint can be the tile adjacent to an obstacle rather than the tile adjacent to the resource. Previously the bot would interpret arrival as task completion and idle indefinitely. The adjacency check catches this mismatch and recovers gracefully by discarding the current goal rather than looping forever on an unreachable target.
+
+### Next Steps
+- Monitor whether goalAge reset causes thrashing on maps with genuinely unreachable resources — may need a backoff counter or a cooldown before re-evaluating the same resource.
+- PathFollower temp log confirmed already removed prior to this commit.
+
+---
+
 ## 2026-03-19 — v2.6.56: Improve HitEffectComponent — rotation shake + scale/opacity flash
 
 ### Summary
