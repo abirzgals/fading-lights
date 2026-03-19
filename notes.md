@@ -2,6 +2,36 @@
 
 ---
 
+## 2026-03-19 — v2.6.24: Fix bot stuck trying to build — affordability + build spot snapping
+
+### Summary
+Three coordinated fixes eliminate the bug where bots would walk to a build spot but then stand there indefinitely, unable to actually construct anything.
+
+1. **BotAI — inventory-only affordability check**: The bot's affordability calculation previously summed inventory resources AND drops lying on the ground. This caused the bot to believe it could afford a build, walk to the spot, then fail because the drops were never picked up. Now only inventory contents are counted; the bot routes through "Gather for Build" to collect drops or mine resources before attempting construction.
+
+2. **BotAI — shouldSwitchGoal build escape**: Added a guard that immediately returns `true` (switch goal) when the current goal is `'build'` but `affordableBuildSpot` is `null`. Prevents the bot from standing at a build spot indefinitely after resource counts change mid-goal.
+
+3. **GameScene — build spot snapping to walkable tile**: Build spot world positions are now validated against the walkable grid. If the calculated position lands on a blocked tile (tree, rock), the code searches expanding rings up to 4 tiles to find the nearest walkable cell and snaps the spot there. If no walkable tile is found within the search radius the spot is skipped entirely.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Removed `dropCounts` accumulation from build spot analysis.
+  - Affordability check: `have = (res as any)[r] ?? 0` (inventory only, no drop offset).
+  - `shouldSwitchGoal`: early return `true` when `currentGoal.type === 'build'` and `_ctx.affordableBuildSpot === null`.
+- `src/scenes/GameScene.ts`:
+  - After computing `wx`/`wy` for each build spot, check `isBlocked(ttx, tty)`.
+  - Expanding ring search (`r = 1..4`, perimeter-only `dx/dy` iteration) finds nearest walkable tile.
+  - `continue` skips spot if no walkable tile found within 4-tile radius.
+
+### Rationale
+The root cause was an optimistic affordability assumption: counting ground drops as "available" without accounting for the pickup step. Fixing affordability to reflect actual inventory state keeps the goal-switching logic consistent. The build spot snapping is a complementary fix ensuring bots are never sent to structurally unreachable construction sites.
+
+### Next Steps
+- Monitor bot gather loops to confirm drops are reliably collected before build attempts.
+- Consider a maximum gather-loop retry count to prevent bots getting stuck if drops are unreachable.
+
+---
+
 ## 2026-03-19 — v2.6.23: Fix black areas in deep forest with proper ground texture
 
 ### Summary
