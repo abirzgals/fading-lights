@@ -73,13 +73,20 @@ export class BotAI {
 
   // State
   private currentGoal: BotGoal | null = null;
+  private goalAge = 0;             // how long we've been on this goal
+  private goalMinTime = 0;         // minimum time to stick with goal
   private kiteTimer = 0;
-  private retreating = false; // hysteresis flag
+  private retreating = false;      // hysteresis flag
   private wanderAngle = 0;
   private wanderTimer = 0;
   private orbitAngle = 0;
   private stuckTimer = 0;
   private lastPos = { x: 0, y: 0 };
+
+  // Movement smoothing
+  private smoothVx = 0;
+  private smoothVy = 0;
+  private readonly SMOOTH_FACTOR = 0.15; // lower = smoother (0..1)
 
   // Decision tree debug trace
   private treeTrace: TreeTrace[] = [];
@@ -125,19 +132,62 @@ export class BotAI {
     this.gameState = state;
   }
 
+  // Reactive goal types that can interrupt any goal immediately
+  private static readonly REACTIVE_GOALS = new Set(['flee', 'dodge', 'kite']);
+
+  // Minimum hold time per goal type (seconds)
+  private static readonly GOAL_HOLD_TIMES: Record<string, number> = {
+    kill: 2.0,
+    chop: 1.5,
+    mine: 1.5,
+    feed: 1.5,
+    flee: 0.8,
+    kite: 0.4,
+    dodge: 0.2,
+    idle: 1.0,
+  };
+
   /** Call every tick from GameScene */
   update(dt: number): { vx: number; vy: number; attack: boolean; interact: boolean } {
     const ctx = this.buildContext(dt);
+    this.goalAge += dt;
 
     // Evaluate decision tree
     const trace: TreeTrace[] = [];
-    const goal = this.evaluateTree(this.tree, ctx, 0, trace);
+    const newGoal = this.evaluateTree(this.tree, ctx, 0, trace);
     this.treeTrace = trace;
-    this.currentGoal = goal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
-    this.activeNodeName = this.currentGoal._treePath;
+
+    const candidate = newGoal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
+
+    // ---- Goal persistence logic ----
+    // Only switch goals if:
+    //   a) No current goal
+    //   b) Current goal is complete (target dead/collected)
+    //   c) Minimum hold time exceeded AND new goal is different type
+    //   d) New goal is a reactive interrupt (dodge/flee/kite)
+    const shouldSwitch = this.shouldSwitchGoal(candidate, ctx);
+    if (shouldSwitch) {
+      this.currentGoal = candidate;
+      this.goalAge = 0;
+      this.goalMinTime = BotAI.GOAL_HOLD_TIMES[candidate.type] ?? 1.0;
+      this.activeNodeName = candidate._treePath;
+    } else {
+      // Keep current goal but update target position (enemy may have moved)
+      if (this.currentGoal?.target && !this.currentGoal.target.isKilled()) {
+        this.currentGoal.x = this.currentGoal.target.pos.x;
+        this.currentGoal.y = this.currentGoal.target.pos.y;
+      }
+    }
 
     // Execute goal
-    const result = this.executeGoal(this.currentGoal, ctx, dt);
+    const raw = this.executeGoal(this.currentGoal!, ctx, dt);
+
+    // ---- Movement smoothing (lerp) ----
+    this.smoothVx += (raw.vx - this.smoothVx) * this.SMOOTH_FACTOR;
+    this.smoothVy += (raw.vy - this.smoothVy) * this.SMOOTH_FACTOR;
+    // Snap to zero if very small (prevent drifting)
+    if (Math.abs(this.smoothVx) < 0.02) this.smoothVx = 0;
+    if (Math.abs(this.smoothVy) < 0.02) this.smoothVy = 0;
 
     // Stuck detection
     const moved = Math.hypot(
@@ -148,10 +198,12 @@ export class BotAI {
     this.lastPos.y = this.player.pos.y;
     if (moved < 1) {
       this.stuckTimer += dt;
-      if (this.stuckTimer > 1.5) {
+      if (this.stuckTimer > 2.0) {
         this.stuckTimer = 0;
         this.wanderAngle = Math.random() * Math.PI * 2;
         this.orbitAngle += 1.5;
+        // Force goal re-evaluation
+        this.goalAge = 999;
       }
     } else {
       this.stuckTimer = 0;
@@ -160,7 +212,35 @@ export class BotAI {
     // Update debug HUD
     this.renderDebugHUD();
 
-    return result;
+    return { vx: this.smoothVx, vy: this.smoothVy, attack: raw.attack, interact: raw.interact };
+  }
+
+  /** Decide whether to switch from current goal to candidate */
+  private shouldSwitchGoal(candidate: BotGoal, ctx: BotContext): boolean {
+    if (!this.currentGoal) return true;
+
+    // Current goal's target is dead/gone → switch
+    if (this.currentGoal.target && this.currentGoal.target.isKilled()) return true;
+
+    // Reactive interrupts always go through
+    if (BotAI.REACTIVE_GOALS.has(candidate.type) && candidate.type !== this.currentGoal.type) {
+      return true;
+    }
+
+    // Same goal type with same target — no switch needed
+    if (candidate.type === this.currentGoal.type &&
+        candidate.target === this.currentGoal.target) {
+      return false;
+    }
+
+    // Hold time not yet elapsed — don't switch (unless current is idle/patrol)
+    if (this.goalAge < this.goalMinTime && this.currentGoal.type !== 'idle') {
+      return false;
+    }
+
+    // Different goal type or target — switch
+    return candidate.type !== this.currentGoal.type ||
+           candidate.target !== this.currentGoal.target;
   }
 
   // ============================================================
@@ -693,6 +773,7 @@ export class BotAI {
         const tType = (this.currentGoal.target as any).entityType;
         if (tType) html += ` (${tType})`;
       }
+      html += ` [${this.goalAge.toFixed(1)}s]`;
       html += '</div>';
     }
 
