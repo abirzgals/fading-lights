@@ -2,6 +2,46 @@
 
 ---
 
+## 2026-03-19 — fix: skip A* for distances < 100px in BotAI pathfinding
+
+### Summary
+Bot was invoking A* pathfinding even for very short distances (60-100px), causing it to take long roundabout routes to nearby targets such as the bonfire. `moveToWithPathfinding()` now returns a direct movement vector for distances under 100px and only runs A* for distances >= 100px where obstacle navigation is genuinely needed.
+
+### Root Cause
+No minimum distance guard existed before the A* repath block. Any target within the same room would still trigger full grid pathfinding, and the resulting path could loop around the grid rather than head straight.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Added an early-return in `moveToWithPathfinding()`: if `Math.hypot(tx - p.pos.x, ty - p.pos.y) < 100`, return `this.dirTo(p.pos, tx, ty)` directly. Wall sliding for short-range movement is handled by grid collision in GameScene.
+
+### Rationale
+A* is unnecessary at close range and can produce worse paths than a straight vector when the bot and target share a clear line of movement. The 100px threshold was chosen to cover the typical gap between adjacent tiles while leaving room for actual obstacle navigation on longer paths.
+
+### Next Steps
+- Tune the 100px threshold if bots clip through thin walls at close range.
+- Consider a line-of-sight pre-check to use direct movement at any distance when there are no obstacles in the way.
+
+---
+
+## 2026-03-19 — v2.6.37: Fix tree position/collider mismatch in LevelScript
+
+### Summary
+Root cause fix for the long-running tree visual/collider mismatch. The sprite was being positioned at `ty*T + T/2 - T` (one tile up from the grid row), while the collider was registered at a separate `colTy` offset. This created a persistent disconnect between what the player sees and what blocks movement.
+
+### Root Cause
+The `-T` offset applied to the tree Y position was the original source of the mismatch. All subsequent `colTy` offset logic (ty-1, ty-2) was compensating for this wrong anchor point rather than fixing it.
+
+### Changes Made
+- `src/world/LevelScript.ts` — Removed `-T` from tree Y position. Tree is now placed at `(tx*T+T/2, ty*T+T/2)`, the true tile center. Collider registered at the same `(tx, ty)` — no offset needed. Loop start reverted to `ty = 2`. All `colTy` offset logic removed.
+
+### Rationale
+With the tree anchor set to `(0.5, 0.8)`, the sprite draws with 80% of its height above the position point and 20% below — the crown extends upward naturally, and the trunk base sits at the tile position. No manual Y offset is required; the anchor handles the visual framing. Collider and visual are now at the same tile.
+
+### Next Steps
+- Confirm forest boundaries and road edges look correct in-game.
+- Verify gap-fill tile assignment uses the corrected `treeByTile` key (`tx,ty`).
+
+---
+
 ## 2026-03-19 — v2.6.36: Move tree collider from ty-1 to ty-2 for better trunk alignment
 
 ### Summary
