@@ -319,6 +319,11 @@ export class BotAI {
     if (!this.currentGoal) return true;
     if (this.currentGoal.target && this.currentGoal.target.isKilled()) return true;
 
+    // Build goal: if bot is near the spot but can't afford → switch to gather
+    if (this.currentGoal.type === 'build' && _ctx.affordableBuildSpot === null) {
+      return true; // can't afford anymore — go gather
+    }
+
     // Kill is reactive — if enemy is near camp/player, interrupt lower-priority goals
     if (BotAI.REACTIVE_GOALS.has(candidate.type) && candidate.type !== this.currentGoal.type) {
       // For 'kill', only interrupt if current goal is low priority
@@ -761,27 +766,22 @@ export class BotAI {
       }
     }
 
-    // Build spot analysis — count drops on ground as future resources
+    // Build spot analysis — check INVENTORY ONLY (not drops on ground)
     const res = this.gameState.resources;
-    // Count drops by type for affordability check
-    const dropCounts: Record<string, number> = {};
-    for (const drop of this.gameState.drops) {
-      dropCounts[drop.type] = (dropCounts[drop.type] ?? 0) + 1;
-    }
     let affordableBuildSpot: BotBuildSpot | null = null;
     let gatherBuildSpot: BotBuildSpot | null = null;
     let gatherNeed: { type: string; amount: number } | null = null;
 
     for (const spot of this.gameState.availableBuildSpots) {
-      // Check affordability: inventory + nearby drops on ground
+      // Check affordability: INVENTORY ONLY (drops must be picked up first)
       let canAfford = true;
       let missingType = '';
       let missingAmt = 0;
       for (const [r, amt] of Object.entries(spot.cost)) {
-        const have = ((res as any)[r] ?? 0) + (dropCounts[r] ?? 0);
+        const have = (res as any)[r] ?? 0;
         if (have < (amt ?? 0)) {
           canAfford = false;
-          if (!missingType) { missingType = r; missingAmt = (amt ?? 0) - ((res as any)[r] ?? 0); }
+          if (!missingType) { missingType = r; missingAmt = (amt ?? 0) - have; }
         }
       }
       if (canAfford) {

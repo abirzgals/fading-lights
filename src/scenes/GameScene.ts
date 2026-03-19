@@ -451,8 +451,27 @@ export class GameScene extends ex.Scene {
 
     for (const spot of CONFIG.BUILD_SPOTS) {
       const rad = (spot.angle * Math.PI) / 180;
-      const wx = bf.pos.x + Math.cos(rad) * spot.dist * T;
-      const wy = bf.pos.y + Math.sin(rad) * spot.dist * T;
+      let wx = bf.pos.x + Math.cos(rad) * spot.dist * T;
+      let wy = bf.pos.y + Math.sin(rad) * spot.dist * T;
+
+      // Snap to nearest walkable tile if blocked
+      const ttx = Math.floor(wx / T), tty = Math.floor(wy / T);
+      if (this.level.grid.isBlocked(ttx, tty)) {
+        let found = false;
+        for (let r = 1; r <= 4 && !found; r++) {
+          for (let dx = -r; dx <= r && !found; dx++) {
+            for (let dy = -r; dy <= r && !found; dy++) {
+              if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+              if (!this.level.grid.isBlocked(ttx + dx, tty + dy)) {
+                wx = (ttx + dx) * T + T / 2;
+                wy = (tty + dy) * T + T / 2;
+                found = true;
+              }
+            }
+          }
+        }
+        if (!found) continue; // skip this spot entirely
+      }
 
       this.buildSpots.push({
         type: spot.type as BuildingType,
