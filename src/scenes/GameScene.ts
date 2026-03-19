@@ -37,7 +37,7 @@ export class GameScene extends ex.Scene {
   private enemyBrains!: EnemyBrainSystem;
 
   // Game state
-  private hp: number = 1000;
+  // HP is read from player's HealthComponent — no separate field
   private resources = { wood: 5, stone: 0, metal: 0, gold: 0 };
   private bonfireFuel = 80;
   private campFuelAdded = 0;   // cumulative fuel (never decreases — drives level progression)
@@ -958,7 +958,10 @@ export class GameScene extends ex.Scene {
   private updateHUD(): void {
     if (!this.hudEl) return;
     const fuelPct = Math.round(this.bonfireFuel / CONFIG.BONFIRE_MAX_FUEL * 100);
-    const hpBar = '█'.repeat(Math.min(10, Math.round(this.hp / 100))) + '░'.repeat(Math.max(0, 10 - Math.round(this.hp / 100)));
+    const playerHp = this.level.player.get(HealthComponent) as HealthComponent | null;
+    const hp = playerHp?.hp ?? 0;
+    const maxHp = playerHp?.maxHp ?? CONFIG.PLAYER_MAX_HP;
+    const hpBar = '█'.repeat(Math.min(10, Math.round(hp / maxHp * 10))) + '░'.repeat(Math.max(0, 10 - Math.round(hp / maxHp * 10)));
     const fuelBar = '█'.repeat(Math.round(fuelPct / 10)) + '░'.repeat(10 - Math.round(fuelPct / 10));
     // Camp level progress
     const levels = CONFIG.FIRE_LEVELS;
@@ -973,7 +976,7 @@ export class GameScene extends ex.Scene {
     const lvlLabel = isMax ? `Lv.${this.campLevel} MAX` : `Lv.${this.campLevel}`;
 
     this.hudEl.innerHTML = `
-      <span style="color:#44FF44">HP [${hpBar}] ${Math.round(this.hp)}</span><br>
+      <span style="color:#44FF44">HP [${hpBar}] ${Math.round(hp)}/${maxHp}</span><br>
       <span style="color:#FF8800">FIRE [${fuelBar}] ${fuelPct}%</span><br>
       <span style="color:#CC66FF">CAMP [${lvlBar}] ${lvlLabel}</span><br>
       <span style="color:#AA8844">Wood ${this.resources.wood}</span> ·
