@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-19 — v2.6.14: Debug overlay + pickup radius increase
+
+### Summary
+Added a bottom-left corner "Debug" checkbox to GameScene that renders diagnostic overlays directly onto the game stage. When enabled, blocked grid tiles are highlighted in red, player bot A* waypoints appear as green dots, and enemy A* waypoints appear as orange dots. Rendering is viewport-culled so only on-screen tiles are drawn. Unchecking clears all debug actors immediately. Also increased PICKUP_RADIUS from 40 to 50px so the bot can reliably collect drops that land close to wall colliders, and added a `getSize()` accessor to GridCollisionSystem to support the debug viewport bounds calculation.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Debug checkbox element created and positioned in the bottom-left corner of the DOM overlay.
+  - `renderDebugOverlay()` method: iterates blocked grid cells, clips to camera viewport, draws red semi-transparent `Graphics` squares for each collider tile, green circle actors for player bot A* path waypoints, and orange circle actors for enemy A* path waypoints.
+  - `clearDebugActors()` method: removes and destroys all debug actors from the stage and clears the tracking array.
+  - Checkbox change handler: calls `renderDebugOverlay()` on check and `clearDebugActors()` on uncheck.
+- `src/engine/GridCollisionSystem.ts`:
+  - `getSize()` method added, returning `{ cols, rows }` so callers can determine grid dimensions without reaching into private fields.
+- `src/config.ts`:
+  - `PICKUP_RADIUS` increased from `40` to `50`.
+
+### Rationale
+The debug overlay accelerates diagnosis of pathfinding and collision issues — previously these required adding temporary console logs or guessing from movement behavior. The viewport culling keeps the overlay lightweight even on large maps. The pickup radius increase addresses a recurring issue where the bot pathfinds to a drop but stalls when the item lands within 1–2 tiles of a wall and the 40px radius falls short of the drop's actual position.
+
+### Next Steps
+- Consider making debug overlay layers individually toggleable (colliders / player path / enemy path) via separate checkboxes.
+- Evaluate whether PICKUP_RADIUS needs further tuning once new maps with denser collider layouts are tested.
+
+---
+
 ## 2026-03-19 — v2.6.13: Bot AI — smart resource targeting by type with truthful status
 
 ### Summary
