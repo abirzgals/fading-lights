@@ -56,7 +56,8 @@ export class GridCollisionSystem {
       queue.push({ x: sx, y: sy, d: 0 });
     }
 
-    const dirs = [[-1,0],[1,0],[0,-1],[0,1],[-1,-1],[1,-1],[-1,1],[1,1]];
+    // Only 4 cardinal directions — no diagonal (matches pathfinding constraints)
+    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
     while (queue.length > 0 && visited.size < maxTiles) {
       const cur = queue.shift()!;
       for (const [dx, dy] of dirs) {

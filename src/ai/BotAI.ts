@@ -1000,13 +1000,13 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
 
-        // Attack only if on the SAME tile or directly adjacent (horizontal/vertical, NOT diagonal)
+        // Attack if on adjacent tile (including diagonal — all 8 neighbors)
         const pTx = Math.floor(ctx.player.pos.x / 32);
         const pTy = Math.floor(ctx.player.pos.y / 32);
         const tTx = Math.floor(target.pos.x / 32);
         const tTy = Math.floor(target.pos.y / 32);
         const dx = Math.abs(pTx - tTx), dy = Math.abs(pTy - tTy);
-        const isDirectNeighbor = (dx + dy) <= 1; // same tile or 1 step horizontal/vertical
+        const isDirectNeighbor = dx <= 1 && dy <= 1; // same tile or any of 8 neighbors
 
         if (isDirectNeighbor) {
           attack = true;
