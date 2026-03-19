@@ -45,7 +45,7 @@ export class EntityFactory {
     player.addComponent(new MeleeAttackComponent({
       damage: 10, range: 32, cooldownMs: 800, damageFrame: 2, totalFrames: 3, arcDeg: 120,
     }));
-    player.addComponent(new ShadowCasterComponent({ entityWidth: 14, entityHeight: 24 }));
+    player.addComponent(new ShadowCasterComponent({ entityHeight: 24 }));
 
     scene.add(player);
 
@@ -121,7 +121,7 @@ export class EntityFactory {
     }
 
     // Shadow
-    enemy.addComponent(new ShadowCasterComponent({ entityWidth: def.size, entityHeight: def.size }));
+    enemy.addComponent(new ShadowCasterComponent({ entityHeight: def.size }));
 
     // Fade in
     enemy.graphics.opacity = 0;
@@ -145,7 +145,7 @@ export class EntityFactory {
     tree.addComponent(new HealthComponent(30));
     tree.addComponent(new GridOccupancyComponent({ tx, ty }));
     tree.addComponent(new ResourceComponent('wood', CONFIG.WOOD_PER_TREE));
-    tree.addComponent(new ShadowCasterComponent({ entityWidth: 20, entityHeight: 40 }));
+    tree.addComponent(new ShadowCasterComponent({ entityHeight: 40 }));
 
     scene.add(tree);
     return tree;

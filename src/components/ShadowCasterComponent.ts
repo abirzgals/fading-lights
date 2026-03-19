@@ -1,40 +1,39 @@
 import * as ex from 'excalibur';
 
 /**
- * Shadow caster — draws an elliptical shadow as part of the entity's own graphics.
- * NOT a separate actor — uses onPreDraw callback on the entity's GraphicsComponent.
- * Automatically destroyed when entity is killed (it's just a component).
+ * Shadow caster — draws the entity's own sprite as a black silhouette,
+ * skewed and stretched away from the nearest light source.
+ *
+ * Part of the entity's graphics pipeline (onPreDraw) — auto-destroyed with entity.
+ * Uses Graphic.tint = Black to make a solid black copy of the sprite.
  *
  * Original game formulas:
  * - Shadow length = min(1.2, 400 / (dist + 50))
  * - Alpha = max(0.08, 0.45 * edgeFade)
- * - Direction: away from nearest light source
+ * - Rotation: angle away from light + PI/2
+ * - Scale: (entityScaleX, shadowLen * 0.45)
  */
 export class ShadowCasterComponent extends ex.Component {
   public readonly type = 'ShadowCaster';
 
-  private entityWidth: number;
   private entityHeight: number;
   private installed = false;
 
-  // Cached shadow params (updated in onPreUpdate, drawn in onPreDraw)
+  // Cached shadow params
   private shadowVisible = false;
-  private shadowX = 0;
-  private shadowY = 0;
+  private shadowOffsetX = 0;
+  private shadowOffsetY = 0;
+  private shadowRotation = 0;
   private shadowScaleX = 1;
-  private shadowScaleY = 0.3;
-  private shadowAngle = 0;
-  private shadowAlpha = 0.3;
-  private shadowRadius = 8;
+  private shadowScaleY = 0.45;
+  private shadowAlpha = 0.35;
 
-  /** Light sources — set by GameScene each frame (with wobble) */
+  /** Light sources — set by GameScene each frame */
   static lightSources: Array<{ x: number; y: number; radius: number }> = [];
 
-  constructor(opts?: { entityWidth?: number; entityHeight?: number }) {
+  constructor(opts?: { entityHeight?: number }) {
     super();
-    this.entityWidth = opts?.entityWidth ?? 16;
     this.entityHeight = opts?.entityHeight ?? 24;
-    this.shadowRadius = this.entityWidth * 0.5;
   }
 
   onAdd(owner: ex.Entity): void {
@@ -43,29 +42,37 @@ export class ShadowCasterComponent extends ex.Component {
 
   private installDraw(actor: ex.Actor): void {
     if (this.installed) return;
-    // Hook into entity's own graphics pipeline
     const origOnPreDraw = actor.graphics.onPreDraw;
+    const self = this;
+
     actor.graphics.onPreDraw = (ctx: ex.ExcaliburGraphicsContext, elapsed: number) => {
       if (origOnPreDraw) origOnPreDraw(ctx, elapsed);
-      if (!this.shadowVisible) return;
+      if (!self.shadowVisible) return;
+
+      // Get current graphic from entity
+      const graphic = actor.graphics.current;
+      if (!graphic) return;
 
       ctx.save();
 
-      // Shadow position is relative to entity's own position (since we're in entity transform space)
-      // But onPreDraw is called BEFORE the entity transform — so we're in world-ish space
-      // Actually onPreDraw on GraphicsComponent is called in the entity's local space after transform
-      // We need to offset from entity center
+      // Move to feet position + shadow offset
+      ctx.translate(self.shadowOffsetX, self.shadowOffsetY);
 
-      const offsetX = this.shadowX;
-      const offsetY = this.shadowY;
+      // Rotate away from light
+      ctx.rotate(self.shadowRotation);
 
-      ctx.translate(offsetX, offsetY);
-      ctx.rotate(this.shadowAngle);
-      ctx.scale(this.shadowScaleX, this.shadowScaleY);
-      ctx.opacity = this.shadowAlpha;
+      // Scale: X = entity width, Y = shadow stretch (squished for ground)
+      ctx.scale(self.shadowScaleX, self.shadowScaleY);
 
-      // Draw filled ellipse as a circle (scale handles the ellipse shape)
-      ctx.drawCircle(ex.Vector.Zero, this.shadowRadius, ex.Color.Black);
+      // Set opacity for shadow
+      ctx.opacity = self.shadowAlpha;
+
+      // Draw the same graphic but tinted black
+      // We temporarily set tint, draw, then restore
+      const origTint = graphic.tint;
+      graphic.tint = ex.Color.Black;
+      graphic.draw(ctx, -graphic.width / 2, -graphic.height);
+      graphic.tint = origTint ?? ex.Color.White;
 
       ctx.restore();
     };
@@ -97,7 +104,7 @@ export class ShadowCasterComponent extends ex.Component {
 
     this.shadowVisible = true;
 
-    // Shadow direction — away from light
+    // Direction away from light
     const dx = actor.pos.x - bestLight.x;
     const dy = actor.pos.y - bestLight.y;
     const angle = Math.atan2(dy, dx);
@@ -105,17 +112,18 @@ export class ShadowCasterComponent extends ex.Component {
     // Shadow length (original formula)
     const shadowLen = Math.min(1.2, 400 / (bestDist + 50));
 
-    // Offset from entity center to feet, then in shadow direction
-    const feetOffsetY = this.entityHeight * 0.3;
-    const stretchDist = shadowLen * this.entityHeight * 0.3;
+    // Position: at entity feet
+    this.shadowOffsetX = 0;
+    this.shadowOffsetY = this.entityHeight * 0.35;
 
-    this.shadowX = Math.cos(angle) * stretchDist;
-    this.shadowY = feetOffsetY + Math.sin(angle) * stretchDist * 0.5;
-    this.shadowAngle = angle;
-    this.shadowScaleX = 1.0 + shadowLen * 0.4;
-    this.shadowScaleY = 0.3 + shadowLen * 0.15;
+    // Rotation: point away from light (same as original: angle + PI/2)
+    this.shadowRotation = angle + Math.PI * 0.5;
 
-    // Alpha: darker closer to light center
+    // Scale: X = entity scale, Y = shadow stretch
+    this.shadowScaleX = actor.scale?.x ?? 1;
+    this.shadowScaleY = shadowLen * 0.45;
+
+    // Alpha: 45% at center, 8% at edge
     const edgeFade = 1 - (bestDist / bestLight.radius);
     this.shadowAlpha = Math.max(0.08, 0.45 * edgeFade);
   }

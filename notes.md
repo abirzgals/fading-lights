@@ -2,6 +2,32 @@
 
 ---
 
+## 2026-03-19 — v2.6.19: Shadow uses entity's actual sprite as a black silhouette
+
+### Summary
+Rewrote ShadowCasterComponent to render the entity's real sprite tinted black, rather than a generic scaled circle. Trees now cast tree-shaped shadows and characters cast character-shaped shadows. The `entityWidth` parameter is gone — dimensions come directly from the graphic itself.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts` — complete rewrite:
+  - Retrieves `actor.graphics.current` (the entity's live sprite/animation frame).
+  - Temporarily sets `graphic.tint = ex.Color.Black`, calls `graphic.draw()`, then restores the original tint.
+  - Shadow is drawn at entity feet: `offsetY = entityHeight * 0.35`.
+  - Rotation formula: `angle_away_from_light + PI/2` (matches original game).
+  - Scale formula: `scaleX = actor.scale.x`, `scaleY = shadowLen * 0.45`.
+  - Alpha formula: `max(0.08, 0.45 * edgeFade)` — unchanged from original.
+  - Removed `entityWidth` constructor parameter — no longer needed.
+  - Removed `shadowRadius`, `shadowX`/`shadowY` — replaced with `shadowOffsetX`/`shadowOffsetY` and `shadowRotation`.
+- `src/entities/EntityFactory.ts` — simplified three `ShadowCasterComponent` constructor calls to pass `entityHeight` only (removed `entityWidth` argument for player, enemy, and tree).
+
+### Rationale
+The ellipse-from-circle approach was a geometric approximation that broke the visual identity of each entity — a tree's shadow looked the same as a person's. Using the entity's actual sprite as the shadow source gives faithful silhouettes at zero extra asset cost. Tint manipulation is cheap (no extra draw call overhead) and the tint is immediately restored so it never bleeds into the normal render pass.
+
+### Next Steps
+- Playtest shadow orientation on trees (tall sprites may need a draw-origin adjustment).
+- Consider caching the tint restore so it is resilient if `graphic.tint` is undefined.
+
+---
+
 ## 2026-03-19 — v2.6.18: Shadow drawn inside entity graphics pipeline, no separate actor
 
 ### Summary
