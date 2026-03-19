@@ -993,9 +993,15 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
 
-        // If close enough to attack (within 2 tiles), just attack — don't re-path
-        const dist = ctx.player.pos.distance(target.pos);
-        if (dist < 56) {
+        // Attack only if on the SAME tile or directly adjacent (horizontal/vertical, NOT diagonal)
+        const pTx = Math.floor(ctx.player.pos.x / 32);
+        const pTy = Math.floor(ctx.player.pos.y / 32);
+        const tTx = Math.floor(target.pos.x / 32);
+        const tTy = Math.floor(target.pos.y / 32);
+        const dx = Math.abs(pTx - tTx), dy = Math.abs(pTy - tTy);
+        const isDirectNeighbor = (dx + dy) <= 1; // same tile or 1 step horizontal/vertical
+
+        if (isDirectNeighbor) {
           attack = true;
           vx = 0; vy = 0;
           break;
