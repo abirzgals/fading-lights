@@ -66,6 +66,15 @@ export class GameScene extends ex.Scene {
   private debugActors: ex.Actor[] = [];
   private debugCheckbox: HTMLInputElement | null = null;
 
+  // Mouse input
+  private mouseLeftPressed = false;
+  private mouseRightPressed = false;
+
+  // Mobile controls
+  private mobileJoystick: { x: number; y: number } | null = null;
+  private mobileAttackPressed = false;
+  private mobileControlsEl: HTMLDivElement | null = null;
+
   onInitialize(engine: ex.Engine): void {
     console.log('[GameScene] initializing...');
 
@@ -120,8 +129,10 @@ export class GameScene extends ex.Scene {
       }
     });
 
-    // Debug checkbox
+    // UI controls
     this.createDebugCheckbox();
+    this.setupMouseControls(engine);
+    this.setupMobileControls();
 
     console.log(`[GameScene] initialized — ${this.level.entities.length} entities, ${this.level.enemies.length} enemies`);
   }
@@ -201,14 +212,36 @@ export class GameScene extends ex.Scene {
       shouldAttack = cmd.attack;
       // Bot wants to interact (feed bonfire) — handled by runBonfire() with animation
     } else {
-      // Human controls
+      // Human controls — keyboard + mouse + mobile
       const kb = engine.input.keyboard;
+      // WASD + arrows movement
       if (kb.isHeld(ex.Keys.W) || kb.isHeld(ex.Keys.Up)) vy = -1;
       if (kb.isHeld(ex.Keys.S) || kb.isHeld(ex.Keys.Down)) vy = 1;
       if (kb.isHeld(ex.Keys.A) || kb.isHeld(ex.Keys.Left)) vx = -1;
       if (kb.isHeld(ex.Keys.D) || kb.isHeld(ex.Keys.Right)) vx = 1;
       if (vx !== 0 && vy !== 0) { vx *= 0.707; vy *= 0.707; }
-      shouldAttack = kb.wasPressed(ex.Keys.Space);
+
+      // Space or left mouse = attack
+      shouldAttack = kb.wasPressed(ex.Keys.Space) || this.mouseLeftPressed;
+      this.mouseLeftPressed = false;
+
+      // E or right mouse = interact (feed bonfire)
+      if (kb.wasPressed(ex.Keys.E) || this.mouseRightPressed) {
+        this.mouseRightPressed = false;
+        // Interact: feed bonfire if near
+      }
+
+      // Mobile joystick input
+      if (this.mobileJoystick) {
+        vx += this.mobileJoystick.x;
+        vy += this.mobileJoystick.y;
+        const jLen = Math.sqrt(vx * vx + vy * vy);
+        if (jLen > 1) { vx /= jLen; vy /= jLen; }
+      }
+      if (this.mobileAttackPressed) {
+        shouldAttack = true;
+        this.mobileAttackPressed = false;
+      }
     }
 
     // Freeze player during attack animation
@@ -811,24 +844,105 @@ export class GameScene extends ex.Scene {
 
   // ======== DEBUG OVERLAY ========
 
+  private setupMouseControls(engine: ex.Engine): void {
+    const canvas = engine.canvas;
+    canvas.addEventListener('mousedown', (e) => {
+      if (e.button === 0) this.mouseLeftPressed = true;  // left click = attack
+      if (e.button === 2) this.mouseRightPressed = true;  // right click = interact
+    });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault()); // disable right-click menu
+  }
+
+  private setupMobileControls(): void {
+    // Only on touch devices
+    if (!('ontouchstart' in window)) return;
+
+    const el = document.createElement('div');
+    el.style.cssText = 'position:fixed;bottom:0;left:0;right:0;z-index:10002;pointer-events:none;';
+    el.innerHTML = `
+      <div id="joystick-area" style="position:absolute;bottom:20px;left:20px;width:120px;height:120px;
+        background:rgba(255,255,255,0.08);border-radius:50%;pointer-events:auto;
+        display:flex;align-items:center;justify-content:center;">
+        <div id="joystick-knob" style="width:40px;height:40px;background:rgba(255,255,255,0.2);
+          border-radius:50%;pointer-events:none;"></div>
+      </div>
+      <button id="mobile-attack" style="position:absolute;bottom:30px;right:30px;width:64px;height:64px;
+        background:rgba(255,68,68,0.3);border:2px solid rgba(255,68,68,0.5);border-radius:50%;
+        color:#ff4444;font:bold 14px monospace;pointer-events:auto;cursor:pointer;">ATK</button>
+    `;
+    document.body.appendChild(el);
+    this.mobileControlsEl = el;
+
+    // Joystick
+    const joystickArea = document.getElementById('joystick-area')!;
+    const knob = document.getElementById('joystick-knob')!;
+    let joystickActive = false;
+    let joystickCenter = { x: 0, y: 0 };
+
+    joystickArea.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      joystickActive = true;
+      const rect = joystickArea.getBoundingClientRect();
+      joystickCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      if (!joystickActive) return;
+      const touch = e.touches[0];
+      const dx = (touch.clientX - joystickCenter.x) / 50;
+      const dy = (touch.clientY - joystickCenter.y) / 50;
+      const len = Math.sqrt(dx * dx + dy * dy);
+      const clampedLen = Math.min(len, 1);
+      const nx = len > 0 ? (dx / len) * clampedLen : 0;
+      const ny = len > 0 ? (dy / len) * clampedLen : 0;
+      this.mobileJoystick = { x: nx, y: ny };
+      // Move knob visual
+      knob.style.transform = `translate(${nx * 30}px, ${ny * 30}px)`;
+    });
+
+    document.addEventListener('touchend', () => {
+      if (joystickActive) {
+        joystickActive = false;
+        this.mobileJoystick = null;
+        knob.style.transform = 'translate(0, 0)';
+      }
+    });
+
+    // Attack button
+    document.getElementById('mobile-attack')!.addEventListener('touchstart', (e) => {
+      e.preventDefault();
+      this.mobileAttackPressed = true;
+    });
+  }
+
   private createDebugCheckbox(): void {
     const wrap = document.createElement('div');
-    wrap.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:10001;';
+    wrap.style.cssText = 'position:fixed;bottom:8px;left:8px;z-index:10001;display:flex;gap:12px;align-items:center;';
+
+    // Debug checkbox
     const cb = document.createElement('input');
-    cb.type = 'checkbox';
-    cb.id = 'debug-toggle';
-    cb.checked = this.debugMode;
+    cb.type = 'checkbox'; cb.id = 'debug-toggle'; cb.checked = this.debugMode;
     cb.style.cssText = 'cursor:pointer;';
-    cb.addEventListener('change', () => {
-      this.debugMode = cb.checked;
-      if (!this.debugMode) this.clearDebugOverlay();
+    cb.addEventListener('change', () => { this.debugMode = cb.checked; if (!this.debugMode) this.clearDebugOverlay(); });
+    const lbl1 = document.createElement('label');
+    lbl1.htmlFor = 'debug-toggle'; lbl1.textContent = ' Debug';
+    lbl1.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
+    wrap.appendChild(cb); wrap.appendChild(lbl1);
+
+    // AI checkbox
+    const aiCb = document.createElement('input');
+    aiCb.type = 'checkbox'; aiCb.id = 'ai-toggle'; aiCb.checked = this.botEnabled;
+    aiCb.style.cssText = 'cursor:pointer;margin-left:8px;';
+    aiCb.addEventListener('change', () => {
+      this.botEnabled = aiCb.checked;
+      if (!this.botEnabled) this.botAI?.removeDebugHUD();
+      console.log(`[Bot] ${this.botEnabled ? 'ENABLED' : 'DISABLED'}`);
     });
-    const label = document.createElement('label');
-    label.htmlFor = 'debug-toggle';
-    label.textContent = ' Debug';
-    label.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
-    wrap.appendChild(cb);
-    wrap.appendChild(label);
+    const lbl2 = document.createElement('label');
+    lbl2.htmlFor = 'ai-toggle'; lbl2.textContent = ' AI';
+    lbl2.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
+    wrap.appendChild(aiCb); wrap.appendChild(lbl2);
+
     document.body.appendChild(wrap);
     this.debugCheckbox = cb;
     (this as any)._debugWrap = wrap;
@@ -1001,6 +1115,7 @@ export class GameScene extends ex.Scene {
   onDeactivate(): void {
     if (this.hudEl) this.hudEl.remove();
     if ((this as any)._debugWrap) (this as any)._debugWrap.remove();
+    if (this.mobileControlsEl) this.mobileControlsEl.remove();
     this.clearDebugOverlay();
     this.botAI?.removeDebugHUD();
   }
