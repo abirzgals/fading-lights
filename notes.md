@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-19 — v2.5.14: Smarter BotAI — targeted gathering, camp-bound search, status label
+
+### Summary
+Overhauled `BotAI.ts` to make the bot behave more purposefully during resource gathering and idle time. The bot now calculates exactly how much wood it needs before chopping, restricts its resource search to a 180 px radius around the bonfire, orbits camp very slowly instead of wandering, and displays a live status label above the player head showing the current action.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - `BotContext`: added `woodNeeded` (int) and `hasEnoughWood` (bool) fields
+  - `GATHER_RANGE = 180`: new config constant limiting resource search to camp vicinity
+  - `updateStatusLabel()`: new method — creates/updates an `ex.Label` above the player showing the current goal as human-readable text; combat goals rendered in `#FF6644`, peaceful goals in `#AADDFF`
+  - `buildContext()`: resource search now filters to entities within `GATHER_RANGE` of the bonfire; computes `fuelDeficit`, `woodNeeded`, and `hasEnoughWood` each tick
+  - Decision tree — "Feed Fire": threshold raised from `fuelRatio < 0.70` to `fuelRatio < 0.85`; triggers whenever `wood >= 1` regardless of gather state
+  - Decision tree — "Gather Wood" (was "Gather Resources"): skipped when `hasEnoughWood`; removed the 300 px player-distance guard (camp range already constrains it); goal label includes `need N` count for debug readability
+  - Decision tree — "Camp Idle" (was "Patrol"): bot returns to bonfire if `distToFire > 70`; within 70 px it slow-orbits at radius 40 with `speed 0.2`; wander side-jump every 5–9 s instead of every 3 s
+
+### Rationale
+The previous bot would chop indefinitely once it started gathering, accumulating far more wood than needed and wandering away from camp to find trees. This made the bot feel mechanical and caused it to neglect the bonfire. The new approach treats gathering as a targeted errand — compute the deficit, collect just enough, then return to feed the fire. Restricting the search radius keeps the bot close to camp, which is both strategically correct (defend the bonfire) and visually more readable to the player. The status label gives instant feedback on what the bot is doing without requiring the debug HUD to be open.
+
+### Next Steps
+- Consider exposing `GATHER_RANGE` as a difficulty-scaling parameter
+- Add a brief "thinking" pause before switching from idle to gather to reduce jitter
+- Evaluate whether `woodNeeded + 2` buffer is sufficient for aggressive fuel consumption rates
+
+---
+
 ## 2026-03-19 — v2.5.13: Pixel art textures for drops and resource deposits
 
 ### Summary

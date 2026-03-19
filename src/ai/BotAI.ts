@@ -58,6 +58,8 @@ interface BotContext {
   projectileAttacker: GameEntity | null;
   nearestResource: GameEntity | null;
   nearestResourceDist: number;
+  woodNeeded: number;
+  hasEnoughWood: boolean;
   evasion: { x: number; y: number; urgency: number } | null;
   dt: number;
 }
@@ -100,12 +102,17 @@ export class BotAI {
   private activeNodeName = '';
   private debugEl: HTMLDivElement | null = null;
 
+  // Status label above player head
+  private statusLabel: ex.Label | null = null;
+  private statusText = '';
+
   // Config
   private readonly ATTACK_REACH = 40;
   private readonly SIGHT_RANGE = 350;
   private readonly CAMP_DEFENSE_RANGE = 250;
   private readonly KITE_DISTANCE = 50;
   private readonly WAYPOINT_REACH = 16;
+  private readonly GATHER_RANGE = 180; // max distance from camp to gather
 
   // Game state (updated each tick from GameScene)
   private gameState: BotGameState = {
@@ -207,8 +214,60 @@ export class BotAI {
       this.stuckTimer = 0;
     }
 
+    // Update status label above player
+    this.updateStatusLabel();
+
     this.renderDebugHUD();
     return { vx: this.smoothVx, vy: this.smoothVy, attack: raw.attack, interact: raw.interact };
+  }
+
+  /** Status label displayed above the player showing current action */
+  private updateStatusLabel(): void {
+    if (!this.player.scene) return;
+
+    // Create label on first use
+    if (!this.statusLabel) {
+      this.statusLabel = new ex.Label({
+        text: '',
+        pos: this.player.pos.add(ex.vec(0, -36)),
+        font: new ex.Font({
+          family: 'monospace', size: 7, color: ex.Color.fromHex('#AADDFF'),
+          textAlign: ex.TextAlign.Center,
+        }),
+        anchor: ex.vec(0.5, 0.5),
+      });
+      this.statusLabel.z = 10000;
+      this.player.scene.add(this.statusLabel);
+    }
+
+    // Update position
+    this.statusLabel.pos = this.player.pos.add(ex.vec(0, -36));
+    this.statusLabel.z = this.player.z + 0.2;
+
+    // Map goal to readable status
+    const goalType = this.currentGoal?.type ?? 'idle';
+    const statusMap: Record<string, string> = {
+      idle: 'Resting',
+      feed: 'Feeding fire',
+      chop: 'Chopping wood',
+      mine: 'Mining',
+      kill: 'Fighting!',
+      flee: 'Retreating!',
+      dodge: 'Dodging!',
+      kite: 'Kiting!',
+    };
+    const newStatus = statusMap[goalType] ?? goalType;
+    if (newStatus !== this.statusText) {
+      this.statusText = newStatus;
+      this.statusLabel.text = newStatus;
+      // Color by urgency
+      const urgentTypes = ['flee', 'dodge', 'kite', 'kill'];
+      const color = urgentTypes.includes(goalType) ? '#FF6644' : '#AADDFF';
+      this.statusLabel.font = new ex.Font({
+        family: 'monospace', size: 7, color: ex.Color.fromHex(color),
+        textAlign: ex.TextAlign.Center,
+      });
+    }
   }
 
   private shouldSwitchGoal(candidate: BotGoal, _ctx: BotContext): boolean {
@@ -375,27 +434,31 @@ export class BotAI {
             },
           ],
         },
-        // === FEED FIRE (normal maintenance) ===
+        // === HAS WOOD → FEED FIRE ===
         {
           name: 'Feed Fire',
-          check: (ctx) => ctx.fuelRatio < 0.7 && ctx.resources.wood >= 1 && ctx.bonfire !== null,
+          check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null && ctx.fuelRatio < 0.85,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
-        // === GATHER ===
+        // === NEED WOOD → GATHER (only enough + 2 extra, near camp) ===
         {
-          name: 'Gather Resources',
-          check: (ctx) => ctx.hpRatio >= 0.4 && ctx.nearestResource !== null && ctx.nearestResourceDist < 300,
+          name: 'Gather Wood',
+          check: (ctx) => {
+            if (ctx.hpRatio < 0.4) return false;
+            if (ctx.hasEnoughWood) return false; // already have enough
+            return ctx.nearestResource !== null;
+          },
           goal: (ctx) => ({
             type: 'chop', target: ctx.nearestResource!,
             x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-            _treePath: 'Gather Resources',
+            _treePath: `Gather Wood (need ${ctx.woodNeeded})`,
           }),
         },
-        // === PATROL ===
+        // === IDLE — stay near bonfire, orbit slowly ===
         {
-          name: 'Patrol',
+          name: 'Camp Idle',
           check: () => true,
-          goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'Patrol' }),
+          goal: (ctx) => ({ type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'Camp Idle' }),
         },
       ],
     };
@@ -500,14 +563,21 @@ export class BotAI {
       }
     }
 
-    // Nearest resource
+    // Nearest resource — search near CAMP, not player (stay close to base)
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
     for (const e of this.getEntities()) {
       if (e.isKilled() || !e.get(ResourceComponent)) continue;
+      // Only consider resources within GATHER_RANGE of camp
+      if (bonfire && e.pos.distance(bonfire.pos) > this.GATHER_RANGE) continue;
       const d = p.pos.distance(e.pos);
       if (d < nearestResourceDist) { nearestResourceDist = d; nearestResource = e; }
     }
+
+    // How much wood do we need? (fuel deficit + 2 extra logs buffer)
+    const fuelDeficit = this.gameState.bonfireMaxFuel * 0.8 - this.gameState.bonfireFuel;
+    const woodNeeded = Math.max(0, Math.ceil(fuelDeficit / CONFIG.FUEL_PER_WOOD)) + 2;
+    const hasEnoughWood = this.gameState.resources.wood >= woodNeeded;
 
     const evasion = this.computeEvasion(p, enemies);
 
@@ -521,6 +591,7 @@ export class BotAI {
       nearestEnemy, nearestEnemyDist, nearEnemyCount, strongEnemyClose,
       bestEnemy, enemyNearCamp, projectileAttacker,
       nearestResource, nearestResourceDist,
+      woodNeeded, hasEnoughWood,
       evasion, dt,
     };
   }
@@ -704,18 +775,22 @@ export class BotAI {
       }
 
       case 'idle': {
-        this.wanderTimer += dt;
-        if (this.wanderTimer > 3) { this.wanderTimer = 0; this.wanderAngle = Math.random() * Math.PI * 2; }
-        if (ctx.bonfire && ctx.distToFire < 80) {
-          this.orbitAngle += dt * 0.8;
-          const ox = ctx.bx + Math.cos(this.orbitAngle) * 50;
-          const oy = ctx.by + Math.sin(this.orbitAngle) * 50;
-          const dir = this.dirTo(ctx.player.pos, ox, oy);
-          vx = dir.x * 0.4; vy = dir.y * 0.4;
-        } else if (ctx.bonfire) {
-          // A* to bonfire
+        if (ctx.bonfire && ctx.distToFire > 70) {
+          // Too far from camp — walk back
           const dir = this.moveToWithPathfinding(ctx.bx, ctx.by);
-          vx = dir.x * 0.6; vy = dir.y * 0.6;
+          vx = dir.x * 0.5; vy = dir.y * 0.5;
+        } else if (ctx.bonfire) {
+          // Near camp — slow orbit, occasionally change side
+          this.wanderTimer += dt;
+          if (this.wanderTimer > 5 + Math.random() * 4) {
+            this.wanderTimer = 0;
+            this.orbitAngle += Math.PI * (0.5 + Math.random()); // jump to different side
+          }
+          this.orbitAngle += dt * 0.3; // slow orbit
+          const ox = ctx.bx + Math.cos(this.orbitAngle) * 40;
+          const oy = ctx.by + Math.sin(this.orbitAngle) * 40;
+          const dir = this.dirTo(ctx.player.pos, ox, oy);
+          vx = dir.x * 0.2; vy = dir.y * 0.2; // very slow movement
         } else {
           vx = Math.cos(this.wanderAngle) * 0.5;
           vy = Math.sin(this.wanderAngle) * 0.5;
@@ -788,6 +863,7 @@ export class BotAI {
 
   removeDebugHUD(): void {
     if (this.debugEl) { this.debugEl.remove(); this.debugEl = null; }
+    if (this.statusLabel) { this.statusLabel.kill(); this.statusLabel = null; }
   }
 
   get goal(): string { return this.currentGoal?._treePath ?? 'IDLE'; }
