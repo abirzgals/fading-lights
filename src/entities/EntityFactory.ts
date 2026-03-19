@@ -145,7 +145,7 @@ export class EntityFactory {
     tree.addComponent(new HealthComponent(30));
     tree.addComponent(new GridOccupancyComponent({ tx, ty }));
     tree.addComponent(new ResourceComponent('wood', CONFIG.WOOD_PER_TREE));
-    tree.addComponent(new ShadowCasterComponent({ entityHeight: 40 }));
+    tree.addComponent(new ShadowCasterComponent({ entityHeight: 80 }));
 
     scene.add(tree);
     return tree;
