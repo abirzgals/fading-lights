@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.2: Melee enemies fight to death; bonfire blocks tile
+
+### Summary
+Two targeted gameplay and navigation fixes. Melee enemies no longer flee when low on HP — they commit to the fight. Ranged enemies retain flee behavior. The bonfire tile is now registered as unwalkable in the grid occupancy system, preventing enemies and the player from pathing through it.
+
+### Changes Made
+- `src/components/DecisionTreeComponent.ts`: Removed the `Flee` sequence (LowHP + TargetNear + RunAway) from `createMeleeTree()`. Updated the comment. Melee enemies now have a two-branch selector: attack when in melee range, otherwise chase. Only ranged enemies retain a flee branch.
+- `src/entities/EntityFactory.ts`: Added a `GridOccupancyComponent` to the bonfire entity, computed from `Math.floor(x / CONFIG.TILE_SIZE)` and `Math.floor(y / CONFIG.TILE_SIZE)`. This registers the bonfire's tile as blocked so the walkability grid treats it as an obstacle.
+
+### Rationale
+Melee enemies retreating at 20% HP was unintuitive and made combat feel inconsistent — a skeleton running away mid-fight broke immersion and could exploit pathfinding edge cases. Removing flee from melee types keeps their role clear: close-range fighters that commit. The bonfire tile block closes a pathing bug where enemies could walk through the bonfire actor, which had no physical presence in the grid despite being a large stationary obstacle.
+
+### Next Steps
+- Tune ranged enemy flee threshold and flee distance
+- Consider a "cornered" state for melee enemies at very low HP (enrage instead of flee)
+- Verify GridOccupancyComponent cleans up on bonfire removal/reset
+
+---
+
 ## 2026-03-19 — v2.6.1: Smart resource scoring, enemy HP bars, building depth sort
 
 ### Summary
