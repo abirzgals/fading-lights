@@ -2,6 +2,68 @@
 
 ---
 
+## 2026-03-19 — eb33605: BotAI goal persistence, movement smoothing, completion detection
+
+**Commit:** eb33605
+
+### Summary
+Improved bot decision-making stability and movement fluidity. The bot previously re-evaluated its goal every tick, causing rapid goal-switching and jittery movement. This commit introduces goal inertia (minimum hold times per goal type), lerp-based movement smoothing, and proper goal completion detection.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - **Goal persistence / inertia** — `goalAge` and `goalMinTime` fields track how long the bot has held the current goal. Each goal type has a minimum hold time: kill (2s), chop/mine/feed (1.5s), flee (0.8s), kite (0.4s), dodge (0.2s), idle (1s).
+  - **`shouldSwitchGoal()`** — new private method encapsulates the switch logic: allows immediate switch only when current target is dead/gone, new goal is reactive (dodge/flee/kite), or hold time has elapsed.
+  - **Movement smoothing** — `smoothVx`/`smoothVy` lerp toward raw velocity each tick using `SMOOTH_FACTOR = 0.15`. Values snap to 0 below 0.02 to prevent indefinite drift.
+  - **Goal completion detection** — when hold time is active but target is killed, goal switches immediately rather than waiting out the timer.
+  - **Stuck detection improvement** — threshold raised from 1.5s to 2.0s; on trigger, `goalAge` is set to 999 to force immediate goal re-evaluation.
+  - **Debug HUD** — goal line now appends `[Xs]` showing how long the current goal has been active.
+
+### Rationale
+Without hold times, the bot oscillated between "kill" and "gather" goals on every tick when near both an enemy and a resource, producing erratic behavior. Minimum hold times give each decision time to play out. Movement smoothing eliminates the frame-to-frame velocity snapping that caused visible stutter.
+
+### Next Steps
+- Consider per-target identity caching so a "chop" goal doesn't re-lock to a different tree mid-hold
+- Tune SMOOTH_FACTOR per goal type (combat may want faster response than patrol)
+- Expose GOAL_HOLD_TIMES in a config object for easier balancing
+
+---
+
+## 2026-03-19 — v2.5.6: Full decision tree bot AI ported from bot.js
+
+**Commit:** 756cca8
+
+### Summary
+The player-character bot AI has been fully reimplemented as a structured decision tree, ported from the original game's `bot.js`. The AI makes decisions each tick by walking a priority tree and selecting the highest-priority actionable goal, then executing movement and attacks toward that goal.
+
+### Priority Order
+1. **SURVIVE** — evade projectiles using closest-approach geometry; retreat when HP drops below 35% (stops retreating at 60% — hysteresis)
+2. **FIRE DYING** — sprint to bonfire when fuel is critically low (under 10%)
+3. **KITE** — blend movement 60% away from nearest enemy and 40% toward bonfire when enemy is within kite range
+4. **COMBAT** — attack the nearest enemy when within weapon range
+5. **FEED FIRE** — walk to bonfire and deposit fuel when bonfire fuel falls below 30% and player has wood
+6. **GATHER** — chop trees or mine stone for resources when idle
+7. **PATROL** — move to a random waypoint when nothing else applies
+
+### Changes Made
+- `src/ai/BotAI.ts` — Full rewrite:
+  - `TreeNode` / `BotContext` / `BotGoal` / `TreeTrace` interfaces define the decision tree structure
+  - `BotGameState` interface exported for GameScene to pass fuel and resource data each tick
+  - Projectile evasion calculates closest approach time and lateral dodge vector
+  - Kiting blends two vectors: 60% away from enemy, 40% toward bonfire
+  - Debug HUD (`drawDebugHUD`) renders the real-time decision tree trace on the right side of the Phaser canvas
+  - HP hysteresis: `retreating` flag set at 35% HP, cleared at 60%
+  - Bot enabled by default; backtick key toggles it on/off
+- `src/scenes/GameScene.ts` — Passes `BotGameState` (bonfire fuel, max fuel, current resources) to `BotAI.update()` each tick
+
+### Rationale
+The previous BotAI was a stub. The original game had a fully functional bot in `bot.js` that was never ported to the TypeScript rewrite. This commit brings feature parity: the bot can survive autonomously, manage the bonfire, and engage enemies using the same logic as the original.
+
+### Excluded from commit
+- `test-results/` (Playwright output)
+- `notes.md` (not tracked)
+
+---
+
 ## 2026-03-17 — fix: mobile intro video — compressed asset + autoplay policy handling
 
 **Commit:** 731314e
