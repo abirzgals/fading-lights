@@ -52,7 +52,8 @@ export class GameScene extends ex.Scene {
   private readonly MAX_ALIVE = 10;
   private feedCooldown = 0;
   private drops: GameEntity[] = [];
-  private armorBonus = 0;      // damage reduction from Armor Workshop
+  private armorBonus = 0;
+  private nextNetId = 1;       // unique ID for networked enemies
 
   // Build spots
   private buildSpots: Array<{
@@ -114,6 +115,8 @@ export class GameScene extends ex.Scene {
           bf.pos.y + Math.sin(angle) * dist
         );
         const enemy = EntityFactory.createEnemy(this, pos.x, pos.y, type);
+        (enemy as any).enemyType = type;
+        (enemy as any)._netId = this.nextNetId++;
         this.level.enemies.push(enemy);
       }
     }
@@ -328,7 +331,10 @@ export class GameScene extends ex.Scene {
       if (hp && !hp.alive) {
         this.kills++;
         audioEngine.playEnemyDeath();
-        e.playDeath(); // fall over → 3s wait → 3s fade → kill
+        e.playDeath();
+        // Broadcast death to clients
+        const netId = (e as any)._netId;
+        if (netId && this.netSync) this.netSync.sendEnemyKilled(netId);
         return true; // keep in list during death animation
       }
       return true;
@@ -556,6 +562,9 @@ export class GameScene extends ex.Scene {
     // Spawn interval: spread spawns over the minute (min 3s between spawns)
     const spawnInterval = Math.max(3, 60 / (waveQuota + 1));
 
+    // Only host spawns enemies — clients receive via network
+    if (this.net?.connected && !this.net.isHost) return;
+
     if (this.spawnTimer >= spawnInterval && aliveCount < waveQuota) {
       this.spawnTimer = 0;
 
@@ -563,19 +572,25 @@ export class GameScene extends ex.Scene {
       const angle = Math.random() * Math.PI * 2;
       const dist = 280 + Math.random() * 200;
 
-      // Pick from wave-appropriate pool
       const poolIdx = Math.min(this.waveNumber, GameScene.WAVE_POOLS.length - 1);
       const pool = GameScene.WAVE_POOLS[poolIdx];
       const type = pool[Math.floor(Math.random() * pool.length)];
 
-      // Find walkable spawn position
       const rawX = player.pos.x + Math.cos(angle) * dist;
       const rawY = player.pos.y + Math.sin(angle) * dist;
       const spawnPos = this.level.grid.findWalkableNear(rawX, rawY);
 
       const enemy = EntityFactory.createEnemy(this, spawnPos.x, spawnPos.y, type);
+      (enemy as any).enemyType = type;
       this.level.enemies.push(enemy);
       this.totalSpawned++;
+
+      // Assign netId and broadcast to clients
+      const netId = this.nextNetId++;
+      if (this.netSync) {
+        this.netSync.registerEnemy(netId, enemy);
+        this.netSync.sendEnemySpawned(netId, spawnPos.x, spawnPos.y, type);
+      }
 
       if (Math.random() < 0.3) audioEngine.playEnemyRoar();
     }
@@ -876,7 +891,45 @@ export class GameScene extends ex.Scene {
       await this.net.connect(roomCode, name);
       this.netSync = new NetworkSync(this.net, this, this.worldSeed);
 
-      // If we're host, broadcast world seed
+      // Wire up sync callbacks
+      this.netSync.onEnemySpawned = (netId, x, y, type) => {
+        const enemy = EntityFactory.createEnemy(this, x, y, type);
+        (enemy as any)._netId = netId;
+        (enemy as any).enemyType = type;
+        this.level.enemies.push(enemy);
+        return enemy;
+      };
+      this.netSync.onEnemyKilled = (netId) => {
+        // Handled by enemy sync (playDeath in onEnemiesSync)
+      };
+      this.netSync.onResourceKilled = (x, y, resourceType) => {
+        // Find nearest resource at position and destroy it
+        const nearest = this.level.entities
+          .filter(e => !e.isKilled() && e.get(ResourceComponent))
+          .sort((a, b) => Math.hypot(a.pos.x - x, a.pos.y - y) - Math.hypot(b.pos.x - x, b.pos.y - y))[0];
+        if (nearest && Math.hypot(nearest.pos.x - x, nearest.pos.y - y) < 48) {
+          if (nearest.entityType === 'tree') this.spawnStump(nearest.pos.x, nearest.pos.y);
+          nearest.kill();
+        }
+      };
+      this.netSync.onBuildingPlaced = (x, y, buildingType) => {
+        // TODO: place building at position
+      };
+      this.netSync.onBonfireState = (fuel, campLevel, campFuelAdded) => {
+        this.bonfireFuel = fuel;
+        this.campLevel = campLevel;
+        this.campFuelAdded = campFuelAdded;
+      };
+      this.netSync.onResourcesState = (wood, stone, metal, gold) => {
+        this.resources = { wood, stone, metal, gold };
+      };
+
+      // Register existing enemies with netIds
+      for (const e of this.level.enemies) {
+        const netId = this.nextNetId++;
+        this.netSync.registerEnemy(netId, e);
+      }
+
       if (this.net.isHost) {
         this.net.send({ type: 'world_seed', seed: this.worldSeed });
       }
@@ -894,8 +947,12 @@ export class GameScene extends ex.Scene {
     // Send local player state
     this.netSync.sendPlayerState(this.level.player);
 
-    // Host: sync enemy positions
+    // Host: sync everything
     this.netSync.sendEnemySync(this.level.enemies, dt);
+    this.netSync.sendGameState(
+      this.bonfireFuel, this.campLevel, this.campFuelAdded,
+      this.resources, dt
+    );
 
     // Update remote player rendering
     this.netSync.update(dt);

@@ -4,32 +4,50 @@ import { GameEntity } from '../engine/GameEntity';
 import { HealthComponent } from '../components/HealthComponent';
 import { AnimatedSpriteComponent } from '../components/AnimatedSpriteComponent';
 import { AssetLoader } from '../engine/AssetLoader';
-import { SpriteRendererComponent } from '../components/SpriteRendererComponent';
-import { CONFIG } from '../config';
+import { EntityFactory } from '../entities/EntityFactory';
+import { CONFIG, ENEMIES } from '../config';
+import { EnemyType } from '../types';
 
 /**
- * NetworkSync — syncs game state between players via NetworkClient.
+ * NetworkSync — full game state synchronization.
  *
- * Host responsibilities:
- * - Send world seed on peer join
- * - Broadcast enemy positions/HP every 200ms
- * - Broadcast resource destruction
- * - Broadcast building placement
+ * Host: spawns enemies, runs AI, broadcasts all state.
+ * Client: renders remote players, receives enemy/resource/building state.
  *
- * All players:
- * - Send own position every 50ms
- * - Send attack events
- * - Render remote players
+ * Message types:
+ *   s  — player state (position, dir, anim)
+ *   attack — player attack event
+ *   enemies — batch enemy positions + HP (host→clients, 5fps)
+ *   enemy_spawned — new enemy created (host→clients)
+ *   enemy_killed — enemy HP=0 (host→clients)
+ *   resource_killed — resource destroyed (any→all)
+ *   building_placed — building constructed (any→all)
+ *   bonfire_state — fuel + level (host→clients, 1fps)
+ *   resources_state — shared resource pool (host→clients, 1fps)
+ *   world_seed — level generation seed (host→client on join)
  */
 export class NetworkSync {
   private net: NetworkClient;
   private scene: ex.Scene;
-  private remotePlayers: Map<string, { entity: GameEntity; name: string; lastUpdate: number }> = new Map();
+  private remotePlayers: Map<string, { entity: GameEntity; label: ex.Label; name: string; lastUpdate: number }> = new Map();
   private worldSeed: number;
 
-  // Host sync timers
+  // Network enemy tracking — netId → local GameEntity
+  private netEnemies: Map<number, GameEntity> = new Map();
+
+  // Sync timers
   private enemySyncTimer = 0;
-  private readonly ENEMY_SYNC_INTERVAL = 200; // ms
+  private stateSyncTimer = 0;
+  private readonly ENEMY_SYNC_MS = 200;
+  private readonly STATE_SYNC_MS = 1000;
+
+  // Callbacks to GameScene
+  public onResourceKilled: ((x: number, y: number, type: string) => void) | null = null;
+  public onBuildingPlaced: ((x: number, y: number, type: string) => void) | null = null;
+  public onBonfireState: ((fuel: number, campLevel: number, campFuelAdded: number) => void) | null = null;
+  public onResourcesState: ((wood: number, stone: number, metal: number, gold: number) => void) | null = null;
+  public onEnemySpawned: ((netId: number, x: number, y: number, type: EnemyType) => GameEntity | null) | null = null;
+  public onEnemyKilled: ((netId: number) => void) | null = null;
 
   constructor(net: NetworkClient, scene: ex.Scene, worldSeed: number) {
     this.net = net;
@@ -39,31 +57,24 @@ export class NetworkSync {
   }
 
   private setupListeners(): void {
-    // Remote player position updates
     this.net.on('s', (msg) => this.onPeerState(msg));
-
-    // Peer joined — send world data if host
+    this.net.on('attack', (msg) => this.onRemoteAttack(msg));
     this.net.on('peer_joined', (msg) => this.onPeerJoined(msg));
     this.net.on('peer_left', (msg) => this.onPeerLeft(msg));
-
-    // World seed from host (for clients)
     this.net.on('world_seed', (msg) => this.onWorldSeed(msg));
-
-    // Enemy sync from host
     this.net.on('enemies', (msg) => this.onEnemiesSync(msg));
-    this.net.on('enemy_killed', (msg) => this.onEnemyKilled(msg));
-
-    // Resource destroyed
-    this.net.on('resource_killed', (msg) => this.onResourceKilled(msg));
-
-    // Building placed
-    this.net.on('building_placed', (msg) => this.onBuildingPlaced(msg));
-
-    // Remote attack
-    this.net.on('attack', (msg) => this.onRemoteAttack(msg));
+    this.net.on('enemy_spawned', (msg) => this.onEnemySpawnedMsg(msg));
+    this.net.on('enemy_killed', (msg) => this.onEnemyKilledMsg(msg));
+    this.net.on('resource_killed', (msg) => this.onResourceKilledMsg(msg));
+    this.net.on('building_placed', (msg) => this.onBuildingPlacedMsg(msg));
+    this.net.on('bonfire_state', (msg) => this.onBonfireStateMsg(msg));
+    this.net.on('resources_state', (msg) => this.onResourcesStateMsg(msg));
   }
 
-  /** Send local player state */
+  // ============================================================
+  // SEND — called by GameScene
+  // ============================================================
+
   sendPlayerState(player: GameEntity): void {
     const anim = player.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
     this.net.sendState({
@@ -74,65 +85,82 @@ export class NetworkSync {
     });
   }
 
-  /** Send attack event */
-  sendAttack(x: number, y: number): void {
-    this.net.send({ type: 'attack', x: Math.round(x), y: Math.round(y) });
+  sendAttack(x: number, y: number, dir: string): void {
+    this.net.send({ type: 'attack', x: Math.round(x), y: Math.round(y), dir });
   }
 
-  /** Host: send enemy positions */
+  /** Host: broadcast enemy spawn */
+  sendEnemySpawned(netId: number, x: number, y: number, type: EnemyType): void {
+    if (!this.net.isHost) return;
+    this.net.send({ type: 'enemy_spawned', netId, x: Math.round(x), y: Math.round(y), enemyType: type });
+  }
+
+  /** Host: batch sync enemy positions + HP */
   sendEnemySync(enemies: GameEntity[], dt: number): void {
     if (!this.net.isHost) return;
     this.enemySyncTimer += dt * 1000;
-    if (this.enemySyncTimer < this.ENEMY_SYNC_INTERVAL) return;
+    if (this.enemySyncTimer < this.ENEMY_SYNC_MS) return;
     this.enemySyncTimer = 0;
 
     const data = enemies
       .filter(e => !e.isKilled())
-      .map(e => {
-        const hp = e.get(HealthComponent) as HealthComponent | null;
-        return {
-          id: (e as any)._netId ?? 0,
-          x: Math.round(e.pos.x),
-          y: Math.round(e.pos.y),
-          hp: hp?.hp ?? 0,
-          type: (e as any).enemyType ?? 'SHADOW_WISP',
-        };
-      });
+      .map(e => ({
+        id: (e as any)._netId ?? 0,
+        x: Math.round(e.pos.x),
+        y: Math.round(e.pos.y),
+        hp: (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 0,
+        dying: e.isDying,
+      }));
     this.net.send({ type: 'enemies', data });
   }
 
-  /** Host: broadcast resource destruction */
-  sendResourceKilled(x: number, y: number, resourceType: string): void {
-    this.net.send({ type: 'resource_killed', x: Math.round(x), y: Math.round(y), resourceType });
-  }
-
-  /** Host: broadcast building placement */
-  sendBuildingPlaced(x: number, y: number, buildingType: string): void {
-    this.net.send({ type: 'building_placed', x: Math.round(x), y: Math.round(y), buildingType });
-  }
-
-  /** Host: broadcast enemy killed */
   sendEnemyKilled(netId: number): void {
     this.net.send({ type: 'enemy_killed', netId });
   }
 
-  /** Update remote player entities */
+  sendResourceKilled(x: number, y: number, resourceType: string): void {
+    this.net.send({ type: 'resource_killed', x: Math.round(x), y: Math.round(y), resourceType });
+  }
+
+  sendBuildingPlaced(x: number, y: number, buildingType: string): void {
+    this.net.send({ type: 'building_placed', x: Math.round(x), y: Math.round(y), buildingType });
+  }
+
+  /** Host: broadcast bonfire + resource state periodically */
+  sendGameState(fuel: number, campLevel: number, campFuelAdded: number,
+                resources: { wood: number; stone: number; metal: number; gold: number }, dt: number): void {
+    if (!this.net.isHost) return;
+    this.stateSyncTimer += dt * 1000;
+    if (this.stateSyncTimer < this.STATE_SYNC_MS) return;
+    this.stateSyncTimer = 0;
+
+    this.net.send({ type: 'bonfire_state', fuel, campLevel, campFuelAdded });
+    this.net.send({ type: 'resources_state', ...resources });
+  }
+
+  /** Register a locally-spawned enemy with a netId */
+  registerEnemy(netId: number, entity: GameEntity): void {
+    (entity as any)._netId = netId;
+    this.netEnemies.set(netId, entity);
+  }
+
+  /** Update remote players + cleanup */
   update(dt: number): void {
     const now = performance.now();
-    // Remove stale remote players (no update for 5s)
     for (const [peerId, rp] of this.remotePlayers) {
       if (now - rp.lastUpdate > 5000) {
         rp.entity.kill();
+        rp.label.kill();
         this.remotePlayers.delete(peerId);
-        console.log(`[Net] Removed stale remote player ${rp.name}`);
       }
     }
   }
 
-  /** Get remote player count */
   get playerCount(): number { return this.remotePlayers.size + 1; }
 
-  // ---- Handlers ----
+  // ============================================================
+  // RECEIVE — from network
+  // ============================================================
 
   private onPeerState(msg: any): void {
     const peerId = msg.from;
@@ -140,14 +168,8 @@ export class NetworkSync {
 
     let rp = this.remotePlayers.get(peerId);
     if (!rp) {
-      // Create remote player entity
-      const entity = new GameEntity({
-        pos: ex.vec(msg.x, msg.y),
-        anchor: ex.vec(0.5, 0.5),
-      });
+      const entity = new GameEntity({ pos: ex.vec(msg.x, msg.y), anchor: ex.vec(0.5, 0.5) });
       entity.entityType = 'remote_player';
-
-      // Use player sprite
       entity.addComponent(new AnimatedSpriteComponent({
         rotations: AssetLoader.maleRotations,
         walkSpriteSheets: AssetLoader.maleWalkSheets,
@@ -155,42 +177,54 @@ export class NetworkSync {
         walkFrameRate: 10,
         fallback: { width: 16, height: 24, color: ex.Color.fromHex('#44AAFF') },
       }));
-
       this.scene.add(entity);
 
-      // Name label
-      const name = msg.fromName ?? `Player ${peerId}`;
+      const name = msg.fromName ?? `P${peerId}`;
       const label = new ex.Label({
-        text: name,
-        pos: ex.vec(msg.x, msg.y - 28),
+        text: name, pos: ex.vec(msg.x, msg.y - 28),
         font: new ex.Font({ family: 'monospace', size: 8, color: ex.Color.fromHex('#44AAFF'), textAlign: ex.TextAlign.Center }),
         anchor: ex.vec(0.5, 0.5),
       });
       label.z = 9999;
       this.scene.add(label);
-      entity.on('preupdate', () => {
-        label.pos = entity.pos.add(ex.vec(0, -28));
-        label.z = entity.z + 0.1;
-      });
-      entity.on('kill', () => label.kill());
 
-      rp = { entity, name, lastUpdate: performance.now() };
+      rp = { entity, label, name, lastUpdate: performance.now() };
       this.remotePlayers.set(peerId, rp);
-      console.log(`[Net] Created remote player: ${name}`);
+      console.log(`[Net] Remote player: ${name}`);
     }
 
-    // Smooth interpolation to target position
-    const targetX = msg.x, targetY = msg.y;
-    const dx = targetX - rp.entity.pos.x, dy = targetY - rp.entity.pos.y;
-    rp.entity.vel = ex.vec(dx * 5, dy * 5); // smooth lerp via velocity
+    // Smooth interpolation
+    const dx = msg.x - rp.entity.pos.x, dy = msg.y - rp.entity.pos.y;
+    rp.entity.vel = ex.vec(dx * 5, dy * 5);
     rp.entity.z = rp.entity.pos.y;
+    rp.label.pos = rp.entity.pos.add(ex.vec(0, -28));
+    rp.label.z = rp.entity.z + 0.1;
     rp.lastUpdate = performance.now();
   }
 
+  private onRemoteAttack(msg: any): void {
+    // Visual + sound feedback for remote player attack
+    // TODO: play swing animation at msg.x, msg.y
+  }
+
   private onPeerJoined(msg: any): void {
-    // If we're host, send world seed to new peer
     if (this.net.isHost) {
+      // Send world seed + current game state to new peer
       this.net.send({ type: 'world_seed', seed: this.worldSeed });
+
+      // Send all existing enemies
+      for (const [netId, e] of this.netEnemies) {
+        if (e.isKilled()) continue;
+        const hp = e.get(HealthComponent) as HealthComponent | null;
+        this.net.send({
+          type: 'enemy_spawned',
+          netId,
+          x: Math.round(e.pos.x),
+          y: Math.round(e.pos.y),
+          enemyType: (e as any).enemyType ?? 'SHADOW_WISP',
+          hp: hp?.hp ?? 0,
+        });
+      }
     }
   }
 
@@ -198,39 +232,83 @@ export class NetworkSync {
     const rp = this.remotePlayers.get(msg.peerId);
     if (rp) {
       rp.entity.kill();
+      rp.label.kill();
       this.remotePlayers.delete(msg.peerId);
     }
   }
 
   private onWorldSeed(msg: any): void {
-    // Client received world seed — could trigger world regeneration
-    console.log(`[Net] Received world seed: ${msg.seed}`);
+    console.log(`[Net] World seed: ${msg.seed}`);
+    // TODO: regenerate world if seed differs
   }
 
   private onEnemiesSync(msg: any): void {
-    // Client receives enemy positions from host
-    // TODO: update local enemy positions to match host state
+    if (this.net.isHost) return; // host doesn't receive own sync
+    for (const ed of msg.data) {
+      const enemy = this.netEnemies.get(ed.id);
+      if (!enemy || enemy.isKilled()) continue;
+      // Interpolate position
+      const dx = ed.x - enemy.pos.x, dy = ed.y - enemy.pos.y;
+      enemy.vel = ex.vec(dx * 5, dy * 5);
+      enemy.z = enemy.pos.y;
+      // Sync HP
+      const hp = enemy.get(HealthComponent) as HealthComponent | null;
+      if (hp && Math.abs(hp.hp - ed.hp) > 1) {
+        (hp as any).hp = ed.hp; // direct set for sync
+      }
+      // Sync dying
+      if (ed.dying && !enemy.isDying) {
+        enemy.playDeath();
+      }
+    }
   }
 
-  private onEnemyKilled(msg: any): void {
-    // TODO: find enemy by netId and trigger death
+  private onEnemySpawnedMsg(msg: any): void {
+    if (this.net.isHost) return;
+    // Client creates enemy from host data
+    if (this.netEnemies.has(msg.netId)) return; // already exists
+    const entity = this.onEnemySpawned?.(msg.netId, msg.x, msg.y, msg.enemyType as EnemyType);
+    if (entity) {
+      this.registerEnemy(msg.netId, entity);
+      // Set HP if provided
+      if (msg.hp !== undefined) {
+        const hp = entity.get(HealthComponent) as HealthComponent | null;
+        if (hp) (hp as any).hp = msg.hp;
+      }
+    }
   }
 
-  private onResourceKilled(msg: any): void {
-    // TODO: find resource near (x,y) and destroy it
+  private onEnemyKilledMsg(msg: any): void {
+    if (this.net.isHost) return;
+    const enemy = this.netEnemies.get(msg.netId);
+    if (enemy && !enemy.isKilled() && !enemy.isDying) {
+      enemy.playDeath();
+    }
+    this.onEnemyKilled?.(msg.netId);
   }
 
-  private onBuildingPlaced(msg: any): void {
-    // TODO: create building at (x,y) of given type
+  private onResourceKilledMsg(msg: any): void {
+    this.onResourceKilled?.(msg.x, msg.y, msg.resourceType);
   }
 
-  private onRemoteAttack(msg: any): void {
-    // TODO: play attack animation/sound at position
+  private onBuildingPlacedMsg(msg: any): void {
+    this.onBuildingPlaced?.(msg.x, msg.y, msg.buildingType);
+  }
+
+  private onBonfireStateMsg(msg: any): void {
+    if (this.net.isHost) return;
+    this.onBonfireState?.(msg.fuel, msg.campLevel, msg.campFuelAdded);
+  }
+
+  private onResourcesStateMsg(msg: any): void {
+    if (this.net.isHost) return;
+    this.onResourcesState?.(msg.wood, msg.stone, msg.metal, msg.gold);
   }
 
   destroy(): void {
-    for (const [, rp] of this.remotePlayers) rp.entity.kill();
+    for (const [, rp] of this.remotePlayers) { rp.entity.kill(); rp.label.kill(); }
     this.remotePlayers.clear();
+    this.netEnemies.clear();
     this.net.disconnect();
   }
 }

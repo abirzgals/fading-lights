@@ -2,6 +2,48 @@
 
 ---
 
+## 2026-03-19 — v2.6.79: Full multiplayer synchronization
+
+### Summary
+Complete rewrite of NetworkSync.ts to deliver authoritative host-to-client state sync across all game systems: player positions, enemies, resources, bonfires, resource pools, and buildings. GameScene wired up to drive all sync callbacks and enforce host-only enemy spawning. Multiplayer spec added under tests/.
+
+### Changes Made
+- `src/network/NetworkSync.ts` (rewrite):
+  - Player position sync with 50ms throttle and smooth interpolation on the receiving end.
+  - Enemy batch sync from host to clients every 200ms — positions, HP, and dying state.
+  - Enemy spawn broadcast (host to clients) with `netId` for cross-network tracking.
+  - Enemy kill broadcast — clients call `playDeath` on the matching enemy.
+  - Resource destruction broadcast — clients find and destroy the nearest matching resource.
+  - Bonfire state sync (host to clients, 1s cadence) — fuel, campLevel, campFuelAdded.
+  - Resource pool sync (host to clients, 1s cadence) — wood, stone, metal, gold.
+  - Building placement broadcast.
+  - Typed callbacks for all events so GameScene can react cleanly.
+  - Remote player rendering: sprites with name labels, smooth interpolation.
+  - `registerEnemy()` assigns a `netId` for stable cross-network identity.
+- `src/scenes/GameScene.ts` (modified):
+  - Enemy spawning now gated to host only; host assigns `netId` and broadcasts.
+  - Starter enemies each receive a `netId` on scene init.
+  - Enemy death broadcasts the `netId` so clients know which enemy to remove.
+  - Network init wires up all sync callbacks (enemySpawned, enemyKilled, resource, bonfire, building).
+  - `updateNetwork` sends game state (fuel + resources) periodically.
+  - Clients receive bonfire and resource pool state from host, overriding local values.
+- `tests/multiplayer.spec.ts` (new): Playwright spec covering multiplayer scenarios.
+
+### Rationale
+The initial networking foundation (v2.6.78) established connections and basic player-position sync. This release extends the authority model to cover every stateful system in the game: enemies (spawn, AI, death), resources (wood, stone, metal, gold pools and destructible objects), bonfires, and buildings. All state changes originate on the host and flow through typed NetworkSync callbacks, keeping clients as pure renderers with no state ownership. The `netId` scheme gives every enemy a stable identity that survives across the network boundary, which is the key prerequisite for reliable kill and death sync.
+
+### Architecture
+- Host: generates the world, spawns enemies, runs AI, broadcasts all state.
+- Client: renders remote players, receives and applies enemy/resource/building/bonfire updates.
+- State flow: GameScene event → NetworkSync.send* method → relay → NetworkSync callback → GameScene handler.
+
+### Next Steps
+- Latency compensation / lag-tolerant enemy interpolation on clients.
+- Conflict resolution if client and host disagree on resource counts.
+- Disconnect/reconnect handling that restores full state from host snapshot.
+
+---
+
 ## 2026-03-19 — v2.6.78: Multiplayer networking foundation
 
 ### Summary
