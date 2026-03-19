@@ -8,6 +8,10 @@ bindings = [
   { name = "GAME_ROOM", class_name = "GameRoom" }
 ]
 
+[[kv_namespaces]]
+binding = "ROOMS_KV"
+id = "bc4080e204814f57b99e670d5e74a3f8"
+
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["GameRoom"]

@@ -881,6 +881,21 @@ export class GameScene extends ex.Scene {
     const roomCode = params.get('room');
     if (roomCode) {
       this.connectToRoom(roomCode);
+    } else {
+      // Auto-matchmaking: find existing room or create new
+      this.autoMatchmake();
+    }
+  }
+
+  private async autoMatchmake(): Promise<void> {
+    try {
+      const resp = await fetch(this.RELAY_URL.replace('wss://', 'https://') + '/find-room');
+      const data = await resp.json();
+      console.log(`[Net] Matchmaking: ${data.action} room ${data.room} (${data.players} players)`);
+      window.history.replaceState({}, '', `?room=${data.room}`);
+      this.connectToRoom(data.room);
+    } catch (e) {
+      console.log(`[Net] Matchmaking failed: ${e}. Playing solo.`);
     }
   }
 
