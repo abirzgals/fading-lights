@@ -67,32 +67,34 @@ export class PathFollower {
     const targetMoved = this.pathTarget &&
       Math.hypot(toX - this.pathTarget.x, toY - this.pathTarget.y) > 60;
     if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 || targetMoved) {
-      // Find best approach side for blocked targets
       let goalX = toX, goalY = toY;
       const ttx = Math.floor(toX / T), tty = Math.floor(toY / T);
       if (this.grid.isBlocked(ttx, tty)) {
-        let bestPath: Array<{ x: number; y: number }> | null = null;
-        let bestLen = Infinity;
-        for (let dx = -1; dx <= 1; dx++) {
-          for (let dy = -1; dy <= 1; dy++) {
-            if (dx === 0 && dy === 0) continue;
-            const nx = ttx + dx, ny = tty + dy;
-            if (this.grid.isBlocked(nx, ny)) continue;
-            const candidate = this.grid.findPath(fromX, fromY, nx * T + T / 2, ny * T + T / 2);
-            if (candidate && candidate.length < bestLen) {
-              bestLen = candidate.length;
-              bestPath = candidate;
-              goalX = nx * T + T / 2;
-              goalY = ny * T + T / 2;
-            }
+        // Find nearest walkable neighbor — try closest to player first, stop on first valid path
+        const dirs = [[0,-1],[0,1],[-1,0],[1,0],[-1,-1],[1,-1],[-1,1],[1,1]];
+        // Sort by distance to player (closest first)
+        dirs.sort((a, b) => {
+          const ax = (ttx + a[0]) * T + T / 2 - fromX, ay = (tty + a[1]) * T + T / 2 - fromY;
+          const bx = (ttx + b[0]) * T + T / 2 - fromX, by = (tty + b[1]) * T + T / 2 - fromY;
+          return (ax * ax + ay * ay) - (bx * bx + by * by);
+        });
+        this.path = null;
+        for (const [dx, dy] of dirs) {
+          const nx = ttx + dx, ny = tty + dy;
+          if (this.grid.isBlocked(nx, ny)) continue;
+          const candidate = this.grid.findPath(fromX, fromY, nx * T + T / 2, ny * T + T / 2);
+          if (candidate) {
+            this.path = candidate;
+            goalX = nx * T + T / 2;
+            goalY = ny * T + T / 2;
+            break; // first valid path — good enough
           }
         }
-        this.path = bestPath;
       } else {
         this.path = this.grid.findPath(fromX, fromY, goalX, goalY);
       }
       this.pathIdx = 0;
-      this.repathTimer = 0.8 + Math.random() * 0.4;
+      this.repathTimer = 1.5 + Math.random() * 0.5; // repath less often
       this.pathTarget = { x: goalX, y: goalY };
     }
 

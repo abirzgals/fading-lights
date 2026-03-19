@@ -216,7 +216,7 @@ export class GridCollisionSystem {
 
     const dirs = [[-1, 0], [1, 0], [0, -1], [0, 1], [-1, -1], [1, -1], [-1, 1], [1, 1]];
     let iterations = 0;
-    const MAX_ITER = 2000;
+    const MAX_ITER = 800; // reduced for performance — paths >800 steps are unreasonable
 
     while (open.size > 0 && iterations++ < MAX_ITER) {
       // Find lowest f
