@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-19 — v2.6.18: Shadow drawn inside entity graphics pipeline, no separate actor
+
+### Summary
+Rewrote ShadowCasterComponent to draw the shadow via the entity's own `graphics.onPreDraw` callback rather than creating a separate shadow actor. The shadow is now entirely internal to the entity — no orphaned actors, no manual cleanup, and automatic destruction when the entity is killed.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts` — full rewrite:
+  - Removed `shadowActor: ex.Actor` — no separate actor is created or managed.
+  - Added `installDraw()` which hooks into `actor.graphics.onPreDraw` to draw the shadow ellipse inline.
+  - Shadow parameters (`shadowX`, `shadowY`, `shadowAngle`, `shadowScaleX`, `shadowScaleY`, `shadowAlpha`, `shadowRadius`) are computed in `onPreUpdate` and consumed in the `onPreDraw` callback.
+  - Uses `ctx.drawCircle` with `ctx.scale` to produce the ellipse shape — same visual result as before.
+  - `onRemove()` deleted — no cleanup needed since there is no external actor to kill.
+  - `shadowVisible` flag gates the draw call so nothing is rendered when no qualifying light is nearby.
+  - Same formulas retained: `shadowLen = min(1.2, 400 / (dist + 50))`, `alpha = max(0.08, 0.45 * edgeFade)`, direction away from nearest light.
+
+### Rationale
+The previous approach spawned a child actor into the scene for each entity's shadow. This created a subtle lifecycle problem: if the entity was killed before the shadow actor was cleaned up, the shadow could persist as an orphan. Embedding the draw call directly in the entity's graphics pipeline eliminates that class of bug entirely and simplifies the component — no scene management, no z-ordering coordination, no kill/remove bookkeeping.
+
+### Next Steps
+- Verify shadow renders correctly in world space (onPreDraw coordinate space vs. entity transform space may need a feetOffsetY tweak during playtesting).
+- Consider soft-edge shadow (radial gradient) if the hard ellipse looks too sharp on varied terrain.
+
+---
+
 ## 2026-03-19 — v2.6.17: Elliptical shadow with bonfire wobble
 
 ### Summary
