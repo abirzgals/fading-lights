@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-03-19 — v2.6.25: Fix entities getting stuck inside colliders
+
+### Summary
+Added a stuck-entity recovery system that detects and resolves cases where the player or enemies end up inside blocked tiles (trees, rocks, buildings). Also fixed enemy spawning to never place enemies inside blocked tiles.
+
+### Changes Made
+- `src/engine/GridCollisionSystem.ts`:
+  - `pushOutOfBlocked(wx, wy)` — if the given world position is inside a blocked tile, searches an expanding ring (radius 1–5 tiles) for the nearest walkable tile and returns its center. Returns `null` if the entity is not stuck.
+  - `findWalkableNear(wx, wy)` — convenience wrapper used by spawning; returns the original position if it is already walkable, otherwise delegates to `pushOutOfBlocked`.
+- `src/scenes/GameScene.ts`:
+  - `pushEntitiesOutOfBlocked()` — runs first in every `onPreUpdate` frame. Checks the player and all living enemies; if any are inside a blocked tile, teleports them to the nearest walkable center and zeroes their velocity.
+  - Enemy spawning updated to call `findWalkableNear()` on the raw spawn coordinates, ensuring enemies never materialize inside trees, rocks, or buildings.
+
+### Rationale
+Two gameplay actions can trap entities inside solid tiles: placing a building on a tile an entity is standing on, and the forest gap-filling pass converting open tiles to trees after an entity has walked onto them. Without recovery, affected entities become permanently stuck. The per-frame push-out covers both scenarios without requiring changes to the building or forest systems.
+
+### Next Steps
+- If entities are frequently getting trapped, consider adding a debug overlay that highlights blocked-tile violations per frame.
+- The ring search cap of 5 tiles (25-tile radius worst case) is conservative; raise it if very dense obstacle clusters appear in later waves.
+
+---
+
 ## 2026-03-19 — docs: add interactive architecture visualization page
 
 ### Summary

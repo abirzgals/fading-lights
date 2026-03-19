@@ -113,6 +113,7 @@ export class GameScene extends ex.Scene {
 
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
     const dt = deltaMs / 1000;
+    this.pushEntitiesOutOfBlocked();
     this.handlePlayerInput(engine, dt);
     this.runEnemyAI(dt);
     this.runSpawning(dt);
@@ -124,6 +125,24 @@ export class GameScene extends ex.Scene {
     this.updateEnemyHPBars();
     if (this.debugMode) this.renderDebugOverlay();
     this.updateHUD();
+  }
+
+  // ======== PUSH OUT OF BLOCKED — prevent entities stuck in colliders ========
+
+  private pushEntitiesOutOfBlocked(): void {
+    const grid = this.level.grid;
+
+    // Player
+    const p = this.level.player;
+    const pFix = grid.pushOutOfBlocked(p.pos.x, p.pos.y);
+    if (pFix) { p.pos = ex.vec(pFix.x, pFix.y); p.vel = ex.vec(0, 0); }
+
+    // Enemies
+    for (const e of this.level.enemies) {
+      if (e.isKilled() || e.isDying) continue;
+      const eFix = grid.pushOutOfBlocked(e.pos.x, e.pos.y);
+      if (eFix) { e.pos = ex.vec(eFix.x, eFix.y); e.vel = ex.vec(0, 0); }
+    }
   }
 
   // ======== PLAYER INPUT ========
@@ -381,9 +400,12 @@ export class GameScene extends ex.Scene {
       const pool = GameScene.WAVE_POOLS[poolIdx];
       const type = pool[Math.floor(Math.random() * pool.length)];
 
-      const enemy = EntityFactory.createEnemy(this,
-        player.pos.x + Math.cos(angle) * dist,
-        player.pos.y + Math.sin(angle) * dist, type);
+      // Find walkable spawn position
+      const rawX = player.pos.x + Math.cos(angle) * dist;
+      const rawY = player.pos.y + Math.sin(angle) * dist;
+      const spawnPos = this.level.grid.findWalkableNear(rawX, rawY);
+
+      const enemy = EntityFactory.createEnemy(this, spawnPos.x, spawnPos.y, type);
       this.level.enemies.push(enemy);
       this.totalSpawned++;
 

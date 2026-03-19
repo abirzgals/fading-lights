@@ -38,6 +38,36 @@ export class GridCollisionSystem {
     return { tx: Math.floor(wx / this.tileSize), ty: Math.floor(wy / this.tileSize) };
   }
 
+  /** If position is inside a blocked tile, return nearest walkable position. Otherwise return null. */
+  pushOutOfBlocked(wx: number, wy: number): { x: number; y: number } | null {
+    const T = this.tileSize;
+    const tx = Math.floor(wx / T), ty = Math.floor(wy / T);
+    if (!this.isBlocked(tx, ty)) return null; // not stuck
+
+    // Search expanding ring for nearest walkable tile
+    for (let r = 1; r <= 5; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const nx = tx + dx, ny = ty + dy;
+          if (!this.isBlocked(nx, ny)) {
+            return { x: nx * T + T / 2, y: ny * T + T / 2 };
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /** Find a valid walkable spawn position near the given world coordinates */
+  findWalkableNear(wx: number, wy: number): { x: number; y: number } {
+    const T = this.tileSize;
+    const tx = Math.floor(wx / T), ty = Math.floor(wy / T);
+    if (!this.isBlocked(tx, ty)) return { x: wx, y: wy };
+    const result = this.pushOutOfBlocked(wx, wy);
+    return result ?? { x: wx, y: wy };
+  }
+
   /** Apply grid collision — modifies velocity to prevent entering blocked tiles */
   applyGridCollision(
     bodyLeft: number, bodyRight: number, bodyTop: number, bodyBottom: number,
