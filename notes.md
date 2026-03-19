@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-19 — feat: Cloudflare Workers multiplayer relay server
+
+### Summary
+Added a new `server/` directory containing a complete WebSocket relay server built on Cloudflare Workers and Durable Objects. Each game room runs as an isolated Durable Object instance. Players connect via `?room=XXXX` query parameter; the first player to connect becomes the authoritative host. When the host disconnects, the server automatically elects the next connected player as the new host. All relayed messages have a `from` field (sender peerId) injected by the server.
+
+### Changes Made
+- `server/worker.js`: Cloudflare Worker entry point + `GameRoom` Durable Object class. Handles WebSocket upgrade, room routing, welcome/join/leave notifications, message broadcasting, and auto host election.
+- `server/wrangler.toml`: Wrangler configuration — worker name `fading-light-relay`, Durable Objects binding for `GAME_ROOM`, migration tag `v1`.
+- `server/README.md`: Setup instructions (Wrangler install, login, deploy), protocol documentation (connect URL format, message schema, server-side fields, system message types).
+
+### Rationale
+Multiplayer requires a lightweight server-side relay so peers can exchange game state without direct browser-to-browser WebRTC negotiation. Cloudflare Durable Objects provide per-room state isolation with no cold-start latency, and Workers deploy globally with zero infrastructure management.
+
+### Next Steps
+- Wire the client-side multiplayer code to connect to the deployed worker URL.
+- Implement reconnect logic on the client for dropped WebSocket connections.
+- Add room code generation UI to the game lobby/menu.
+- Consider rate-limiting or message-size validation in the worker for production hardening.
+
+---
+
 ## 2026-03-19 — v2.6.75: BotAI — all enemy targeting uses wave distance instead of straight-line distance
 
 ### Summary
