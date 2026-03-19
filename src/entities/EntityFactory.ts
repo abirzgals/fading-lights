@@ -335,6 +335,11 @@ export class EntityFactory {
       radius: CONFIG.BONFIRE_BASE_RADIUS, intensity: 1.0, softness: 0.5,
       tintR: 1.0, tintG: 0.47, tintB: 0.16, tintA: 0.12,
     }));
+    // Block the tile so enemies can't walk into the bonfire
+    bf.addComponent(new GridOccupancyComponent({
+      tx: Math.floor(x / CONFIG.TILE_SIZE),
+      ty: Math.floor(y / CONFIG.TILE_SIZE),
+    }));
 
     // Fire particles
     const fireTimer = new ex.Timer({

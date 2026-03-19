@@ -94,15 +94,9 @@ export class Action implements TreeNode {
 // Pre-built enemy behavior trees
 // ============================================================
 
-/** Melee enemy: chase → attack when close, flee when low HP */
+/** Melee enemy: chase → attack when close. Fights to the death — no flee. */
 export function createMeleeTree(): TreeNode {
   return new Selector('Root', [
-    // Flee when low HP
-    new Sequence('Flee', [
-      new Condition('LowHP', ctx => ctx.hp < ctx.maxHp * 0.2),
-      new Condition('TargetNear', ctx => ctx.distToTarget < ctx.sightRange),
-      new Action('RunAway', ctx => { ctx.action = 'flee'; return 'success'; }),
-    ]),
     // Attack when in range
     new Sequence('Attack', [
       new Condition('TargetInMelee', ctx => ctx.distToTarget < 30),
