@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-19 — v2.6.7: Turret pixel art + arrow projectile + bonfire feed fix
+
+### Summary
+Three related improvements to the camp and turret systems. Bonfire feeding was previously blocked whenever fuel exceeded 90%, which prevented level-up progression even when the camp level was not at max — this is now fixed by allowing feeding whenever a level-up is still possible. The turret building now renders a 48x48 medieval wooden arrow tower pixel art sprite (generated via PixelLab MCP) with a rectangle fallback if the asset is not loaded. Turret projectiles are now an 8x2 brown rectangle rotated toward the target, giving an arrow-like appearance instead of the previous orange circle.
+
+### Changes Made
+- `public/assets/pixelart/turret.png` (new): 48x48 medieval wooden arrow tower pixel art, generated via PixelLab MCP.
+- `src/engine/AssetLoader.ts`: Added `turretSprite` static `ImageSource` pointing to `/assets/pixelart/turret.png`; registered it in the loader list under a `// Buildings` comment block.
+- `src/entities/EntityFactory.ts`: `createBuilding` for `TURRET` type now uses `AssetLoader.turretSprite.toSprite()` when loaded, with a fallback rectangle using the original color map.
+- `src/components/BuildingComponent.ts`: Turret projectile changed from `ex.Circle({ radius: 3 })` to `ex.Rectangle({ width: 8, height: 2, color: '#AA8844' })`; `proj.rotation` set to `Math.atan2(dir.y, dir.x)` so it faces the target.
+- `src/scenes/GameScene.ts`: Bonfire feeding condition split into `needsFuel` (fuel < 90%) and `needsLevelUp` (camp not at max level); feeding is now allowed when either condition is true, fixing the level-up block at full fuel.
+
+### Rationale
+The fuel > 90% gate was intended to prevent spam-feeding but inadvertently blocked level-up accumulation entirely once the bonfire was nearly full. By separating the two concerns, the player can always progress through camp levels as long as they have wood.
+
+### Next Steps
+- Consider adding pixel art sprites for other building types (OUTPOST, FORGE, etc.)
+- Turret arrow projectile could gain a small trail particle effect for visual clarity
+
+---
+
 ## 2026-03-19 — v2.6.6: Bot AI actively upgrades bonfire to next level
 
 ### Summary
