@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.62: Fix bot rapid goal cycling — add 0.3s minimum hold time for reactive goals
+
+### Summary
+The bot no longer rapidly cycles between Retreating, Dodging, and Fighting every frame. Reactive goals (flee, dodge, kite, kill) now enforce a 0.3s minimum hold time before they can be interrupted by another reactive goal. Previously these goals had zero hold time and could interrupt each other every single frame, causing the bot to stand still while its goal status flickered.
+
+### Changes Made
+- `src/ai/BotAI.ts`
+  - `shouldSwitchGoal`: added `if (this.goalAge < 0.3) return false` guard at the top of the reactive-goal interrupt block. Any reactive goal now runs for at least 0.3s before it can yield to another reactive goal.
+  - Updated comment above the guard to document the rationale.
+- `package.json` — Version bumped to 2.6.62.
+
+### Rationale
+Without a minimum hold time, reactive goals (all with zero hold time configured) could interrupt each other on every tick. The result was the bot never moving — each new goal would push a velocity for one frame then be immediately replaced, leaving net movement near zero. A 0.3s floor is long enough to produce visible displacement without making the bot feel unresponsive to genuine new threats.
+
+### Next Steps
+- Consider per-goal minimum hold times if 0.3s feels too long for fast dodge reactions.
+- Monitor whether 0.3s is sufficient against very fast enemies or if further tuning is needed.
+
+---
+
 ## 2026-03-19 — v2.6.61: Fix bot oscillation between Fighting and Dodging vs ranged enemies
 
 ### Summary

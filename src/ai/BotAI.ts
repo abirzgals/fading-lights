@@ -326,9 +326,10 @@ export class BotAI {
       return true; // can't afford anymore — go gather
     }
 
-    // Kill is reactive — if enemy is near camp/player, interrupt lower-priority goals
+    // Reactive goals can interrupt, but current goal must have run for at least 0.3s
+    // This prevents rapid cycling between flee/dodge/kill every frame
     if (BotAI.REACTIVE_GOALS.has(candidate.type) && candidate.type !== this.currentGoal.type) {
-      // For 'kill', only interrupt if current goal is low priority
+      if (this.goalAge < 0.3) return false; // let current action play out briefly
       if (candidate.type === 'kill') {
         const lowPriority = ['idle', 'chop', 'mine', 'feed', 'gather'];
         if (lowPriority.includes(this.currentGoal.type)) return true;
