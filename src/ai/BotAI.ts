@@ -339,6 +339,13 @@ export class BotAI {
 
     if (candidate.type === this.currentGoal.type &&
         candidate.target === this.currentGoal.target) return false;
+
+    // Chop/mine: commit to target until it's destroyed — don't switch trees
+    if ((this.currentGoal.type === 'chop' || this.currentGoal.type === 'mine') &&
+        this.currentGoal.target && !this.currentGoal.target.isKilled()) {
+      return false;
+    }
+
     if (this.goalAge < this.goalMinTime && this.currentGoal.type !== 'idle') return false;
 
     return candidate.type !== this.currentGoal.type ||

@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.49: Fix bot tree-switching — commit to one chop target until destroyed
+
+### Summary
+Bots previously abandoned the tree they were chopping every 1.5 seconds and picked a different "best" tree due to minor position changes affecting the scoring heuristic. The bot now locks onto a chop or mine target until that target is dead. Only reactive goals (flee, dodge, kite, kill), an affordability check for build goals, or actual target death can interrupt the current harvest goal.
+
+### Changes Made
+- `src/ai/BotAI.ts` — `shouldSwitchGoal()`: added an early-return guard that returns `false` when the current goal type is `chop` or `mine` and the target is still alive (`!target.isKilled()`). This fires before the `goalMinTime` hold-time check, so the lock holds for the full lifetime of the target regardless of re-evaluation cycles.
+- `package.json` — Version bumped to 2.6.49.
+
+### Rationale
+The 1.5s `goalMinTime` hold was the only protection against goal thrashing, but once it expired the bot re-evaluated from scratch. Tiny position deltas shifted scores enough to select a different tree on each cycle, producing zig-zag behavior between two nearby trees. Committing to the target until death is the correct model: there is no benefit to switching trees mid-chop.
+
+### Next Steps
+- Confirm bots fully chop one tree before moving to the next during automated playtests.
+- Consider applying the same lock to the `mine` goal path if ore-switching is observed.
+
+---
+
 ## 2026-03-19 — v2.6.48: Fix bot resource attack range — tile adjacency only
 
 ### Summary
