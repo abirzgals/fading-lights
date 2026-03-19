@@ -132,7 +132,7 @@ export class BotAI {
   private pathFollower: PathFollower;
 
   // Cached BFS + resource search (throttled to 1s)
-  private cachedReachable: Map<string, number> = new Map();
+  private cachedReachable: Uint16Array = new Uint16Array(0);
   private reachableCacheTimer = 0;
   // Pre-filtered resource list (only entities with ResourceComponent)
   private resourceEntities: GameEntity[] = [];
@@ -712,19 +712,24 @@ export class BotAI {
     const reachable = this.cachedReachable;
 
     // Wave distance helper — Infinity if unreachable
+    const UNREACHABLE = 65535;
+    const gs = this.grid.getSize();
     const getWaveDist = (e: GameEntity): number => {
       const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-      const selfDist = reachable.get(`${etx},${ety}`);
-      if (selfDist !== undefined) return selfDist;
-      let best = Infinity;
+      if (etx < 0 || ety < 0 || etx >= gs || ety >= gs) return Infinity;
+      const selfDist = reachable[ety * gs + etx];
+      if (selfDist !== UNREACHABLE) return selfDist;
+      let best = UNREACHABLE;
       for (let ddx = -1; ddx <= 1; ddx++)
-        for (let ddy = -1; ddy <= 1; ddy++)
-          if (ddx !== 0 || ddy !== 0) {
-            if (this.grid.isBlocked(etx + ddx, ety + ddy)) continue;
-            const nd = reachable.get(`${etx + ddx},${ety + ddy}`);
-            if (nd !== undefined && nd < best) best = nd;
-          }
-      return best;
+        for (let ddy = -1; ddy <= 1; ddy++) {
+          if (ddx === 0 && ddy === 0) continue;
+          const nx = etx + ddx, ny = ety + ddy;
+          if (nx < 0 || ny < 0 || nx >= gs || ny >= gs) continue;
+          if (this.grid.isBlocked(nx, ny)) continue;
+          const nd = reachable[ny * gs + nx];
+          if (nd < best) best = nd;
+        }
+      return best === UNREACHABLE ? Infinity : best;
     };
 
     // Heavy enemy + resource scoring — only on recompute (every 500ms)
@@ -773,19 +778,8 @@ export class BotAI {
         const rc = e.get(ResourceComponent) as ResourceComponent | null;
         if (!rc) continue;
         const rType = rc.resourceType;
-        const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-        let waveDist = Infinity;
-        const selfDist = reachable.get(`${etx},${ety}`);
-        if (selfDist !== undefined) { waveDist = selfDist; }
-        else {
-          for (let dx = -1; dx <= 1; dx++)
-            for (let dy = -1; dy <= 1; dy++) {
-              if (dx === 0 && dy === 0) continue;
-              if (this.grid.isBlocked(etx + dx, ety + dy)) continue;
-              const nd = reachable.get(`${etx + dx},${ety + dy}`);
-              if (nd !== undefined && nd < waveDist) waveDist = nd;
-            }
-        }
+        // Use getWaveDist for fast Uint16Array lookup
+        const waveDist = getWaveDist(e);
         if (waveDist === Infinity) continue;
         const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : waveDist * 32;
         if (distToCamp > this.GATHER_RANGE * 1.5) continue;

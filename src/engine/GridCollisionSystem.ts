@@ -38,38 +38,60 @@ export class GridCollisionSystem {
     return { tx: Math.floor(wx / this.tileSize), ty: Math.floor(wy / this.tileSize) };
   }
 
-  /** BFS flood-fill from a world position. Returns map of reachable tile key "tx,ty" → distance (in tiles). */
-  floodFill(wx: number, wy: number, maxTiles: number = 200): Map<string, number> {
-    const T = this.tileSize;
-    const sx = Math.floor(wx / T), sy = Math.floor(wy / T);
-    const visited = new Map<string, number>();
-    const queue: Array<{ x: number; y: number; d: number }> = [];
+  // Reusable flood-fill distance array (avoids allocation each call)
+  private floodDist: Uint16Array | null = null;
+  private readonly FLOOD_UNREACHABLE = 65535;
 
+  /** BFS flood-fill. Returns flat Uint16Array[gridSize*gridSize], value = distance in tiles (65535 = unreachable). */
+  floodFill(wx: number, wy: number, maxTiles: number = 200): Uint16Array {
+    const T = this.tileSize;
+    const gs = this.size;
+    // Reuse array — avoid allocation
+    if (!this.floodDist || this.floodDist.length !== gs * gs) {
+      this.floodDist = new Uint16Array(gs * gs);
+    }
+    this.floodDist.fill(this.FLOOD_UNREACHABLE);
+
+    const sx = Math.floor(wx / T), sy = Math.floor(wy / T);
+    let startX = sx, startY = sy;
     if (this.isBlocked(sx, sy)) {
       const fix = this.pushOutOfBlocked(wx, wy);
-      if (!fix) return visited;
-      const fx = Math.floor(fix.x / T), fy = Math.floor(fix.y / T);
-      visited.set(`${fx},${fy}`, 0);
-      queue.push({ x: fx, y: fy, d: 0 });
-    } else {
-      visited.set(`${sx},${sy}`, 0);
-      queue.push({ x: sx, y: sy, d: 0 });
+      if (!fix) return this.floodDist;
+      startX = Math.floor(fix.x / T); startY = Math.floor(fix.y / T);
     }
 
-    // Only 4 cardinal directions — no diagonal (matches pathfinding constraints)
-    const dirs = [[-1,0],[1,0],[0,-1],[0,1]];
-    while (queue.length > 0 && visited.size < maxTiles) {
-      const cur = queue.shift()!;
-      for (const [dx, dy] of dirs) {
-        const nx = cur.x + dx, ny = cur.y + dy;
-        const key = `${nx},${ny}`;
-        if (visited.has(key)) continue;
-        if (this.isBlocked(nx, ny)) continue;
-        visited.set(key, cur.d + 1);
-        queue.push({ x: nx, y: ny, d: cur.d + 1 });
+    // BFS with flat queue (no objects, no strings)
+    const queueX = new Int16Array(maxTiles + 4);
+    const queueY = new Int16Array(maxTiles + 4);
+    const queueD = new Uint16Array(maxTiles + 4);
+    let head = 0, tail = 0, count = 0;
+
+    this.floodDist[startY * gs + startX] = 0;
+    queueX[tail] = startX; queueY[tail] = startY; queueD[tail] = 0; tail++;
+    count++;
+
+    while (head < tail && count < maxTiles) {
+      const cx = queueX[head], cy = queueY[head], cd = queueD[head]; head++;
+      // 4 cardinal directions
+      for (let dir = 0; dir < 4; dir++) {
+        const nx = cx + (dir === 0 ? -1 : dir === 1 ? 1 : 0);
+        const ny = cy + (dir === 2 ? -1 : dir === 3 ? 1 : 0);
+        if (nx < 0 || ny < 0 || nx >= gs || ny >= gs) continue;
+        const idx = ny * gs + nx;
+        if (this.floodDist[idx] !== this.FLOOD_UNREACHABLE) continue;
+        if (this.grid[idx] === 0) continue; // blocked
+        this.floodDist[idx] = cd + 1;
+        queueX[tail] = nx; queueY[tail] = ny; queueD[tail] = cd + 1; tail++;
+        count++;
       }
     }
-    return visited;
+    return this.floodDist;
+  }
+
+  /** Get flood distance at tile (returns 65535 if unreachable) */
+  getFloodDist(dist: Uint16Array, tx: number, ty: number): number {
+    if (tx < 0 || ty < 0 || tx >= this.size || ty >= this.size) return this.FLOOD_UNREACHABLE;
+    return dist[ty * this.size + tx];
   }
 
   /** If position is inside a blocked tile, return nearest walkable position. Otherwise return null. */

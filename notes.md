@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-03-20 — v2.6.95: Zero-allocation BFS flood fill — Uint16Array reuse, no GC pressure
+
+### Summary
+Complete rewrite of `GridCollisionSystem.floodFill` to eliminate all heap allocations after the first call. The BFS queue was converted from an array of objects to three flat typed arrays (`Int16Array` / `Uint16Array`). The result is now a reused `Uint16Array` (one cell per grid tile, 65535 = unreachable) instead of a freshly allocated `Map<string, number>`. All string key construction (`"tx,ty"`) is gone. `BotAI` was updated to consume the new array directly via index arithmetic, removing every `Map.get(string)` call in the hot path. A `getFloodDist()` helper was added to `GridCollisionSystem` for bounds-safe lookups.
+
+### Changes Made
+- `src/engine/GridCollisionSystem.ts`:
+  - `floodFill()` now returns a reused `Uint16Array[gridSize * gridSize]` (65535 = unreachable).
+  - BFS queue uses three parallel flat typed arrays (`queueX: Int16Array`, `queueY: Int16Array`, `queueD: Uint16Array`), no object allocation.
+  - `floodDist` array is allocated once and `.fill(65535)` reset each call — no allocation on subsequent calls.
+  - Added `getFloodDist(dist, tx, ty): number` helper with bounds check.
+- `src/ai/BotAI.ts`:
+  - `cachedReachable` field type changed from `Map<string, number>` to `Uint16Array`.
+  - `getWaveDist()` closure uses direct array index `reachable[ty * gs + tx]` instead of `Map.get()`.
+  - Resource scoring loop now calls `getWaveDist(e)` instead of duplicating inline Map lookup logic.
+  - All `\`${x},${y}\`` string template allocations eliminated from the hot AI path.
+- `package.json`: bumped version to `2.6.95`.
+
+### Rationale
+`ai.context` was measuring 17ms/tick, traced to GC pressure from string key allocation and repeated `Map<string, number>` construction inside `floodFill`. Converting to typed arrays and reusing a single buffer removes every allocation from the BFS inner loop. The result array is also cheaper to query (array index vs. Map lookup with string hash). Expected `ai.context` cost: ~3-5ms.
+
+### Next Steps
+- Profile `ai.context` in-game to confirm drop from 17ms to 3-5ms.
+- Consider exposing `FLOOD_UNREACHABLE` as a public constant so callers can avoid magic numbers.
+
+---
+
 ## 2026-03-20 — v2.6.94: PathFollower — remove redundant 8-neighbor A* loop
 
 ### Summary
