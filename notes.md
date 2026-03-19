@@ -2,6 +2,37 @@
 
 ---
 
+## 2026-03-19 — v2.6.80: Auto-matchmaking — server KV rooms + client room discovery
+
+### Summary
+Server-side auto-matchmaking via Cloudflare Workers KV: the worker tracks active rooms with player counts and timestamps, expiring stale rooms after 60 seconds. The client now discovers or creates a room automatically on startup, updates the URL with the room code for easy sharing, and falls back to solo play if matchmaking fails.
+
+### Changes Made
+- `server/worker.js`:
+  - `GET /find-room` — returns an active room that has space, or creates a new one if none exist.
+  - `GET /rooms` — lists all active rooms with player count and age metadata.
+  - ROOMS_KV binding used to persist room state (player count + last-updated timestamp).
+  - Rooms expire automatically after 60 seconds of inactivity.
+  - CORS headers added to all responses to support cross-origin fetch from the client.
+  - Room listing refreshed on every player join and leave event.
+- `server/wrangler.toml`:
+  - Added `ROOMS_KV` KV namespace binding for the worker.
+- `src/scenes/GameScene.ts`:
+  - On scene start: if `?room=XXXX` is present in the URL, join that room directly.
+  - Otherwise, fetch `/find-room` and join the returned room (existing or newly created).
+  - URL updated with the room code after joining so the session is shareable.
+  - Graceful fallback to solo play if matchmaking request fails.
+
+### Rationale
+With the networking foundation and full state sync in place (v2.6.78–79), the missing piece was automatic room discovery. Players previously had to manually share room codes. This release wires the Cloudflare KV store as a lightweight matchmaking layer: the server tracks which rooms are alive and how many players are in them, the client picks one up (or creates a fresh one) without any manual input, and the URL becomes the share link. The 60-second expiry keeps the KV store clean without requiring explicit room deletion.
+
+### Next Steps
+- Cap rooms at a maximum player count server-side.
+- Surface active room count in a lobby or menu screen.
+- Add host migration if the host disconnects.
+
+---
+
 ## 2026-03-19 — v2.6.79: Full multiplayer synchronization
 
 ### Summary
