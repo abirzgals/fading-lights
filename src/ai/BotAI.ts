@@ -355,8 +355,8 @@ export class BotAI {
     const p = this.player;
     const directDist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
 
-    // Short distance (<100px) — just go direct, no A* needed
-    if (directDist < 100) {
+    // Very close (<32px, same tile) — go direct
+    if (directDist < 32) {
       return this.dirTo(p.pos, tx, ty);
     }
 
