@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.48: Fix bot resource attack range — tile adjacency only
+
+### Summary
+Replaced a pixel-distance threshold (dist < 56px) with a Manhattan tile-distance check. Bots now only attack a resource when occupying the same tile or a directly adjacent tile horizontally or vertically (dx + dy <= 1). Diagonal adjacency does not qualify — the bot must path around to get in position.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Harvest goal handler: compute tile coords for both bot and target, derive `dx` and `dy`, and attack only when `dx + dy <= 1`. Removed the previous `pos.distance()` pixel check.
+- `package.json` — Version bumped to 2.6.48.
+
+### Rationale
+The old 56px check treated diagonal-corner proximity as "in range," which allowed bots to attack resources on the other side of a wall corner. The new tile-based check mirrors the actual movement model: only cardinal neighbors are reachable in one step, so attack range now aligns exactly with movement reachability.
+
+### Next Steps
+- Verify bots navigate around corners successfully before attacking, not stalling at diagonal adjacency waiting for a path.
+
+---
+
 ## 2026-03-19 — v2.6.47: Fix bot re-pathing away from reachable resource
 
 ### Summary
