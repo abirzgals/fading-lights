@@ -2,6 +2,64 @@
 
 ---
 
+## 2026-03-19 — v2.6.78: Multiplayer networking foundation
+
+### Summary
+Added a WebSocket-based multiplayer networking layer. Two new modules handle client communication and game state synchronisation. GameScene gains Host/Join UI, a room-code HUD overlay, and hooks throughout the update loop to broadcast and receive player positions, enemy state, and world events.
+
+### Changes Made
+- `src/network/NetworkClient.ts` (new): WebSocket client wrapping the relay server. Handles room creation/joining, auto-reconnect on disconnect, throttled outbound state sync at 20 fps, and an event listener system for routing inbound messages by type.
+- `src/network/NetworkSync.ts` (new): High-level game sync logic. Renders remote players as sprites with name labels above them, interpolates received positions for smooth movement, lets the host broadcast authoritative enemy positions, and relays resource destruction and building events to peers.
+- `src/scenes/GameScene.ts` (modified):
+  - Auto-connects to a room when `?room=XXXX` is present in the URL.
+  - Host and Join buttons added at bottom-left alongside Debug/AI checkboxes.
+  - HUD displays room code, host/client role, and live player count.
+  - `onPreUpdate` loop sends local player state and, when host, enemy positions.
+  - Resource destruction events are broadcast over the network.
+  - `onDeactivate` cleanly disconnects the network client.
+
+### Rationale
+First-pass networking infrastructure to support co-op play. The host-authoritative model keeps enemy and world state consistent without a dedicated server. Throttled sync at 20 fps keeps bandwidth low while position interpolation hides latency on the client side. The room-code flow (Host button generates a code; Join input accepts one; `?room=` URL shares it directly) lets two players connect with minimal friction.
+
+### How to Use
+1. Player 1 clicks "Host" — a four-letter room code appears in the HUD.
+2. Player 2 types the code into the Join input and clicks "Join", or opens the shared `?room=ABCD` URL.
+3. Both players see each other's characters with smooth position interpolation.
+4. The host is authoritative for enemy movement and world events.
+
+### Next Steps
+- Add latency display to the HUD.
+- Sync player health and death events.
+- Persist room membership across page refreshes.
+- Add a spectator/reconnect flow for mid-game joins.
+
+---
+
+## 2026-03-19 — v2.6.77: Controls overhaul — AI checkbox, mouse, mobile touch
+
+### Summary
+Replaced the backtick-key AI toggle with a proper AI checkbox in the UI, sitting next to the existing Debug checkbox at the bottom-left. Added full mouse input support (left click = attack, right click = interact, context menu suppressed on canvas). Standardised keyboard layout to WASD + arrow keys for movement, Space for attack, E for interact. Added auto-detected mobile touch controls: a virtual joystick at the bottom-left for movement and an ATK button at the bottom-right for attacking, both only rendered on genuine touch devices.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `mouseLeftPressed` / `mouseRightPressed` state fields.
+  - Added `mobileJoystick`, `mobileAttackPressed`, and `mobileControlsEl` state fields.
+  - `createDebugCheckbox()` refactored to render both Debug and AI checkboxes in a shared flex wrapper; AI checkbox drives `this.botEnabled` directly.
+  - New `setupMouseControls(engine)` — attaches `mousedown` and `contextmenu` listeners to the canvas.
+  - New `setupMobileControls()` — builds joystick + ATK button DOM, attaches touch event listeners, clamps joystick vector to unit length, and animates knob position.
+  - Human input branch in `onPreUpdate` extended to consume mouse and mobile inputs alongside keyboard.
+  - `onDeactivate()` now removes `mobileControlsEl` on scene teardown.
+
+### Rationale
+The backtick key was not discoverable and unavailable on many keyboard layouts. A visible checkbox matches the existing Debug toggle pattern and makes AI mode obvious to anyone playtesting. Mouse support is the minimum expected interaction on desktop. Mobile touch controls were already partially designed; this commit wires them up fully with visual feedback on the joystick knob.
+
+### Next Steps
+- Persist AI and Debug checkbox states across scene restarts (localStorage).
+- Add a visual indicator on the ATK button when it fires (brief colour flash).
+- Consider a dedicated interact button for mobile (for bonfire feeding).
+
+---
+
 ## 2026-03-19 — v2.6.76: Configure Cloudflare Worker deployment
 
 ### Summary

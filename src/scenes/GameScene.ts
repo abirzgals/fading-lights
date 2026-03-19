@@ -21,6 +21,8 @@ import { setGridSystem } from '../components/GridOccupancyComponent';
 import { BuildingComponent } from '../components/BuildingComponent';
 import { LightSourceComponent } from '../components/LightSourceComponent';
 import { ShadowCasterComponent } from '../components/ShadowCasterComponent';
+import { NetworkClient } from '../network/NetworkClient';
+import { NetworkSync } from '../network/NetworkSync';
 
 const T = CONFIG.TILE_SIZE;
 
@@ -65,6 +67,12 @@ export class GameScene extends ex.Scene {
   private debugMode = false;
   private debugActors: ex.Actor[] = [];
   private debugCheckbox: HTMLInputElement | null = null;
+
+  // Network
+  private net: NetworkClient | null = null;
+  private netSync: NetworkSync | null = null;
+  private readonly RELAY_URL = 'wss://fading-light-relay.arturs-birzgals.workers.dev';
+  private worldSeed = 42;
 
   // Mouse input
   private mouseLeftPressed = false;
@@ -134,6 +142,9 @@ export class GameScene extends ex.Scene {
     this.setupMouseControls(engine);
     this.setupMobileControls();
 
+    // Network — auto-connect if room code in URL
+    this.initNetwork();
+
     console.log(`[GameScene] initialized — ${this.level.entities.length} entities, ${this.level.enemies.length} enemies`);
   }
 
@@ -150,6 +161,7 @@ export class GameScene extends ex.Scene {
     this.depthSort();
     this.updateEnemyHPBars();
     if (this.debugMode) this.renderDebugOverlay();
+    this.updateNetwork(dt);
     this.updateHUD();
   }
 
@@ -419,6 +431,8 @@ export class GameScene extends ex.Scene {
         this.spawnStump(entity.pos.x, entity.pos.y);
       }
       entity.kill();
+      // Broadcast resource destruction
+      this.netSync?.sendResourceKilled(entity.pos.x, entity.pos.y, res.resourceType);
     }
   }
 
@@ -844,6 +858,62 @@ export class GameScene extends ex.Scene {
 
   // ======== DEBUG OVERLAY ========
 
+  // ======== NETWORK ========
+
+  private initNetwork(): void {
+    // Check URL for room code: ?room=XXXX
+    const params = new URLSearchParams(window.location.search);
+    const roomCode = params.get('room');
+    if (roomCode) {
+      this.connectToRoom(roomCode);
+    }
+  }
+
+  private async connectToRoom(roomCode: string): Promise<void> {
+    const name = (window as any).__playerName || 'Player';
+    this.net = new NetworkClient(this.RELAY_URL);
+    try {
+      await this.net.connect(roomCode, name);
+      this.netSync = new NetworkSync(this.net, this, this.worldSeed);
+
+      // If we're host, broadcast world seed
+      if (this.net.isHost) {
+        this.net.send({ type: 'world_seed', seed: this.worldSeed });
+      }
+
+      console.log(`[Net] In room ${roomCode} as ${this.net.isHost ? 'HOST' : 'CLIENT'}`);
+    } catch (e) {
+      console.log(`[Net] Failed to connect: ${e}`);
+      this.net = null;
+    }
+  }
+
+  private updateNetwork(dt: number): void {
+    if (!this.netSync || !this.net?.connected) return;
+
+    // Send local player state
+    this.netSync.sendPlayerState(this.level.player);
+
+    // Host: sync enemy positions
+    this.netSync.sendEnemySync(this.level.enemies, dt);
+
+    // Update remote player rendering
+    this.netSync.update(dt);
+  }
+
+  /** Create or join a room (called from UI) */
+  createRoom(): void {
+    const code = NetworkClient.generateRoomCode();
+    // Update URL without reload
+    window.history.replaceState({}, '', `?room=${code}`);
+    this.connectToRoom(code);
+  }
+
+  joinRoom(code: string): void {
+    window.history.replaceState({}, '', `?room=${code}`);
+    this.connectToRoom(code);
+  }
+
   private setupMouseControls(engine: ex.Engine): void {
     const canvas = engine.canvas;
     canvas.addEventListener('mousedown', (e) => {
@@ -942,6 +1012,26 @@ export class GameScene extends ex.Scene {
     lbl2.htmlFor = 'ai-toggle'; lbl2.textContent = ' AI';
     lbl2.style.cssText = 'color:#888;font:11px monospace;cursor:pointer;';
     wrap.appendChild(aiCb); wrap.appendChild(lbl2);
+
+    // Multiplayer buttons
+    const mpDiv = document.createElement('span');
+    mpDiv.style.cssText = 'margin-left:12px;';
+    const hostBtn = document.createElement('button');
+    hostBtn.textContent = 'Host';
+    hostBtn.style.cssText = 'font:10px monospace;padding:2px 6px;cursor:pointer;background:#222;color:#88ff88;border:1px solid #444;border-radius:3px;';
+    hostBtn.addEventListener('click', () => this.createRoom());
+    const joinInput = document.createElement('input');
+    joinInput.placeholder = 'CODE';
+    joinInput.maxLength = 4;
+    joinInput.style.cssText = 'width:40px;font:10px monospace;padding:2px 4px;background:#111;color:#ccc;border:1px solid #444;border-radius:3px;margin-left:4px;text-transform:uppercase;';
+    const joinBtn = document.createElement('button');
+    joinBtn.textContent = 'Join';
+    joinBtn.style.cssText = 'font:10px monospace;padding:2px 6px;cursor:pointer;background:#222;color:#88aaff;border:1px solid #444;border-radius:3px;margin-left:2px;';
+    joinBtn.addEventListener('click', () => { if (joinInput.value.length >= 4) this.joinRoom(joinInput.value.toUpperCase()); });
+    mpDiv.appendChild(hostBtn);
+    mpDiv.appendChild(joinInput);
+    mpDiv.appendChild(joinBtn);
+    wrap.appendChild(mpDiv);
 
     document.body.appendChild(wrap);
     this.debugCheckbox = cb;
@@ -1110,7 +1200,8 @@ export class GameScene extends ex.Scene {
       <span style="color:#AA66FF">Kills ${this.kills}</span> ·
       <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled() && !e.isDying).length}</span> ·
       <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
-      ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}`;
+      ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}
+      ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}`;
   }
   onDeactivate(): void {
     if (this.hudEl) this.hudEl.remove();
@@ -1118,5 +1209,6 @@ export class GameScene extends ex.Scene {
     if (this.mobileControlsEl) this.mobileControlsEl.remove();
     this.clearDebugOverlay();
     this.botAI?.removeDebugHUD();
+    this.netSync?.destroy();
   }
 }
