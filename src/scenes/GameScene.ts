@@ -122,23 +122,6 @@ export class GameScene extends ex.Scene {
     // Initialize build spots around main bonfire
     this.initBuildSpots();
 
-    // Spawn starter ranged enemies for testing
-    const bf = this.level.bonfires[0];
-    if (bf) {
-      for (const type of ['SHADOW_ARCHER', 'VOID_MAGE'] as EnemyType[]) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist = 180 + Math.random() * 80;
-        const pos = this.level.grid.findWalkableNear(
-          bf.pos.x + Math.cos(angle) * dist,
-          bf.pos.y + Math.sin(angle) * dist
-        );
-        const enemy = EntityFactory.createEnemy(this, pos.x, pos.y, type);
-        (enemy as any).enemyType = type;
-        (enemy as any)._netId = this.nextNetId++;
-        this.level.enemies.push(enemy);
-      }
-    }
-
     // Enemy AI system
     this.enemyBrains = new EnemyBrainSystem(this.level.grid);
 

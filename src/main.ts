@@ -132,6 +132,12 @@ game.start(loader).then(() => {
     style.remove();
   }, 800);
 
-  (window as any).__playerName = 'Dev';
-  game.goToScene('game');
+  // Skip intro for tests, go to game directly
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('skipIntro')) {
+    (window as any).__playerName = 'Dev';
+    game.goToScene('game');
+  } else {
+    game.goToScene('intro');
+  }
 });
