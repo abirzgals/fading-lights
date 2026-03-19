@@ -62,7 +62,7 @@ export class GameScene extends ex.Scene {
     building?: GameEntity;
   }> = [];
   private buildings: GameEntity[] = [];
-  private debugMode = false;
+  private debugMode = true;
   private debugActors: ex.Actor[] = [];
   private debugCheckbox: HTMLInputElement | null = null;
 
@@ -758,6 +758,7 @@ export class GameScene extends ex.Scene {
     const cb = document.createElement('input');
     cb.type = 'checkbox';
     cb.id = 'debug-toggle';
+    cb.checked = this.debugMode;
     cb.style.cssText = 'cursor:pointer;';
     cb.addEventListener('change', () => {
       this.debugMode = cb.checked;

@@ -702,15 +702,25 @@ export class BotAI {
       if (!rc) continue;
       const rType = rc.resourceType;
 
-      // Check if resource tile (or any adjacent tile) is reachable
+      // Check if a WALKABLE tile adjacent to this resource is reachable by wave
       const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
       let isReachable = false;
-      for (let dx = -1; dx <= 1 && !isReachable; dx++) {
-        for (let dy = -1; dy <= 1 && !isReachable; dy++) {
-          if (reachable.has(`${etx + dx},${ety + dy}`)) isReachable = true;
+      // Resource itself might be on a walkable tile (e.g. tree occupies the tile)
+      if (reachable.has(`${etx},${ety}`)) {
+        isReachable = true;
+      } else {
+        // Check 8 neighbors — must be both walkable AND reachable
+        for (let dx = -1; dx <= 1 && !isReachable; dx++) {
+          for (let dy = -1; dy <= 1 && !isReachable; dy++) {
+            if (dx === 0 && dy === 0) continue;
+            const nx = etx + dx, ny = ety + dy;
+            if (!this.grid.isBlocked(nx, ny) && reachable.has(`${nx},${ny}`)) {
+              isReachable = true;
+            }
+          }
         }
       }
-      if (!isReachable) continue; // can't reach this resource — skip
+      if (!isReachable) continue;
 
       const distToPlayer = p.pos.distance(e.pos);
       const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : distToPlayer;
