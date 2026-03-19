@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-03-19 — v2.6.47: Fix bot re-pathing away from reachable resource
+
+### Summary
+Bot was arriving at a tree, attacking for 1 frame, then abandoning its goal and marking the resource unreachable. Root cause: `findPath` returns an empty path when the bot is already standing on the approach tile (distance to self = 0), which `PathFollower` interpreted as unreachable.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Added distance guard before pathfinding in the harvest goal handler. If the bot is within 56 px of the target, it attacks directly and skips `moveToWithPathfinding` entirely. Also removed temporary debug logging added during diagnosis.
+
+### Rationale
+The wave algorithm already guarantees reachability at goal-selection time, so there is no need to re-verify via the pathfinder when the bot is already adjacent. The 56 px threshold (roughly 1.75 tiles) is safely inside attack range and safely above the rounding noise that could cause the bot to land exactly on the approach tile. This eliminates the one-frame attack + immediate goal-abandon loop without changing any pathfinding logic.
+
+### Next Steps
+- Watch for edge cases where a bot stalls at 55 px from a target that is partially blocked; if observed, consider widening the threshold slightly.
+
+---
+
 ## 2026-03-19 — v2.6.46: A* best-side selection, flood-fill wave distance, bot walk-distance scoring
 
 ### Summary
