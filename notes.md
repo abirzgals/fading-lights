@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-03-19 — v2.6.52: Fix attack animation stuck in attacking state forever
+
+### Summary
+Resolved a permanent state-machine lockup in `AnimatedSpriteComponent` where the attack state never resolved, blocking all future attacks indefinitely.
+
+### Root Cause
+When `playAttack()` was called before spritesheets were extracted (so `attackAnim` was null) or when the frame array for the current direction was empty, the `if (currentAnim === 'attack' && this.attackAnim)` block was skipped entirely. This left `currentAnim` stuck at `'attack'` forever, causing `isAttacking` to return true permanently and preventing any subsequent attack from registering.
+
+### Changes Made
+- `src/components/AnimatedSpriteComponent.ts` — Two guard clauses added to the update state machine:
+  1. If `currentAnim === 'attack'` and `attackAnim` is null: fire the callback immediately, reset `currentAnim` to `'idle'`, clear `attackCallback`.
+  2. If the attack frames array for the current direction is empty (length 0): reset to idle. The existing check for `frames.length` coverage was updated to include the empty-array case explicitly.
+- `package.json` — Version bumped to 2.6.52.
+
+### Rationale
+The state machine must guarantee that every state it enters is eventually exited. The previous code had an implicit assumption that `attackAnim` would always be available when the attack state was entered, which was not upheld during rapid or early-game attacks. The fix enforces a hard invariant: the attack state always resolves on the same frame it is detected as unresolvable.
+
+### Next Steps
+- Monitor attack responsiveness in the MazeScene and GameScene to confirm no attack lockups occur.
+- Consider adding a defensive assertion or warning log if `playAttack()` is called before spritesheets are ready, to surface the timing issue earlier in development.
+
+---
+
 ## 2026-03-19 — v2.6.51: Fix bot chop range + floodFill cardinal-only
 
 ### Summary
