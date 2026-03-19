@@ -42,6 +42,7 @@ export class GameScene extends ex.Scene {
   private fpsFrames = 0;
   private fpsTimer = 0;
   private fpsDisplay = 0;
+  private hudUpdateTimer = 0;
   private perfTimings: Record<string, number> = {};
   private perfDisplay: Record<string, number> = {};
   private perfAccum: Record<string, number> = {};
@@ -200,7 +201,11 @@ export class GameScene extends ex.Scene {
     this.profileStep('hpBars', () => this.updateEnemyHPBars());
     if (this.debugMode) this.profileStep('debug', () => this.renderDebugOverlay());
     this.profileStep('network', () => this.updateNetwork(dt));
-    this.profileStep('hud', () => this.updateHUD());
+    this.hudUpdateTimer -= deltaMs;
+    if (this.hudUpdateTimer <= 0) {
+      this.hudUpdateTimer = 200; // update HUD 5x/sec instead of 60x
+      this.profileStep('hud', () => this.updateHUD());
+    }
   }
 
   // ======== PUSH OUT OF BLOCKED — prevent entities stuck in colliders ========
@@ -474,7 +479,7 @@ export class GameScene extends ex.Scene {
         this.spawnStump(entity.pos.x, entity.pos.y);
       }
       entity.kill();
-      // Broadcast resource destruction
+      this.botAI?.invalidateResources();
       this.netSync?.sendResourceKilled(entity.pos.x, entity.pos.y, res.resourceType);
     }
   }

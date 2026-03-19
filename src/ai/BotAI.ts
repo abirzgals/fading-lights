@@ -131,9 +131,12 @@ export class BotAI {
   // Shared pathfinder
   private pathFollower: PathFollower;
 
-  // Cached BFS + resource search (throttled to 500ms)
+  // Cached BFS + resource search (throttled to 1s)
   private cachedReachable: Map<string, number> = new Map();
   private reachableCacheTimer = 0;
+  // Pre-filtered resource list (only entities with ResourceComponent)
+  private resourceEntities: GameEntity[] = [];
+  private resourceListDirty = true;
   private cachedResources: {
     bestByType: Record<string, { entity: GameEntity; dist: number; score: number }>;
     nearest: GameEntity | null;
@@ -199,6 +202,11 @@ export class BotAI {
 
   setGameState(state: BotGameState): void {
     this.gameState = state;
+  }
+
+  /** Call when a resource is destroyed — invalidates cached list */
+  invalidateResources(): void {
+    this.resourceListDirty = true;
   }
 
   // Reactive goal types that can interrupt any goal immediately
@@ -686,12 +694,20 @@ export class BotAI {
       }
     }
 
-    // === HEAVY COMPUTATION — throttled to every 500ms ===
+    // Build resource entity list once (or when invalidated)
+    if (this.resourceListDirty) {
+      this.resourceEntities = this.getEntities().filter(e =>
+        !e.isKilled() && e.get(ResourceComponent) !== null
+      );
+      this.resourceListDirty = false;
+    }
+
+    // === HEAVY COMPUTATION — throttled to every 1s ===
     this.reachableCacheTimer -= dt;
     const needsRecompute = this.reachableCacheTimer <= 0;
     if (needsRecompute) {
-      this.reachableCacheTimer = 0.5;
-      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+      this.reachableCacheTimer = 1.0;
+      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 200); // reduced from 300 to 200 tiles
     }
     const reachable = this.cachedReachable;
 
@@ -752,7 +768,7 @@ export class BotAI {
       let nearestResourceDist = Infinity;
       let bestOverallScore = Infinity;
 
-      for (const e of this.getEntities()) {
+      for (const e of this.resourceEntities) {
         if (e.isKilled()) continue;
         const rc = e.get(ResourceComponent) as ResourceComponent | null;
         if (!rc) continue;
