@@ -2,6 +2,46 @@
 
 ---
 
+## 2026-03-19 — v2.6.88: Per-frame performance profiler in GameScene update loop
+
+### Summary
+Added a lightweight per-stage profiler to `GameScene.onPreUpdate`. Each stage of the update loop (pushOut, input, enemyAI, spawn, drops, bonfire, build, fog, depth, hpBars, debug, network, hud) is wrapped with `performance.now()` timings that accumulate over one second. At the end of each second the totals are snapshotted, sorted heaviest-first, and displayed at the bottom of the HUD in small grey text as `"enemyAI:45ms · input:23ms · fog:12ms · ..."`. This makes it immediately obvious which stage is consuming the most frame budget without any external tooling.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added three fields: `perfTimings`, `perfDisplay`, `perfAccum` (all `Record<string, number>`) for per-stage timing state.
+  - Added private `profileStep(name, fn)` method: records `performance.now()` before/after calling `fn()` and accumulates the elapsed time into `perfAccum[name]`.
+  - Replaced 13 bare method calls in `onPreUpdate` with `profileStep(...)` wrappers covering every stage.
+  - On each 1-second FPS tick, snapshots `perfAccum` into `perfDisplay` and resets `perfAccum`.
+  - In `updateHUD`: appended a conditional line rendering `perfDisplay` entries sorted by descending milliseconds, joined with ` · `, in 10px grey (`#666`) text.
+
+### Rationale
+Frame budget problems in complex scenes are notoriously hard to diagnose without profiling data. Adding this zero-dependency, always-on profiler gives immediate visibility into which stage is the bottleneck (e.g., enemy AI path-finding, fog-of-war recalculation) each second of play. The overhead of `performance.now()` calls is negligible compared to the stages being measured.
+
+### Next Steps
+- Use the profiler output to identify which stage(s) warrant deeper optimisation (e.g., spatial partitioning for `pushOut`, cached shadow maps for `fog`).
+- Consider adding a threshold highlight (e.g., red text) for any stage exceeding a configurable budget (e.g., 8ms at 60fps).
+
+---
+
+## 2026-03-19 — v2.6.87: Add shadow casting to remote player entities
+
+### Summary
+Remote players now have `ShadowCasterComponent` added when they spawn via `NetworkSync`. Previously only the local player and enemies cast shadows from the bonfire light — remote players appeared shadow-less, creating a visual inconsistency in multiplayer sessions.
+
+### Changes Made
+- `src/network/NetworkSync.ts`:
+  - Imported `ShadowCasterComponent`.
+  - Called `entity.addComponent(new ShadowCasterComponent({ feetOffset: 10 }))` immediately after the animated sprite is added to each remote player entity, matching the configuration used for the local player.
+
+### Rationale
+All characters should behave visually identically regardless of whether they are local or remote. The missing shadow on remote players was noticeable at the bonfire — the fix is a one-liner with no performance concern since remote player count is low.
+
+### Next Steps
+- Verify shadow offset value (10) matches the local player's `feetOffset` exactly, adjusting if sprites differ in height.
+
+---
+
 ## 2026-03-19 — v2.6.86: FPS counter in HUD — color-coded by performance tier
 
 ### Summary

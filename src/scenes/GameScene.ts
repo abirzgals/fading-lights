@@ -38,10 +38,13 @@ export class GameScene extends ex.Scene {
   private botEnabled = true;
   private enemyBrains!: EnemyBrainSystem;
 
-  // FPS counter
+  // FPS counter + profiling
   private fpsFrames = 0;
   private fpsTimer = 0;
   private fpsDisplay = 0;
+  private perfTimings: Record<string, number> = {};
+  private perfDisplay: Record<string, number> = {};
+  private perfAccum: Record<string, number> = {};
 
   // Game state
   // HP is read from player's HealthComponent — no separate field
@@ -156,29 +159,39 @@ export class GameScene extends ex.Scene {
     console.log(`[GameScene] initialized — ${this.level.entities.length} entities, ${this.level.enemies.length} enemies`);
   }
 
+  private profileStep(name: string, fn: () => void): void {
+    const t0 = performance.now();
+    fn();
+    const elapsed = performance.now() - t0;
+    this.perfAccum[name] = (this.perfAccum[name] ?? 0) + elapsed;
+  }
+
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
     const dt = deltaMs / 1000;
-    // FPS counter
+    // FPS counter + profiling
     this.fpsFrames++;
     this.fpsTimer += dt;
     if (this.fpsTimer >= 1) {
       this.fpsDisplay = this.fpsFrames;
       this.fpsFrames = 0;
       this.fpsTimer = 0;
+      this.perfDisplay = { ...this.perfAccum };
+      this.perfAccum = {};
     }
-    this.pushEntitiesOutOfBlocked();
-    this.handlePlayerInput(engine, dt);
-    this.runEnemyAI(dt);
-    this.runSpawning(dt);
-    this.runDropPickup();
-    this.runBonfire(dt);
-    this.runBuildSpots();
-    this.updateFog();
-    this.depthSort();
-    this.updateEnemyHPBars();
-    if (this.debugMode) this.renderDebugOverlay();
-    this.updateNetwork(dt);
-    this.updateHUD();
+
+    this.profileStep('pushOut', () => this.pushEntitiesOutOfBlocked());
+    this.profileStep('input', () => this.handlePlayerInput(engine, dt));
+    this.profileStep('enemyAI', () => this.runEnemyAI(dt));
+    this.profileStep('spawn', () => this.runSpawning(dt));
+    this.profileStep('drops', () => this.runDropPickup());
+    this.profileStep('bonfire', () => this.runBonfire(dt));
+    this.profileStep('build', () => this.runBuildSpots());
+    this.profileStep('fog', () => this.updateFog());
+    this.profileStep('depth', () => this.depthSort());
+    this.profileStep('hpBars', () => this.updateEnemyHPBars());
+    if (this.debugMode) this.profileStep('debug', () => this.renderDebugOverlay());
+    this.profileStep('network', () => this.updateNetwork(dt));
+    this.profileStep('hud', () => this.updateHUD());
   }
 
   // ======== PUSH OUT OF BLOCKED — prevent entities stuck in colliders ========
@@ -1364,7 +1377,13 @@ export class GameScene extends ex.Scene {
       <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled() && !e.isDying).length}</span> ·
       <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}
-      ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}`;
+      ${this.net?.connected ? `<br><span style="color:#44FF88">ROOM: ${this.net.room} (${this.net.isHost ? 'HOST' : 'CLIENT'}) ${this.netSync?.playerCount ?? 1}P</span>` : ''}
+      ${Object.keys(this.perfDisplay).length > 0 ? `<br><span style="color:#666;font-size:10px">${
+        Object.entries(this.perfDisplay)
+          .sort((a, b) => b[1] - a[1])
+          .map(([k, v]) => `${k}:${Math.round(v)}ms`)
+          .join(' · ')
+      }</span>` : ''}`;
   }
   onDeactivate(): void {
     if (this.hudEl) this.hudEl.remove();
