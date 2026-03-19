@@ -367,7 +367,7 @@ export class GameScene extends ex.Scene {
 
     const speed = CONFIG.PLAYER_SPEED;
     const gc = this.level.grid.applyGridCollision(
-      player.pos.x - 8, player.pos.x + 8, player.pos.y - 7, player.pos.y + 7, vx, vy, speed);
+      player.pos.x - 8, player.pos.x + 8, player.pos.y - 7, player.pos.y + 7, vx, vy, speed, dt);
     player.vel = ex.vec(gc.vx * speed, gc.vy * speed);
 
     if (gc.vx !== 0 || gc.vy !== 0) audioEngine.startFootsteps();
@@ -460,7 +460,7 @@ export class GameScene extends ex.Scene {
         const startPos = drop.pos.clone();
         let elapsed = 0;
         drop.on('preupdate', (_evt: any) => {
-          elapsed += 16; // ~60fps
+          elapsed += _evt.delta ?? 16;
           const t = Math.min(elapsed / flyDuration, 1);
           // Lerp toward current player position
           drop.pos = ex.vec(
@@ -603,8 +603,8 @@ export class GameScene extends ex.Scene {
     const arcHeight = 40 + Math.abs(dx) * 0.15; // higher arc for longer distances
     let elapsed = 0;
 
-    stick.on('preupdate', () => {
-      elapsed += 16;
+    stick.on('preupdate', (evt: any) => {
+      elapsed += evt.delta ?? 16;
       const t = Math.min(elapsed / duration, 1);
       // Linear position + parabolic arc
       stick.pos = ex.vec(
@@ -1062,8 +1062,8 @@ export class GameScene extends ex.Scene {
           const startPos = drop.pos.clone();
           const flyDuration = 300;
           let elapsed = 0;
-          drop.on('preupdate', () => {
-            elapsed += 16;
+          drop.on('preupdate', (evt: any) => {
+            elapsed += evt.delta ?? 16;
             const t = Math.min(elapsed / flyDuration, 1);
             drop.pos = ex.vec(
               startPos.x + (playerX - startPos.x) * t,

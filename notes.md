@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-20 — v2.7.1: Framerate-independent timing for movement, physics, and animations
+
+### Summary
+All movement, physics, and drop/stick fly animations now scale correctly with the actual frame delta instead of assuming a fixed 60 fps. At 120 fps or 30 fps the perceived speed is identical.
+
+### Changes Made
+- `src/engine/GridCollisionSystem.ts`:
+  - `applyGridCollision` now accepts a `dt` parameter (default `1/60` for backward compatibility) instead of hardcoding `const dt = 1/60` internally.
+- `src/scenes/GameScene.ts`:
+  - Player movement passes the real `dt` value to `applyGridCollision`.
+  - Three animation loops that used `elapsed += 16` now use `elapsed += evt.delta ?? 16` (drop fly animation in two places, parabolic stick animation in one place), consuming Excalibur's actual frame delta from the `preupdate` event.
+- `package.json`: bumped version to `2.7.1`.
+
+### Rationale
+Hardcoding 16 ms (one 60 fps frame) meant animations and physics ran twice as fast at 120 fps and half speed at 30 fps. Using the real delta from Excalibur's event system makes all timing FPS-agnostic.
+
+### Next Steps
+- Audit any remaining `elapsed += <constant>` patterns for similar issues.
+
+---
+
 ## 2026-03-20 — v2.7.0: Profiler panel gated behind "Perf" checkbox — off by default
 
 ### Summary

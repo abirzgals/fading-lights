@@ -128,10 +128,9 @@ export class GridCollisionSystem {
    *  Checks X and Y independently for wall-sliding behavior. */
   applyGridCollision(
     bodyLeft: number, bodyRight: number, bodyTop: number, bodyBottom: number,
-    vx: number, vy: number, speed: number
+    vx: number, vy: number, speed: number, dt: number = 1 / 60
   ): { vx: number; vy: number } {
     const T = this.tileSize;
-    const dt = 1 / 60;
     const margin = 2;
 
     const origVx = vx, origVy = vy;
