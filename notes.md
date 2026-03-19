@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-19 — v2.6.51: Fix bot chop range + floodFill cardinal-only
+
+### Summary
+Two targeted fixes addressing bot attack stalling and flood-fill connectivity accuracy.
+
+### Changes Made
+- `src/ai/BotAI.ts` — Chop attack neighbor check changed from cardinal-only (`dx+dy<=1`) to all 8 neighbors (`dx<=1 && dy<=1`). The bot was reaching a diagonal neighbor, failing the cardinal check, and stalling instead of attacking.
+- `src/engine/GridCollisionSystem.ts` — `floodFill` direction set reduced from 8 (cardinal + diagonal) to 4 (cardinal only). Diagonal spread overstated walkable connectivity — two blocked tiles that share only a corner cannot physically be walked between.
+- `package.json` — Version bumped to 2.6.51.
+
+### Rationale
+The chop-range fix is the direct consequence of the coordinate investigation enabled by the v2.6.50 debug overlay: the bot was consistently one diagonal tile away and the old check excluded that. The floodFill fix ensures the reachability calculation used for pathfinding validity matches the real movement model (no diagonal movement through corner gaps).
+
+### Next Steps
+- Monitor bot combat in the MazeScene to confirm the diagonal-neighbor stall is gone.
+- Consider removing the debug overlay tile highlights (v2.6.50) once the coordinate system is verified stable.
+
+---
+
 ## 2026-03-19 — v2.6.50: Debug overlay — player tile (blue) + bot target tile (yellow)
 
 ### Summary
