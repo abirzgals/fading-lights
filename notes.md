@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.69: Fix HP display — HUD reads HealthComponent directly
+
+### Summary
+Critical bug fix: the HUD always showed 1000 HP regardless of damage taken. GameScene had a stale `private hp: number = 1000` field that was never connected to the player's HealthComponent. Enemies dealt damage to HealthComponent, but the HUD read the dead field. Also corrected player starting HP from the hardcoded 1000 to CONFIG.PLAYER_MAX_HP.
+
+### Changes Made
+- `src/entities/EntityFactory.ts`: HealthComponent now initialized with `CONFIG.PLAYER_MAX_HP` instead of hardcoded `1000`.
+- `src/scenes/GameScene.ts`: Removed `private hp: number = 1000`. `updateHUD()` now reads `hp` and `maxHp` directly from the player's HealthComponent and displays them in `HP/maxHP` format. HP bar scales correctly relative to max HP.
+
+### Rationale
+The stale field made it impossible to see actual health during combat. Any damage dealt by enemies was invisible to the player in the HUD. Reading from the single source of truth (HealthComponent) eliminates the sync problem entirely. Displaying `HP/maxHP` gives the player clearer feedback than a raw number.
+
+### Next Steps
+- Verify HUD updates correctly at runtime during combat playtest.
+
+---
+
 ## 2026-03-19 — v2.6.68: Fix bot resource attack range using pixel distance
 
 ### Summary
