@@ -15,6 +15,7 @@ import { RangedAttackComponent } from '../components/RangedAttackComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { BonfireAnimComponent } from '../components/BonfireAnimComponent';
 import { ShadowCasterComponent } from '../components/ShadowCasterComponent';
+import { HitEffectComponent } from '../components/HitEffectComponent';
 import { BuildingComponent } from '../components/BuildingComponent';
 import { BuildingType, BuildingDef } from '../types';
 import { BUILDINGS } from '../config';
@@ -147,7 +148,7 @@ export class EntityFactory {
     tree.addComponent(new HealthComponent(30));
     tree.addComponent(new GridOccupancyComponent({ tx, ty }));
     tree.addComponent(new ResourceComponent('wood', CONFIG.WOOD_PER_TREE));
-    // Tree anchor 0.8 — feet are nearly at pos.y, tiny offset
+    tree.addComponent(new HitEffectComponent('shake'));
     tree.addComponent(new ShadowCasterComponent({ feetOffset: 2 }));
 
     scene.add(tree);
@@ -167,6 +168,7 @@ export class EntityFactory {
     stone.addComponent(new HealthComponent(40));
     stone.addComponent(new GridOccupancyComponent({ tx, ty }));
     stone.addComponent(new ResourceComponent('stone', CONFIG.STONE_PER_DEPOSIT));
+    stone.addComponent(new HitEffectComponent('flash'));
 
     scene.add(stone);
     return stone;
@@ -185,6 +187,7 @@ export class EntityFactory {
     metal.addComponent(new HealthComponent(50));
     metal.addComponent(new GridOccupancyComponent({ tx, ty }));
     metal.addComponent(new ResourceComponent('metal', CONFIG.METAL_PER_DEPOSIT));
+    metal.addComponent(new HitEffectComponent('flash'));
 
     scene.add(metal);
     return metal;

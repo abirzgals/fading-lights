@@ -222,10 +222,32 @@ export class GameScene extends ex.Scene {
               .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
             if (nearest) melee.startAttack(nearest);
 
-            // Resources — hit nearest within 52px
+            // Resources — prioritize resource in facing direction
+            const pAnim = player.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
+            const facing = pAnim?.direction ?? 'south';
+            const facingDirs: Record<string, { x: number; y: number }> = {
+              south: { x: 0, y: 1 }, north: { x: 0, y: -1 },
+              east: { x: 1, y: 0 }, west: { x: -1, y: 0 },
+              'south-east': { x: 0.707, y: 0.707 }, 'south-west': { x: -0.707, y: 0.707 },
+              'north-east': { x: 0.707, y: -0.707 }, 'north-west': { x: -0.707, y: -0.707 },
+            };
+            const fDir = facingDirs[facing] ?? { x: 0, y: 1 };
+
             const nearRes = this.level.entities
               .filter(e => !e.isKilled() && e.get(ResourceComponent) && e.pos.distance(player.pos) < 52)
-              .sort((a, b) => a.pos.distance(player.pos) - b.pos.distance(player.pos))[0];
+              .sort((a, b) => {
+                // Score = distance - facing bonus (dot * 30px)
+                // Lower = better. Facing direction gets 30px advantage
+                const tA = a.pos.sub(player.pos);
+                const tB = b.pos.sub(player.pos);
+                const lenA = tA.distance(ex.Vector.Zero) || 1;
+                const lenB = tB.distance(ex.Vector.Zero) || 1;
+                const dotA = (tA.x * fDir.x + tA.y * fDir.y) / lenA;
+                const dotB = (tB.x * fDir.x + tB.y * fDir.y) / lenB;
+                const scoreA = lenA - dotA * 30;
+                const scoreB = lenB - dotB * 30;
+                return scoreA - scoreB;
+              })[0];
             if (nearRes) this.damageResource(nearRes);
           });
         }
@@ -330,6 +352,7 @@ export class GameScene extends ex.Scene {
 
     hp.damage(10);
     this.spawnHitSparks(entity.pos.x, entity.pos.y, res.resourceType);
+    // Hit effect is handled by HitEffectComponent on the entity (auto-detects HP change)
 
     if (!hp.alive) {
       for (let i = 0; i < res.dropAmount; i++) {
