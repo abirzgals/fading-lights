@@ -585,8 +585,8 @@ export class GameScene extends ex.Scene {
     const BAR_W = 20, BAR_H = 3, Y_OFF = -18;
 
     for (const e of this.level.enemies) {
-      if (e.isKilled()) {
-        // Clean up bar
+      if (e.isKilled() || e.isDying) {
+        // Clean up bar for dead/dying enemies
         const bar = this.hpBars.get(e);
         if (bar) { bar.bg.kill(); bar.fill.kill(); this.hpBars.delete(e); }
         continue;

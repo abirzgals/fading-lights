@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-03-19 — v2.6.22: Fix turret targeting + HP bar for dying enemies
+
+### Summary
+Two fixes to correctly handle enemies in the `isDying` state (death animation in progress):
+1. Turrets no longer target dying enemies — `BuildingComponent` now skips enemies where `isDying` is true, alongside already-skipped killed enemies.
+2. HP bars are removed as soon as an enemy starts dying, not only after `isKilled()` — `GameScene` now checks `isDying` in the HP bar cleanup condition.
+
+### Changes Made
+- `src/components/BuildingComponent.ts`:
+  - Targeting loop: `if (e.isKilled() || e.isDying) continue;`
+- `src/scenes/GameScene.ts`:
+  - HP bar update loop: `if (e.isKilled() || e.isDying)` triggers cleanup.
+
+### Rationale
+After the death animation was introduced (v2.6.20), turrets would continue firing at corpses and HP bars would float over fallen enemies for the full 6-second death sequence. Both issues are visual/logical inconsistencies that made the game feel unpolished.
+
+### Next Steps
+- Verify no other targeting or display systems reference enemies without checking `isDying`.
+
+---
+
+## 2026-03-19 — v2.6.21: Double tree shadow length via entityHeight 40→80
+
+### Summary
+Increased the `entityHeight` parameter passed to `ShadowCasterComponent` for trees from 40 to 80, making all tree shadows twice as long.
+
+### Changes Made
+- `src/entities/EntityFactory.ts`:
+  - `ShadowCasterComponent` for tree entities: `entityHeight` changed from `40` to `80`.
+
+### Rationale
+The previous shadow length was too short relative to tree sprite size, making trees look flat and poorly grounded in the scene. Doubling the height produces more convincing, dramatic shadows that better convey tree scale.
+
+### Next Steps
+- Evaluate whether other tall objects (e.g. rocks, structures) need matching shadow height adjustments for visual consistency.
+
+---
+
 ## 2026-03-19 — v2.6.20: Death animation — enemies fall over and fade out instead of instant kill
 
 ### Summary

@@ -52,7 +52,7 @@ export class BuildingComponent extends ex.Component {
     let nearest: GameEntity | null = null;
     let nearestDist = Infinity;
     for (const e of enemies) {
-      if (e.isKilled()) continue;
+      if (e.isKilled() || e.isDying) continue;
       const d = actor.pos.distance(e.pos);
       if (d < range && d < nearestDist) { nearestDist = d; nearest = e; }
     }
