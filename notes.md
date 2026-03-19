@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.34: Tree planting 2-tile buffer above paths/clearings
+
+### Summary
+Trees are no longer planted when the tile at ty+1 or ty+2 is a path or clearing. This creates a 2-tile buffer zone below each tree candidate, preventing tree colliders from overlapping roads.
+
+### Root Cause
+Tree visuals extend approximately one tile downward from their grid position (ty). A tree planted at ty=5 would render its trunk/base near ty=6, placing its collider on top of whatever occupies that tile. On roads and clearings this caused invisible collision walls mid-path and visually narrowed roads.
+
+### Changes Made
+- `src/world/LevelScript.ts` — Added two early-continue checks inside the tree-planting loop: skip if `isPath(tx, ty+1) || isClearing(tx, ty+1)`, and skip if `isPath(tx, ty+2) || isClearing(tx, ty+2)`. The existing check for the tile's own position (ty) remains.
+
+### Rationale
+A 2-tile lookahead is sufficient because tree visuals extend at most 1 tile below their grid row. Checking ty+2 as well provides a small visual breathing room so tree canopies don't visually crowd the road edge.
+
+### Next Steps
+- Verify road edges look correct in the dungeon/forest transition zones.
+- Consider the same buffer for the left/right axes if horizontal path crowding becomes noticeable.
+
+---
+
 ## 2026-03-19 — v2.6.33: Fix grid colliders not freed when entities are killed
 
 ### Summary
