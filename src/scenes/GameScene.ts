@@ -62,7 +62,7 @@ export class GameScene extends ex.Scene {
     building?: GameEntity;
   }> = [];
   private buildings: GameEntity[] = [];
-  private debugMode = true;
+  private debugMode = false;
   private debugActors: ex.Actor[] = [];
   private debugCheckbox: HTMLInputElement | null = null;
 

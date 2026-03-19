@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.66: Debug mode off by default in GameScene
+
+### Summary
+`GameScene.debugMode` is now initialized to `false` instead of `true`, so debug overlays and actor visuals are hidden on startup. The debug checkbox in the UI can still toggle it on at runtime.
+
+### Changes Made
+- `src/scenes/GameScene.ts` — `private debugMode = true` changed to `private debugMode = false`.
+- `package.json` — Version bumped to 2.6.66.
+
+### Rationale
+Debug mode was left enabled, causing debug visuals to appear for all players by default. Setting the default to `false` ensures a clean production experience without requiring the player to manually disable it.
+
+### Next Steps
+- Verify debug checkbox toggle still works correctly at runtime.
+
+---
+
 ## 2026-03-19 — v2.6.65: Freeze units during attack animation; ranged enemies shoot while fleeing
 
 ### Summary
