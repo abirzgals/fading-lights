@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-03-19 — v2.6.65: Freeze units during attack animation; ranged enemies shoot while fleeing
+
+### Summary
+All units (player and enemies) are now frozen in place for the duration of their attack animation — velocity is zeroed and movement logic is skipped until the animation completes. Ranged enemies also gain the ability to fire back while fleeing, with roughly a 10% chance per second, making retreating ranged foes more dangerous and tactically interesting.
+
+### Changes Made
+- `src/ai/EnemyBrainSystem.ts`
+  - After state resolution, reads `AnimatedSpriteComponent.isAttacking`; if true, sets `e.vel` to zero and issues `continue` to skip all movement logic for that frame.
+  - In the `flee` case, added a probabilistic ranged attack: `if (ai.isRanged && Math.random() < 0.1 * dt)` calls `doRangedAttack`, giving fleeing ranged enemies an occasional parting shot.
+- `src/scenes/GameScene.ts`
+  - After input is resolved, reads `playerAnim.isAttacking`; if true, forces `vx = 0; vy = 0` before passing velocity to grid collision and movement logic.
+- `package.json` — Version bumped to 2.6.65.
+
+### Rationale
+Without the freeze, units could slide or drift during attack animations because movement velocity was still being applied every frame. Zeroing velocity and skipping movement logic ensures the attack animation plays as a rooted action. The flee-and-shoot mechanic for ranged enemies addresses the safe-retreat exploit where players could chase a fleeing ranged enemy with no risk — now fleeing is threatening rather than purely defensive.
+
+### Next Steps
+- Verify that melee enemies do not stutter at the start of attack animations due to the velocity zero-out.
+- Consider whether a short root duration (e.g. first 60% of animation) is preferable to full-animation locking for fast enemies.
+- Tune the 10% flee-shoot probability based on playtesting — may want to scale with enemy tier.
+
+---
+
 ## 2026-03-19 — v2.6.64: Fix player facing direction during bot attacks
 
 ### Summary

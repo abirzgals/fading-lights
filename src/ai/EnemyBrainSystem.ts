@@ -84,6 +84,13 @@ export class EnemyBrainSystem {
       ai.state = ctx.action.toUpperCase() as any;
       ai.wanderTimer -= dt;
 
+      // Freeze during attack animation — no movement until animation completes
+      const anim = e.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
+      if (anim?.isAttacking) {
+        e.vel = ex.vec(0, 0);
+        continue; // skip all movement logic
+      }
+
       // Execute action
       const speed = ai.speed;
       switch (ctx.action) {
@@ -112,10 +119,15 @@ export class EnemyBrainSystem {
           this.doOrbit(e, target, speed, ai, scene);
           break;
 
-        case 'flee':
+        case 'flee': {
           const away = e.pos.sub(target.pos).normalize();
           e.vel = ex.vec(away.x * speed * 0.8, away.y * speed * 0.8);
+          // Ranged enemies occasionally shoot while fleeing (~10% chance per second)
+          if (ai.isRanged && Math.random() < 0.1 * dt) {
+            this.doRangedAttack(e, target, ai, scene);
+          }
           break;
+        }
 
         case 'shoot':
           e.vel = ex.vec(0, 0);

@@ -211,6 +211,12 @@ export class GameScene extends ex.Scene {
       shouldAttack = kb.wasPressed(ex.Keys.Space);
     }
 
+    // Freeze player during attack animation
+    const playerAnim = player.get(AnimatedSpriteComponent) as AnimatedSpriteComponent | null;
+    if (playerAnim?.isAttacking) {
+      vx = 0; vy = 0;
+    }
+
     const speed = CONFIG.PLAYER_SPEED;
     const gc = this.level.grid.applyGridCollision(
       player.pos.x - 8, player.pos.x + 8, player.pos.y - 7, player.pos.y + 7, vx, vy, speed);
