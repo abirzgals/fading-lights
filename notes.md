@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.50: Debug overlay — player tile (blue) + bot target tile (yellow)
+
+### Summary
+Added two tile highlight overlays to the debug view in `GameScene`. A blue semi-transparent rectangle marks the tile the player currently occupies, and a yellow one marks the tile of the bot's current harvest target (tree or stone). Both are managed through `debugActors` and cleared/redrawn each debug refresh cycle.
+
+### Changes Made
+- `src/scenes/GameScene.ts` — Two new blocks in the debug overlay section: one computes the player's tile from `player.pos` and renders a blue actor at z=8001; the other reads `botAI.currentGoal.target.pos`, computes its tile, and renders a yellow actor at z=8001. Both push to `debugActors` for cleanup.
+- `package.json` — Version bumped to 2.6.50.
+
+### Rationale
+Recent bot interaction bugs involve the tile coordinate the bot is targeting being off by one compared to the tile the player stands on. Visualising both in-game lets a developer see the mismatch in real time without adding logging noise.
+
+### Next Steps
+- Use the overlay to confirm tile alignment once the coordinate mismatch is identified and patched.
+- Remove or gate behind a debug flag once the coordinate system is verified correct.
+
+---
+
 ## 2026-03-19 — v2.6.49: Fix bot tree-switching — commit to one chop target until destroyed
 
 ### Summary
