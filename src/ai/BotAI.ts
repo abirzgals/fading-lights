@@ -353,6 +353,13 @@ export class BotAI {
   // ============================================================
   private moveToWithPathfinding(tx: number, ty: number): { x: number; y: number } {
     const p = this.player;
+    const directDist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
+
+    // Short distance (<100px) — just go direct, no A* needed
+    // Grid collision in GameScene will handle wall sliding
+    if (directDist < 100) {
+      return this.dirTo(p.pos, tx, ty);
+    }
 
     // Repath if needed
     if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 ||
