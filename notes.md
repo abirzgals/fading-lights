@@ -2,6 +2,40 @@
 
 ---
 
+## 2026-03-19 — v2.6.71: Better projectile dodging — bot reacts earlier
+
+### Summary
+Improved bot evasion responsiveness across three axes: the urgency threshold for committing to a full dodge was lowered so the bot reacts before a projectile is nearly on top of it; the evasion blending while chasing is now more aggressive so the bot weaves rather than walking in a straight line; and the projectile detection radius was extended so the bot has more reaction time overall.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Full-dodge urgency threshold 2.5 -> 1.8. Evasion-while-chasing urgency threshold 1.5 -> 1.0, blend factor 0.2 -> 0.3, blend cap 0.3 -> 0.5. Projectile detection radius 100px -> 150px.
+
+### Rationale
+The bot was dying to projectiles it had already "seen" because the urgency thresholds were tuned too conservatively. Lowering them — and widening the detection radius — gives the bot meaningful lead time to sidestep rather than absorbing a hit before the dodge logic fires.
+
+### Next Steps
+- Observe whether the more aggressive evasion blend causes the bot to stall on its chase path when urgency is moderate; tune the 1.0 threshold up slightly if so.
+- Consider a separate urgency band (e.g. 0.5-1.0) for lighter perpendicular nudges that don't redirect the bot at all.
+
+---
+
+## 2026-03-19 — v2.6.70: Heal player near bonfire — 5 HP/sec within 30% light radius
+
+### Summary
+Added gradual player healing when standing near the bonfire. The player recovers 5 HP per second when within 30% of the bonfire's base light radius. Healing is applied fractionally each frame via `dt` using the existing `HealthComponent.heal()` method. This gives low-HP players a tactical reason to retreat to camp between encounters.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: In the main update loop, checks distance from the first bonfire to the player each frame. If within `CONFIG.BONFIRE_BASE_RADIUS * 0.3`, applies `hp.heal(5 * dt)` as long as HP is below max.
+
+### Rationale
+Without a recovery mechanic, players had no way to regain health outside of items. The bonfire as a healing anchor reinforces the camp-and-explore loop: push into the maze, retreat to safety when hurt, then push again.
+
+### Next Steps
+- Consider visual feedback (glow pulse, particle effect, or HUD indicator) when healing is active.
+- Optionally scale heal rate with bonfire level / camp upgrades.
+
+---
+
 ## 2026-03-19 — v2.6.69: Fix HP display — HUD reads HealthComponent directly
 
 ### Summary

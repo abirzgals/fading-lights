@@ -391,9 +391,8 @@ export class BotAI {
               name: 'Dodge Projectile',
               check: (ctx) => {
                 if (!ctx.evasion) return false;
-                // Only full dodge for very imminent projectiles (urgency > 2.5)
-                // Lower urgency is handled by evasion blending in kill/chop goals
-                return ctx.evasion.urgency > 2.5;
+                // Dodge earlier — urgency > 1.8 triggers full dodge
+                return ctx.evasion.urgency > 1.8;
               },
               goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion!, _treePath: 'Dodge Projectile' }),
             },
@@ -874,7 +873,7 @@ export class BotAI {
     let evX = 0, evY = 0;
     const px = player.pos.x, py = player.pos.y;
     const ENEMY_AVOID_R = 55;
-    const PROJ_AVOID_R = 100;
+    const PROJ_AVOID_R = 150; // detect projectiles earlier
 
     for (const e of enemies) {
       const ed = player.pos.distance(e.pos);
@@ -983,9 +982,9 @@ export class BotAI {
           if (this.pathFollower.unreachable) { this.goalAge = 999; break; }
           if (this.pathFollower.arrived && dist >= this.ATTACK_REACH) { this.goalAge = 999; break; }
           vx = dir.x; vy = dir.y;
-          // Slight evasion while approaching — don't fully dodge, just nudge sideways
-          if (ctx.evasion && ctx.evasion.urgency > 1.5) {
-            const blend = Math.min(ctx.evasion.urgency * 0.2, 0.3);
+          // Evasion while approaching — weave to avoid projectiles
+          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
+            const blend = Math.min(ctx.evasion.urgency * 0.3, 0.5);
             vx = vx * (1 - blend) + ctx.evasion.x * blend;
             vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }
