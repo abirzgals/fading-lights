@@ -2,6 +2,54 @@
 
 ---
 
+## 2026-03-19 — v2.6.28: Bot clears resources blocking build spots before building
+
+### Summary
+The bot AI now detects when a build spot tile is occupied by a resource entity (tree, rock, etc.) and clears it before attempting to build. A new "Clear Build Spot" decision tree node sits between Feed Fire and Build in priority, ensuring the bot actively removes obstacles rather than ignoring blocked spots indefinitely.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - `runBuildSpots`: added a `continue` guard — if the spot's tile is blocked (`grid.isBlocked`), skip auto-build entirely.
+  - `availableBuildSpots` passed to BotAI now filters out spots whose tile is blocked, so the bot never tries to build where it cannot.
+  - New `blockedBuildSpots` array passed to BotAI — unlocked spots whose tile is currently blocked, giving the bot a target list to clear.
+- `src/ai/BotAI.ts`:
+  - `BotGameState` interface gains `blockedBuildSpots: Array<{ wx, wy }>`.
+  - `BotContext` interface gains `blockerResource: GameEntity | null`.
+  - Context builder iterates `blockedBuildSpots`, searches nearby entities with a `ResourceComponent` within a 60px radius, and assigns the closest one as `blockerResource`.
+  - New decision tree node "Clear Build Spot": fires when `blockerResource !== null` and `hpRatio >= 0.4`; emits a `chop` goal targeting the blocking entity.
+  - Priority: Feed Fire > Clear Build Spot > Build.
+
+### Rationale
+Previously the bot would simply never build if a resource happened to occupy the build spot tile, silently stalling progression. By separating "blocked" spots from "available" spots and giving the bot an explicit goal to clear obstacles, build progression is now fully automated — the bot recognises the blocker, removes it, then proceeds to build on the next tick.
+
+### Next Steps
+- Could extend blocker detection to handle other entity types beyond ResourceComponent if non-resource entities can occupy build tiles.
+
+---
+
+## 2026-03-19 — v2.6.27: Fix shadow positioning for entity anchor/pivot
+
+### Summary
+Replaced the `entityHeight` parameter on `ShadowCasterComponent` with `feetOffset` — a direct pixel offset from `entity.pos.y` to the ground contact point. This correctly handles entities with different anchor points, particularly trees whose anchor is near the bottom of the sprite.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts`:
+  - Replaced `entityHeight` constructor option with `feetOffset` (default 8).
+  - Shadow Y origin is now `feetOffset` below `entity.pos.y` instead of `entityHeight * 0.35`, which was pushing shadows too far down for bottom-anchored sprites.
+  - Cleaned up stale comments from the original game formula block.
+- `src/entities/EntityFactory.ts`:
+  - Tree (anchor 0.8): `feetOffset: 2` — pos is nearly at trunk base, minimal offset needed.
+  - Player (anchor 0.5): `feetOffset: 10` — feet are ~10px below the centered pos.
+  - Enemy (anchor 0.5): `feetOffset: Math.round(def.size * 0.4)` — proportional to enemy size.
+
+### Rationale
+The old `entityHeight * 0.35` formula was designed assuming a centered anchor (0.5). Trees use anchor 0.8, so their `pos.y` is already close to the ground — applying an additional height-based offset pushed the shadow well below the tree's actual base, making it visually detached. The `feetOffset` parameter makes the intent explicit per entity type and correctly handles any anchor configuration.
+
+### Next Steps
+- Could expose `feetOffset` via entity config/definition rather than hard-coding in the factory.
+
+---
+
 ## 2026-03-19 — v2.6.26: Hit sparks on resource attacks
 
 ### Summary
