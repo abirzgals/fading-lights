@@ -2,6 +2,33 @@
 
 ---
 
+## 2026-03-19 — v2.6.0: Bonfire progression system — levels, build spots, buildings
+
+### Summary
+Major feature addition implementing the core camp progression loop from the original game design. The bonfire now has 6 levels driven by cumulative fuel, each level unlocking build spots around camp and scaling the light radius. Players can construct 6 building types with distinct gameplay effects (turrets, light sources, passive bonuses).
+
+### Changes Made
+- `src/components/BuildingComponent.ts` (new): Per-type building update logic. TURRET polls for nearest enemy each frame and fires an orange projectile Actor on a cooldown; projectile checks proximity to target each preupdate and deals damage via HealthComponent on hit with a yellow impact flash. OUTPOST/FORGE/WEAPON_SHOP/ARMOR_WORKSHOP/FRIEND_HUT are stubs handled by GameScene.
+- `src/config.ts`: Added `BUILD_SPOTS` config array defining 9 spawn positions around the bonfire, each with a `BuildingType`, unlock `fireLevel`, and resource cost.
+- `src/types.ts`: Added `BuildSpotConfig` interface (`pos`, `buildingType`, `fireLevel`, `cost`).
+- `src/entities/EntityFactory.ts`: Added `createBuildSpotGhost()` (pulsing semi-transparent blue rectangle + name label) and `createBuilding()` (solid colored rectangle entity with BuildingComponent attached and initialized).
+- `src/scenes/GameScene.ts`:
+  - Bonfire level system: `campFuelAdded` accumulates fuel (never decreases); level thresholds `[0, 25, 60, 110, 175, 275]`; `levelMult = 1.0 + level * 0.5` scales light radius; purple "CAMP LEVEL X!" floating text on level-up; red "THE DARKNESS STIRS..." warning at level 2+.
+  - Build spots: ghost actors created per spot, visible when unlock level is reached; player proximity + resource check auto-triggers construction and removes ghost.
+  - Buildings: added to fog light list (OUTPOST), read `armorBonus` (ARMOR_WORKSHOP), init turret with enemy getter.
+  - HUD: camp level number + purple gradient progress bar rendered each frame.
+
+### Rationale
+Progression system is the central gameplay loop of Fading Lights. The bonfire leveling with visual feedback (light expansion, floating text, HUD bar) makes resource gathering feel rewarding. Build spots provide a spatial decision layer — where to invest resources — and buildings like the TURRET give the camp active defensive capability rather than purely passive survival.
+
+### Next Steps
+- Wire FORGE / WEAPON_SHOP to unlock weapon tiers
+- Wire FRIEND_HUT to spawn an ally entity
+- Balance fuel thresholds and building costs against resource spawn rates
+- Add visual variety to buildings (sprites vs rectangles)
+
+---
+
 ## 2026-03-19 — v2.5.14: Smarter BotAI — targeted gathering, camp-bound search, status label
 
 ### Summary
