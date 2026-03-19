@@ -563,15 +563,24 @@ export class BotAI {
       }
     }
 
-    // Nearest resource — search near CAMP, not player (stay close to base)
+    // Best resource — balanced score: not too far from player AND not too far from camp
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
+    let bestResourceScore = Infinity;
     for (const e of this.getEntities()) {
       if (e.isKilled() || !e.get(ResourceComponent)) continue;
-      // Only consider resources within GATHER_RANGE of camp
-      if (bonfire && e.pos.distance(bonfire.pos) > this.GATHER_RANGE) continue;
-      const d = p.pos.distance(e.pos);
-      if (d < nearestResourceDist) { nearestResourceDist = d; nearestResource = e; }
+      const distToPlayer = p.pos.distance(e.pos);
+      const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : distToPlayer;
+      // Skip resources too far from camp (hard limit)
+      if (distToCamp > this.GATHER_RANGE * 1.5) continue;
+      // Score = weighted blend: 60% distance to player + 40% distance to camp
+      // Penalize resources very far from camp more heavily
+      const score = distToPlayer * 0.6 + distToCamp * 0.4;
+      if (score < bestResourceScore) {
+        bestResourceScore = score;
+        nearestResource = e;
+        nearestResourceDist = distToPlayer;
+      }
     }
 
     // How much wood do we need? (fuel deficit + 2 extra logs buffer)

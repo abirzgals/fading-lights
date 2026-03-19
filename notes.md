@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-03-19 — v2.6.1: Smart resource scoring, enemy HP bars, building depth sort
+
+### Summary
+Three targeted gameplay and visual quality improvements. Bot resource selection now uses a weighted score rather than raw nearest-to-player distance. Enemies display floating HP bars that appear on damage and clean up on death. Buildings are now included in the per-frame depth sort so they z-order correctly with entities.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Replaced the "nearest resource to player within camp radius" selection with a weighted score of 60% distance-to-player + 40% distance-to-camp. Hard limit raised from `GATHER_RANGE` to `GATHER_RANGE * 1.5`. Result: bot picks resources that are reasonably close to itself without running far from the bonfire unnecessarily.
+- `src/scenes/GameScene.ts`:
+  - `depthSort()`: Added buildings to the z = pos.y sort loop so they layer correctly behind/in-front-of characters.
+  - `updateEnemyHPBars()` (new): Maintains a `Map<GameEntity, {bg, fill}>` of `ex.Actor` pairs per enemy. Background is a dark rectangle; fill shrinks proportionally and changes color — green above 50% HP, orange above 25%, red below. Both actors are hidden (opacity 0) at full HP and shown as soon as any damage is taken. Dead or removed enemies have their actors killed and the entry purged.
+  - `update()`: Calls `updateEnemyHPBars()` each frame after depth sort.
+
+### Rationale
+The old nearest-resource logic could send the bot to a tree far from camp, burning travel time and leaving the bonfire undefended. The new scoring anchors gathering closer to base while still preferring trees the bot is already near. Enemy HP bars provide immediate combat feedback without a permanent HUD element cluttering the screen. Building depth-sort was a visual regression fix — buildings were rendering at a fixed z and could appear on top of characters at the wrong y positions.
+
+### Next Steps
+- Tune the 60/40 weight split based on playtesting feedback
+- Consider showing player HP bar as a similar floating element
+- Add building sprites to replace placeholder rectangles
+
+---
+
 ## 2026-03-19 — v2.6.0: Bonfire progression system — levels, build spots, buildings
 
 ### Summary
