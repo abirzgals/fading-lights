@@ -2,6 +2,30 @@
 
 ---
 
+## 2026-03-19 — v2.5.12: Visual feedback for drop pickup and bonfire feeding
+
+### Summary
+Added animated visual feedback for two previously instant interactions: picking up resource drops and feeding wood to the bonfire. Both now have satisfying fly-to-target animations to reinforce what happened to the player.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - **Drop pickup animation**: When the player walks over a drop within `PICKUP_RADIUS`, the drop is flagged `_flyingToPlayer` and a `preupdate` listener lerps it toward the player over 300ms with a slight upward arc (`sin(t*PI)*15`). The item also shrinks from 100% to 50% scale as it flies. The resource is only credited and the actor killed once `t >= 1`. A secondary filter pass removes newly killed drops at the end of the frame.
+  - **`spawnParabolicStick()`**: New private method that creates a brown rectangle actor at a source position and animates it parabolically to a target over 500ms. Arc height scales with horizontal distance (`40 + |dx|*0.15`). The stick rotates a full turn during flight and shrinks slightly to sell the perspective. Used for bonfire feeding.
+  - **Bonfire feed animation**: `runBonfire()` now calls `spawnParabolicStick(player → bonfire)` on each feed event, and calls `spawnFloatingText()` with an orange `+N fuel` label above the bonfire. Fuel added is computed before clamping so the displayed amount is accurate.
+  - **Feed cooldown**: Added `feedCooldown` field (seconds). Set to 0.5s each time a stick is consumed. `runBonfire()` only feeds when `feedCooldown <= 0`, ensuring sticks fly one at a time rather than all in the same frame.
+  - **Bot feeding unified**: Removed the separate instant-feed block from the bot `cmd.interact` path. Bot now relies on `runBonfire()` running each frame, so it gets the same animation and cooldown as the human player.
+- `package.json`: version bumped 2.5.11 → 2.5.12
+
+### Rationale
+Instant item disappear on pickup offered no feedback — it was unclear whether the pick-up happened or was missed. The fly-to-player arc makes collection unambiguous and satisfying. Similarly, the bonfire fed silently before; the parabolic stick + floating fuel text makes each piece of wood feel deliberate. The 0.5s cooldown prevents a visual mess when feeding many sticks in quick succession, and unifying the bot path removes a maintenance split between two code paths doing the same thing.
+
+### Next Steps
+- Tune arc height and flight duration based on feel (300ms pickup / 500ms bonfire)
+- Consider a brief scale-pop on the resource HUD counter when a pick-up lands
+- The floating text "+N fuel" currently uses `Math.round(added)` — verify `FUEL_PER_WOOD` is always a whole number to avoid "14.99 fuel" display edge cases
+
+---
+
 ## 2026-03-19 — v2.5.11: Progressive enemy spawning — wave system with escalating difficulty
 
 ### Summary
