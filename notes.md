@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-19 — v2.6.46: A* best-side selection, flood-fill wave distance, bot walk-distance scoring
+
+### Summary
+Three tightly coupled improvements that make pathfinding and resource scoring aware of actual walk geometry rather than straight-line geometry. Bots will no longer target the wrong side of a blocked resource, and resources behind walls are correctly penalised during goal selection.
+
+### Changes Made
+- `src/engine/PathFollower.ts` — Best approach side for a blocked target now runs `grid.findPath` to each walkable neighbor and picks the one that returns the shortest actual A* path. Previously the nearest neighbor by straight-line distance was chosen, which could point through a wall. The selection is folded into the existing repath block (every 0.8–1.2 s) so there is no per-frame cost.
+- `src/engine/GridCollisionSystem.ts` — `floodFill` now returns `Map<string, number>` (tile key → BFS wave distance in tiles) instead of `Set<string>`. All callers that previously used `.has(key)` now use `.get(key) !== undefined`; the numeric distance value is available for scoring.
+- `src/ai/BotAI.ts` — Resource scoring replaces straight-line `pos.distance()` with wave distance (`waveDist * 32` px). Resources that are close by air but far by walking (e.g., on the far side of a wall) receive a higher score and are deprioritised. Unreachable resources (`waveDist === Infinity`) are still skipped entirely.
+
+### Rationale
+The old PathFollower side-selection picked the geometrically nearest neighbor tile of a blocked target. On maps with tight corridors this often chose a side that required the path to loop around an obstacle, while a slightly farther tile would have been a shorter real path. Running A* to each candidate side costs a few milliseconds per repath but is invisible at 0.8–1.2 s intervals. The flood-fill Map upgrade is a prerequisite for the BotAI change and adds zero overhead to the BFS itself. The bot scoring fix closes the last case where a resource "close by air" could attract the bot into a long wall-hugging detour.
+
+### Next Steps
+- Monitor bot behavior on dense-wall maps to confirm repath frequency stays acceptable.
+- Consider caching the best-side result per (target tile, source tile region) if profiling shows cost during many simultaneous bots.
+
 ## 2026-03-19 — v2.6.45: Stricter resource reachability + debug mode on by default
 
 ### Summary
