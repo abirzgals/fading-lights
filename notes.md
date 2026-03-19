@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.33: Fix grid colliders not freed when entities are killed
+
+### Summary
+Grid tiles occupied by entities were never freed when an entity was killed because Excalibur's `Actor.kill()` does not call `Component.onRemove()` — it only removes the actor from the scene. This caused killed entities to permanently block pathfinding tiles.
+
+### Root Cause
+`GridOccupancyComponent.onRemove()` handled tile cleanup, but `onRemove()` is not invoked by Excalibur's `kill()` flow. Any entity killed (enemies, trees, etc.) left its tiles permanently blocked.
+
+### Changes Made
+- `src/components/GridOccupancyComponent.ts` — Extracted tile-freeing logic into a new public `freeTiles()` method. `onRemove()` now delegates to `freeTiles()` as a fallback.
+- `src/engine/GameEntity.ts` — Added `onPreKill()` override (which IS called by Excalibur's `kill()` flow). It retrieves the `GridOccupancyComponent` and calls `freeTiles()` before the entity is removed from the scene. Also imported `GridOccupancyComponent`.
+
+### Rationale
+Using `onPreKill()` is the correct Excalibur hook for pre-removal cleanup. Keeping `onRemove()` as a backup ensures tiles are freed regardless of the removal path (kill, scene change, or direct component removal).
+
+### Next Steps
+- Monitor pathfinding in dense areas to confirm no tile leaks remain after combat.
+
+---
+
 ## 2026-03-19 — v2.6.32: Fix gap-fill tile ownership + tree stumps
 
 ### Summary

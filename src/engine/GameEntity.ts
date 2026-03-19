@@ -1,4 +1,5 @@
 import * as ex from 'excalibur';
+import { GridOccupancyComponent } from '../components/GridOccupancyComponent';
 
 /** Interface for components that want per-frame updates */
 export interface UpdatableComponent {
@@ -53,6 +54,12 @@ export class GameEntity extends ex.Actor {
   /** Check if entity has a component */
   hasComponent<T extends ex.Component>(type: new (...args: any[]) => T): boolean {
     return !!(this.get(type));
+  }
+
+  /** Free grid tiles on kill — Excalibur may not call Component.onRemove() on kill() */
+  onPreKill(): void {
+    const gc = this.get(GridOccupancyComponent) as GridOccupancyComponent | null;
+    if (gc) gc.freeTiles();
   }
 
   /** Whether this entity is in the dying animation (not yet killed) */

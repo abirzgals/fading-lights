@@ -37,10 +37,15 @@ export class GridOccupancyComponent extends ex.Component {
     }
   }
 
-  onRemove(): void {
+  /** Free all tiles — called on component removal or entity kill */
+  freeTiles(): void {
     for (const t of this.tiles) {
       _gridSystem?.setWalkable(t.tx, t.ty);
     }
     this.tiles = [];
+  }
+
+  onRemove(): void {
+    this.freeTiles();
   }
 }
