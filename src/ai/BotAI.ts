@@ -131,6 +131,10 @@ export class BotAI {
   // Shared pathfinder
   private pathFollower: PathFollower;
 
+  // Cached BFS result (throttled to 500ms)
+  private cachedReachable: Map<string, number> = new Map();
+  private reachableCacheTimer = 0;
+
   // Movement smoothing
   private smoothVx = 0;
   private smoothVy = 0;
@@ -661,8 +665,13 @@ export class BotAI {
       }
     }
 
-    // BFS flood-fill from player — find all reachable tiles with WAVE DISTANCE
-    const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+    // BFS flood-fill — throttled to every 500ms for performance
+    this.reachableCacheTimer -= dt;
+    if (this.reachableCacheTimer <= 0) {
+      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
+      this.reachableCacheTimer = 0.5;
+    }
+    const reachable = this.cachedReachable;
 
     // Wave distance helper — Infinity if unreachable
     const getWaveDist = (e: GameEntity): number => {

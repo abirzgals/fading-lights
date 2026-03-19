@@ -137,6 +137,7 @@ export class EntityFactory {
   static createTree(scene: ex.Scene, x: number, y: number, tx: number, ty: number, variant: number): GameEntity {
     const tree = new GameEntity({ pos: ex.vec(x, y), anchor: ex.vec(0.5, 0.8) });
     tree.entityType = 'tree';
+    tree.z = y; // set once — trees don't move, no per-frame depth sort needed
 
     const src = AssetLoader.treeVariants[variant];
     if (src?.isLoaded()) {
@@ -149,7 +150,7 @@ export class EntityFactory {
     tree.addComponent(new GridOccupancyComponent({ tx, ty }));
     tree.addComponent(new ResourceComponent('wood', CONFIG.WOOD_PER_TREE));
     tree.addComponent(new HitEffectComponent('shake'));
-    tree.addComponent(new ShadowCasterComponent({ feetOffset: 2 }));
+    // No ShadowCasterComponent on trees — too many trees, kills mobile perf
 
     scene.add(tree);
     return tree;

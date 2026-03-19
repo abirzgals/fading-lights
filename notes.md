@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-19 — v2.6.85: Mobile performance optimizations — remove hot-path allocations and static actor overhead
+
+### Summary
+Five targeted performance improvements aimed at recovering frame rate on mobile. The largest win is removing ~22,000 per-tile Actor objects that were instantiated for every non-path forest tile. Combined with eliminating per-frame shadow calculations on 5,000 static trees, throttling BFS flood-fill, restricting depth-sort to dynamic entities only, and caching HP bar graphics, these changes should recover an estimated 20+ fps on mobile devices.
+
+### Changes Made
+- `src/world/LevelScript.ts`:
+  - Removed the forest-ground tile Actor loop that created one Actor per non-path tile across the 150x150 world (~22,000 actors). Dark background chunks at z=-10 already handle the forest floor color; the individual tile actors were redundant dead weight.
+- `src/entities/EntityFactory.ts`:
+  - Removed `ShadowCasterComponent` from trees. ~5,000 static trees were running shadow calculations every frame (iterating all light sources). Trees never move, shadow adds minimal visual value, and the cost was significant.
+- `src/ai/BotAI.ts`:
+  - BFS `floodFill` throttled to execute at most once every 500 ms. Previously called every frame, creating a `Map` with ~300 string keys on every tick. Result is now cached and reused until the next interval.
+- `src/scenes/GameScene.ts`:
+  - Depth-sort (`z = y`) is now applied only to dynamic entities: player, enemies, buildings, and drops. Trees, stones, and metal nodes have their z set once at creation time and are excluded from the per-frame sort loop. Saves iterating 16,000+ static entities each frame.
+  - HP bar graphics are cached — the `Rectangle` is only reallocated when the HP ratio changes by 5% or more. Previously a new `Rectangle` and `Color` were constructed every frame for every living enemy.
+
+### Rationale
+All five changes target the same class of problem: unnecessary per-frame work on entities or data structures that are either static or rarely changing. On a 150x150 world the cumulative cost was severe on mobile CPUs. The fixes are conservative — no gameplay behavior is altered, only the frequency and volume of redundant computation.
+
+### Next Steps
+- Profile on a mid-range Android device to confirm fps recovery.
+- Consider LOD or culling for off-screen static entities if further gains are needed.
+
+---
+
 ## 2026-03-19 — v2.6.84: Fix asset paths for GitHub Pages subpath
 
 ### Summary

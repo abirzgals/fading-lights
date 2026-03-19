@@ -811,15 +811,16 @@ export class GameScene extends ex.Scene {
   // ======== DEPTH SORT ========
 
   private depthSort(): void {
+    // Only sort DYNAMIC entities — static ones (trees, stones) set z once at creation
     this.level.player.z = this.level.player.pos.y;
-    for (const e of this.level.entities) if (!e.isKilled()) e.z = e.pos.y;
     for (const e of this.level.enemies) if (!e.isKilled()) e.z = e.pos.y;
     for (const b of this.buildings) if (!b.isKilled()) b.z = b.pos.y;
+    for (const d of this.drops) if (!d.isKilled()) d.z = d.pos.y;
   }
 
   // ======== ENEMY HP BARS ========
 
-  private hpBars: Map<GameEntity, { bg: ex.Actor; fill: ex.Actor }> = new Map();
+  private hpBars: Map<GameEntity, { bg: ex.Actor; fill: ex.Actor; lastRatio: number }> = new Map();
 
   private updateEnemyHPBars(): void {
     const BAR_W = 20, BAR_H = 3, Y_OFF = -18;
@@ -845,7 +846,7 @@ export class GameScene extends ex.Scene {
         fill.graphics.use(new ex.Rectangle({ width: BAR_W, height: BAR_H, color: ex.Color.fromHex('#44FF44') }));
         this.add(bg);
         this.add(fill);
-        bar = { bg, fill };
+        bar = { bg, fill, lastRatio: -1 };
         this.hpBars.set(e, bar);
       }
 
@@ -855,14 +856,16 @@ export class GameScene extends ex.Scene {
       bar.fill.pos = e.pos.add(ex.vec(-BAR_W / 2, Y_OFF));
       bar.fill.z = e.z + 0.2;
 
-      // Update fill width + color
-      const fillW = Math.max(1, Math.round(BAR_W * ratio));
-      const color = ratio > 0.5 ? '#44FF44' : ratio > 0.25 ? '#FFAA00' : '#FF4444';
-      bar.fill.graphics.use(new ex.Rectangle({ width: fillW, height: BAR_H, color: ex.Color.fromHex(color) }));
-
-      // Hide at full HP
-      bar.bg.graphics.opacity = ratio < 1 ? 0.8 : 0;
-      bar.fill.graphics.opacity = ratio < 1 ? 1.0 : 0;
+      // Only update graphics when HP actually changes (avoid allocations)
+      const roundedRatio = Math.round(ratio * 20) / 20; // 5% precision
+      if (roundedRatio !== bar.lastRatio) {
+        bar.lastRatio = roundedRatio;
+        const fillW = Math.max(1, Math.round(BAR_W * ratio));
+        const color = ratio > 0.5 ? '#44FF44' : ratio > 0.25 ? '#FFAA00' : '#FF4444';
+        bar.fill.graphics.use(new ex.Rectangle({ width: fillW, height: BAR_H, color: ex.Color.fromHex(color) }));
+        bar.bg.graphics.opacity = ratio < 1 ? 0.8 : 0;
+        bar.fill.graphics.opacity = ratio < 1 ? 1.0 : 0;
+      }
     }
 
     // Clean up bars for removed enemies

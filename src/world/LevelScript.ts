@@ -135,50 +135,8 @@ export class Level1Script {
       scene.add(tile);
     }
 
-    // Fill ALL forest tiles with the dark ground texture (wangIdx=0)
-    // This prevents black gaps between trees
-    if (gs) {
-      const forestFi = WANG_TO_FRAME[0]; // full forest tile
-      const forestCol = forestFi % 4, forestRow = Math.floor(forestFi / 4);
-      const forestSprite = gs.getSprite(forestCol, forestRow)!;
-      // Chunked: render forest ground in 4x4 tile blocks for performance
-      const fChunk = 4;
-      for (let gy = 0; gy < worldSize; gy += fChunk) {
-        for (let gx = 0; gx < worldSize; gx += fChunk) {
-          // Skip if this chunk overlaps with renderSet (already has Wang tiles)
-          let hasRender = false;
-          for (let dy = 0; dy < fChunk && !hasRender; dy++)
-            for (let dx = 0; dx < fChunk && !hasRender; dx++)
-              if (renderSet.has(`${gx + dx},${gy + dy}`)) hasRender = true;
-          if (hasRender) {
-            // Render individual forest tiles for non-renderSet tiles in this chunk
-            for (let dy = 0; dy < fChunk; dy++) {
-              for (let dx = 0; dx < fChunk; dx++) {
-                const ftx = gx + dx, fty = gy + dy;
-                if (ftx >= worldSize || fty >= worldSize) continue;
-                if (renderSet.has(`${ftx},${fty}`)) continue; // already has Wang tile
-                const ft = new ex.Actor({ pos: ex.vec(ftx * T + T / 2, fty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
-                ft.graphics.use(forestSprite);
-                ft.z = -9;
-                scene.add(ft);
-              }
-            }
-          } else {
-            // Entire chunk is forest — render one big tile per chunk position
-            for (let dy = 0; dy < fChunk; dy++) {
-              for (let dx = 0; dx < fChunk; dx++) {
-                const ftx = gx + dx, fty = gy + dy;
-                if (ftx >= worldSize || fty >= worldSize) continue;
-                const ft = new ex.Actor({ pos: ex.vec(ftx * T + T / 2, fty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
-                ft.graphics.use(forestSprite);
-                ft.z = -9;
-                scene.add(ft);
-              }
-            }
-          }
-        }
-      }
-    }
+    // Forest ground: single dark background handles it (no per-tile actors needed)
+    // The dark chunks at z=-10 provide the forest floor color
 
     // ======== BONFIRE ========
     const bonfire = EntityFactory.createBonfire(scene, cx * T + T / 2, cy * T + T / 2);
