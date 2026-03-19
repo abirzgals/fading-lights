@@ -2,21 +2,18 @@ import * as ex from 'excalibur';
 
 /**
  * Shadow caster — draws the entity's own sprite as a black silhouette,
- * skewed and stretched away from the nearest light source.
+ * stretched away from the nearest light source.
  *
  * Part of the entity's graphics pipeline (onPreDraw) — auto-destroyed with entity.
- * Uses Graphic.tint = Black to make a solid black copy of the sprite.
  *
- * Original game formulas:
- * - Shadow length = min(1.2, 400 / (dist + 50))
- * - Alpha = max(0.08, 0.45 * edgeFade)
- * - Rotation: angle away from light + PI/2
- * - Scale: (entityScaleX, shadowLen * 0.45)
+ * @param feetOffset — Y offset from entity pos to ground contact point.
+ *   0 = pos IS the ground (e.g. tree with anchor 0.8)
+ *   8 = ground is 8px below pos (e.g. character with anchor 0.5)
  */
 export class ShadowCasterComponent extends ex.Component {
   public readonly type = 'ShadowCaster';
 
-  private entityHeight: number;
+  private feetOffset: number;
   private installed = false;
 
   // Cached shadow params
@@ -31,9 +28,10 @@ export class ShadowCasterComponent extends ex.Component {
   /** Light sources — set by GameScene each frame */
   static lightSources: Array<{ x: number; y: number; radius: number }> = [];
 
-  constructor(opts?: { entityHeight?: number }) {
+  constructor(opts?: { feetOffset?: number }) {
     super();
-    this.entityHeight = opts?.entityHeight ?? 24;
+    // feetOffset: how many pixels below entity.pos.y is the ground
+    this.feetOffset = opts?.feetOffset ?? 8;
   }
 
   onAdd(owner: ex.Entity): void {
@@ -49,26 +47,24 @@ export class ShadowCasterComponent extends ex.Component {
       if (origOnPreDraw) origOnPreDraw(ctx, elapsed);
       if (!self.shadowVisible) return;
 
-      // Get current graphic from entity
       const graphic = actor.graphics.current;
       if (!graphic) return;
 
       ctx.save();
 
-      // Move to feet position + shadow offset
+      // Translate to feet position (ground contact point)
       ctx.translate(self.shadowOffsetX, self.shadowOffsetY);
 
       // Rotate away from light
       ctx.rotate(self.shadowRotation);
 
-      // Scale: X = entity width, Y = shadow stretch (squished for ground)
+      // Scale: X = entity width, Y = shadow stretch
       ctx.scale(self.shadowScaleX, self.shadowScaleY);
 
-      // Set opacity for shadow
       ctx.opacity = self.shadowAlpha;
 
-      // Draw the same graphic but tinted black
-      // We temporarily set tint, draw, then restore
+      // Draw black silhouette of the sprite
+      // Anchor the sprite drawing so its BOTTOM is at the current origin (feet)
       const origTint = graphic.tint;
       graphic.tint = ex.Color.Black;
       graphic.draw(ctx, -graphic.width / 2, -graphic.height);
@@ -84,7 +80,6 @@ export class ShadowCasterComponent extends ex.Component {
     if (!actor) return;
     if (!this.installed) this.installDraw(actor);
 
-    // Find nearest light source
     const lights = ShadowCasterComponent.lightSources;
     let bestLight: { x: number; y: number; radius: number } | null = null;
     let bestDist = Infinity;
@@ -104,26 +99,24 @@ export class ShadowCasterComponent extends ex.Component {
 
     this.shadowVisible = true;
 
-    // Direction away from light
     const dx = actor.pos.x - bestLight.x;
     const dy = actor.pos.y - bestLight.y;
     const angle = Math.atan2(dy, dx);
 
-    // Shadow length (original formula)
     const shadowLen = Math.min(1.2, 400 / (bestDist + 50));
 
-    // Position: at entity feet
+    // Shadow origin = feet position (feetOffset below entity pos)
     this.shadowOffsetX = 0;
-    this.shadowOffsetY = this.entityHeight * 0.35;
+    this.shadowOffsetY = this.feetOffset;
 
-    // Rotation: point away from light (same as original: angle + PI/2)
+    // Rotation: point away from light
     this.shadowRotation = angle + Math.PI * 0.5;
 
-    // Scale: X = entity scale, Y = shadow stretch
+    // Scale
     this.shadowScaleX = actor.scale?.x ?? 1;
     this.shadowScaleY = shadowLen * 0.45;
 
-    // Alpha: 45% at center, 8% at edge
+    // Alpha
     const edgeFade = 1 - (bestDist / bestLight.radius);
     this.shadowAlpha = Math.max(0.08, 0.45 * edgeFade);
   }
