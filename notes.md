@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-20 — v2.7.5: Reduce bot approach distance from 30px to 20px
+
+### Summary
+Tightened the bot approach threshold in `BotAI.ts` from 30px to 20px. Both the attack-trigger check and the path-arrival check were updated, so bots must now close to within 20px before swinging — matching more closely the actual weapon reach and reducing phantom attacks at range.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - Attack-while-approaching condition: `distToTarget < 30` → `distToTarget < 20`.
+  - Path-arrival attack condition: `distToTarget < 30` → `distToTarget < 20`.
+
+### Rationale
+30px was allowing bots to attack while still slightly out of reach visually. 20px brings the threshold tighter to the real weapon hitbox, making combat feel more precise and reducing hit-detection inconsistencies.
+
+### Next Steps
+- Monitor whether 20px feels too tight on mobile or low-framerate sessions; may need a small tolerance buffer.
+- Cross-check against the player's own attack range (52px) to ensure bots can still engage reliably.
+
+---
+
 ## 2026-03-20 — v2.7.4: Mobile ATK button hold for continuous attacking
 
 ### Summary
