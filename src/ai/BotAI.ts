@@ -1,6 +1,7 @@
 import * as ex from 'excalibur';
 import { GameEntity } from '../engine/GameEntity';
 import { GridCollisionSystem } from '../engine/GridCollisionSystem';
+import { PathFollower } from '../engine/PathFollower';
 import { HealthComponent } from '../components/HealthComponent';
 import { ResourceComponent } from '../components/ResourceComponent';
 import { AIBrainComponent } from '../components/AIBrainComponent';
@@ -127,11 +128,8 @@ export class BotAI {
   private stuckTimer = 0;
   private lastPos = { x: 0, y: 0 };
 
-  // A* pathfinding state
-  private path: Array<{ x: number; y: number }> | null = null;
-  private pathIdx = 0;
-  private repathTimer = 0;
-  private pathTarget: { x: number; y: number } | null = null;
+  // Shared pathfinder
+  private pathFollower: PathFollower;
 
   // Movement smoothing
   private smoothVx = 0;
@@ -181,6 +179,7 @@ export class BotAI {
     this.getEntities = opts.getEntities;
     this.getEnemies = opts.getEnemies;
     this.getBonfires = opts.getBonfires;
+    this.pathFollower = new PathFollower(opts.grid);
     this.tree = this.buildDecisionTree();
   }
 
@@ -207,7 +206,7 @@ export class BotAI {
   update(dt: number): { vx: number; vy: number; attack: boolean; interact: boolean } {
     const ctx = this.buildContext(dt);
     this.goalAge += dt;
-    this.repathTimer -= dt;
+    this.pathFollower.tick(dt);
 
     // Evaluate decision tree
     const trace: TreeTrace[] = [];
@@ -222,9 +221,7 @@ export class BotAI {
       this.goalAge = 0;
       this.goalMinTime = BotAI.GOAL_HOLD_TIMES[candidate.type] ?? 1.0;
       this.activeNodeName = candidate._treePath;
-      // Clear path on goal switch
-      this.path = null;
-      this.pathTarget = null;
+      this.pathFollower.clearPath();
     } else {
       // Update target position
       if (this.currentGoal?.target && !this.currentGoal.target.isKilled()) {
@@ -255,7 +252,7 @@ export class BotAI {
         this.stuckTimer = 0;
         this.wanderAngle = Math.random() * Math.PI * 2;
         this.orbitAngle += 1.5;
-        this.path = null; // force repath
+        this.pathFollower.clearPath(); // force repath
         this.goalAge = 999;
       }
     } else {
@@ -348,65 +345,9 @@ export class BotAI {
            candidate.target !== this.currentGoal.target;
   }
 
-  // ============================================================
-  // A* PATHFINDING — follow path to target
-  // ============================================================
+  /** Move toward target using shared PathFollower */
   private moveToWithPathfinding(tx: number, ty: number): { x: number; y: number } {
-    const p = this.player;
-    const directDist = Math.hypot(tx - p.pos.x, ty - p.pos.y);
-
-    // Very close (<32px, same tile) — go direct
-    if (directDist < 32) {
-      return this.dirTo(p.pos, tx, ty);
-    }
-
-    // Find best approach point — nearest walkable tile adjacent to target
-    // (can interact from any of 8 sides, pick the closest to player)
-    let goalX = tx, goalY = ty;
-    const T = 32; // CONFIG.TILE_SIZE
-    const ttx = Math.floor(tx / T), tty = Math.floor(ty / T);
-    if (this.grid.isBlocked(ttx, tty)) {
-      let bestD = Infinity;
-      for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-          if (dx === 0 && dy === 0) continue;
-          if (!this.grid.isBlocked(ttx + dx, tty + dy)) {
-            const nx = (ttx + dx) * T + T / 2, ny = (tty + dy) * T + T / 2;
-            const d = Math.hypot(nx - p.pos.x, ny - p.pos.y);
-            if (d < bestD) { bestD = d; goalX = nx; goalY = ny; }
-          }
-        }
-      }
-    }
-
-    // Repath if needed
-    if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 ||
-      (this.pathTarget && Math.hypot(goalX - this.pathTarget.x, goalY - this.pathTarget.y) > 60)) {
-      this.path = this.grid.findPath(p.pos.x, p.pos.y, goalX, goalY);
-      this.pathIdx = 0;
-      this.repathTimer = 0.8 + Math.random() * 0.4;
-      this.pathTarget = { x: goalX, y: goalY };
-    }
-
-    if (this.path && this.pathIdx < this.path.length) {
-      const wp = this.path[this.pathIdx];
-      const dist = Math.hypot(p.pos.x - wp.x, p.pos.y - wp.y);
-      if (dist < this.WAYPOINT_REACH) {
-        this.pathIdx++;
-        if (this.pathIdx >= this.path.length) {
-          return { x: 0, y: 0 }; // arrived
-        }
-      }
-      if (this.pathIdx < this.path.length) {
-        const next = this.path[this.pathIdx];
-        const dx = next.x - p.pos.x, dy = next.y - p.pos.y;
-        const len = Math.hypot(dx, dy);
-        if (len > 1) return { x: dx / len, y: dy / len };
-      }
-    }
-
-    // Fallback: direct movement
-    return this.dirTo(p.pos, tx, ty);
+    return this.pathFollower.moveTo(this.player.pos.x, this.player.pos.y, tx, ty);
   }
 
   // ============================================================
@@ -1024,18 +965,16 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
         const dist = ctx.player.pos.distance(target.pos);
-        if (dist < 52) {
+        // Attack range = 1.5 tiles (diagonal neighbor to center ≈ 45px)
+        if (dist < 56) {
           attack = true;
-          this.orbitAngle += dt * 2;
-          const ox = target.pos.x + Math.cos(this.orbitAngle) * 30;
-          const oy = target.pos.y + Math.sin(this.orbitAngle) * 30;
-          const dir = this.dirTo(ctx.player.pos, ox, oy);
-          vx = dir.x * 0.3; vy = dir.y * 0.3;
+          // Stay put while attacking — don't orbit into blocked tiles
+          vx = 0; vy = 0;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
             vx = ctx.evasion.x; vy = ctx.evasion.y;
           }
         } else {
-          // A* to resource
+          // A* to resource (PathFollower finds nearest walkable side)
           const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
           vx = dir.x; vy = dir.y;
           if (ctx.evasion && ctx.evasion.urgency > 0.5) {
@@ -1147,7 +1086,8 @@ export class BotAI {
         if (tType) html += ` (${tType})`;
       }
       html += ` [${this.goalAge.toFixed(1)}s]`;
-      if (this.path) html += ` A*:${this.path.length - this.pathIdx}wp`;
+      const pf = this.pathFollower.getPath();
+      if (pf) html += ` A*:${pf.length - this.pathFollower.getPathIdx()}wp`;
       html += '</div>';
     }
 

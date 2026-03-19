@@ -11,6 +11,7 @@ import {
   DecisionContext, createMeleeTree, createRangedTree, createCrawlerTree,
 } from '../components/DecisionTreeComponent';
 import { CONFIG } from '../config';
+import { PathFollower } from '../engine/PathFollower';
 
 /**
  * Enemy Brain System — runs decision trees for all enemies.
@@ -22,6 +23,14 @@ import { CONFIG } from '../config';
 export class EnemyBrainSystem {
   private trees: Map<string, TreeNode> = new Map();
   private grid: GridCollisionSystem;
+  private pathFollowers: Map<GameEntity, PathFollower> = new Map();
+
+  /** Get or create PathFollower for an enemy */
+  private getPathFollower(e: GameEntity): PathFollower {
+    let pf = this.pathFollowers.get(e);
+    if (!pf) { pf = new PathFollower(this.grid); this.pathFollowers.set(e, pf); }
+    return pf;
+  }
 
   constructor(grid: GridCollisionSystem) {
     this.grid = grid;
@@ -116,38 +125,16 @@ export class EnemyBrainSystem {
     }
   }
 
-  /** Chase target using A* pathfinding */
+  /** Chase target using shared PathFollower */
   private chaseWithPathfinding(e: GameEntity, target: ex.Actor, speed: number, dt: number): void {
-    let path = (e as any)._aiPath as Array<{ x: number; y: number }> | null;
-    let pathIdx = (e as any)._aiPathIdx as number || 0;
-    let repathTimer = ((e as any)._aiRepathTimer as number || 0) - dt;
-
-    if (!path || pathIdx >= path.length || repathTimer <= 0) {
-      path = this.grid.findPath(e.pos.x, e.pos.y, target.pos.x, target.pos.y);
-      (e as any)._aiPath = path;
-      (e as any)._aiPathIdx = 0;
-      pathIdx = 0;
-      repathTimer = 0.8 + Math.random() * 0.4;
-    }
-    (e as any)._aiRepathTimer = repathTimer;
-
-    if (path && pathIdx < path.length) {
-      const wp = path[pathIdx];
-      if (Math.sqrt((e.pos.x - wp.x) ** 2 + (e.pos.y - wp.y) ** 2) < 16) {
-        pathIdx++;
-        (e as any)._aiPathIdx = pathIdx;
-      }
-      if (pathIdx < path.length) {
-        const next = path[pathIdx];
-        const dir = ex.vec(next.x - e.pos.x, next.y - e.pos.y).normalize();
-        e.vel = ex.vec(dir.x * speed, dir.y * speed);
-        return;
-      }
-    }
-
-    // Fallback: direct movement
-    const dir = target.pos.sub(e.pos).normalize();
+    const pf = this.getPathFollower(e);
+    pf.tick(dt);
+    const dir = pf.moveTo(e.pos.x, e.pos.y, target.pos.x, target.pos.y);
     e.vel = ex.vec(dir.x * speed, dir.y * speed);
+
+    // Store path for debug rendering
+    (e as any)._aiPath = pf.getPath();
+    (e as any)._aiPathIdx = pf.getPathIdx();
   }
 
   /** Execute melee attack with animation + damage frame dodge */

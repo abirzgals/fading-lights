@@ -843,14 +843,22 @@ export class GameScene extends ex.Scene {
       }
     };
 
-    // Player bot path (green)
-    if (this.botAI && (this.botAI as any).path) {
-      const path = (this.botAI as any).path as Array<{ x: number; y: number }>;
-      const idx = (this.botAI as any).pathIdx as number ?? 0;
-      const player = this.level.player;
+    // Player bot: A* path (green) or intent line (cyan) to goal
+    const botPf = this.botAI ? (this.botAI as any).pathFollower : null;
+    const botGoal = this.botAI ? (this.botAI as any).currentGoal : null;
+    const player = this.level.player;
+    if (botPf?.getPath()) {
+      const path = botPf.getPath() as Array<{ x: number; y: number }>;
+      const idx = botPf.getPathIdx() as number ?? 0;
       drawPath(path, idx, { x: player.pos.x, y: player.pos.y },
         ex.Color.fromRGB(0, 255, 0, 0.8),
         ex.Color.fromRGB(0, 255, 0, 0.4));
+    } else if (botGoal && botGoal.x !== undefined && botGoal.y !== undefined) {
+      // No A* path — show direct intent line (cyan dashed)
+      drawPath([{ x: botGoal.x, y: botGoal.y }], 0,
+        { x: player.pos.x, y: player.pos.y },
+        ex.Color.fromRGB(0, 200, 255, 0.6),
+        ex.Color.fromRGB(0, 200, 255, 0.3));
     }
 
     // Enemy paths (orange)
