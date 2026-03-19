@@ -2,6 +2,27 @@
 
 ---
 
+## 2026-03-20 — v2.7.6: Restore intro→menu→game flow; remove starter test enemies
+
+### Summary
+Restored the full intro → menu → game scene flow that had been bypassed during development. Added a `?skipIntro=1` URL parameter to allow tests to jump directly to the game scene without the intro. Removed the hardcoded Shadow Archer and Void Mage starter enemies from GameScene — enemies now spawn exclusively through the wave spawner.
+
+### Changes Made
+- `src/main.ts`: On load, navigates to `'intro'` scene by default; checks `?skipIntro=1` URL param to go directly to `'game'` instead.
+- `src/scenes/GameScene.ts`: Removed the `onInitialize` block that unconditionally spawned one SHADOW_ARCHER and one VOID_MAGE near the bonfire at startup.
+- `tests/game.spec.ts`: Updated all three `page.goto('/')` calls to `page.goto('/?skipIntro=1')` so Playwright tests continue to load the game scene directly.
+- `package.json`: Bumped version to 2.7.6.
+
+### Rationale
+The dev shortcut of going straight to `'game'` was left in place after testing ranged enemies. Restoring the intro flow ensures players see the splash, video, and campfire menu as intended. Removing the starter enemies prevents unbalanced early combat that would only occur outside the wave system.
+
+### Next Steps
+- Verify IntroScene video plays and skip works correctly across browsers.
+- Confirm wave spawner first wave timing feels appropriate without any pre-spawned enemies.
+- Consider adding an integration test that exercises the full intro → menu → game flow.
+
+---
+
 ## 2026-03-20 — v2.7.5: Reduce bot approach distance from 30px to 20px
 
 ### Summary
