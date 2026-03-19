@@ -832,22 +832,20 @@ export class BotAI {
         const dist = ctx.player.pos.distance(enemy.pos);
         if (dist < this.ATTACK_REACH) {
           attack = true;
-          // Kite backward, pull toward bonfire
-          const away = ctx.player.pos.sub(enemy.pos).normalize();
-          if (ctx.bonfire) {
-            const toBf = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
-            vx = away.x * 0.6 + toBf.x * 0.4;
-            vy = away.y * 0.6 + toBf.y * 0.4;
-          } else {
-            vx = away.x * 0.3; vy = away.y * 0.3;
+          // Stand and fight — no kiting backward
+          vx = 0; vy = 0;
+          // But dodge projectiles if incoming
+          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
+            vx = ctx.evasion.x;
+            vy = ctx.evasion.y;
           }
         } else {
           // A* pathfind to enemy
           const dir = this.moveToWithPathfinding(enemy.pos.x, enemy.pos.y);
           vx = dir.x; vy = dir.y;
-          // Blend evasion while approaching
-          if (ctx.evasion && ctx.evasion.urgency > 0.5) {
-            const blend = Math.min(ctx.evasion.urgency * 0.3, 0.5);
+          // Dodge projectiles while approaching
+          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
+            const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
             vx = vx * (1 - blend) + ctx.evasion.x * blend;
             vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }

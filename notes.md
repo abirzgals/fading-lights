@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-03-19 — v2.6.8: Bot stands and fights melee enemies, only dodges projectiles
+
+### Summary
+Fixed bot combat behavior in the 'kill' goal. Previously the bot would kite backward when an enemy entered attack reach, which caused erratic backpedaling against melee enemies. Now the bot stands still and attacks when within reach, and only moves to dodge an incoming projectile (evasion urgency > 1.0). While still approaching an enemy, the projectile-dodge threshold was also raised from 0.5 to 1.0 and the blend factor increased, so approach pathing is not disrupted by low-urgency evasion signals.
+
+### Changes Made
+- `src/ai/BotAI.ts`: In the `kill` goal branch, replaced kite-backward logic (moving away from enemy + pulling toward bonfire) with `vx = 0; vy = 0` when within attack reach. Added projectile-dodge override when `ctx.evasion.urgency > 1.0`. Raised the approach-evasion threshold from 0.5 to 1.0 and increased blend cap from 0.5 to 0.6.
+
+### Rationale
+The kiting behavior was designed for ranged combat but was incorrectly applied to melee enemies, making the bot constantly retreat and never land attacks. Standing still forces the bot to trade hits at close range, which is more natural and effective against melee opponents.
+
+### Next Steps
+- Consider separate kite logic conditioned on whether the enemy is a ranged type.
+
+---
+
 ## 2026-03-19 — v2.6.7: Turret pixel art + arrow projectile + bonfire feed fix
 
 ### Summary
