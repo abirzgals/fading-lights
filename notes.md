@@ -2,6 +2,31 @@
 
 ---
 
+## 2026-03-19 — v2.6.40: Extract PathFollower — universal A* class for all AI
+
+### Summary
+Introduced `src/engine/PathFollower.ts` as a shared, self-contained pathfinding unit. All A* state previously scattered across BotAI and EnemyBrainSystem has been consolidated into this class. Both AI systems now hold a PathFollower instance and delegate movement routing entirely to it.
+
+### Changes Made
+- `src/engine/PathFollower.ts` (NEW) — Universal A* helper with:
+  - `moveTo(fromX, fromY, toX, toY)` returning a normalised direction vector
+  - Nearest-side approach: when the target tile is blocked, tests all 8 adjacent tiles and routes to the closest one to the entity
+  - Auto-repath on a 0.8–1.2 s jittered timer or when the target moves more than 60 px
+  - Direct movement bypass for distances under 32 px
+  - `tick(dt)`, `clearPath()`, `getPath()`, `getPathIdx()` for lifecycle management and debug access
+- `src/ai/BotAI.ts` — Removed `path`, `pathIdx`, `repathTimer`, `pathTarget` fields; replaced with a single `PathFollower` instance. `moveToWithPathfinding()` is now a one-liner delegation. Chop/mine attack range raised from ~40 px to 56 px. Orbit-into-wall behaviour removed: the bot stands still while chopping instead of circling.
+- `src/ai/EnemyBrainSystem.ts` — Replaced inline `chaseWithPathfinding()` logic with a `Map<entity, PathFollower>`. Debug properties `_aiPath` and `_aiPathIdx` are still written for overlay rendering.
+- `src/scenes/GameScene.ts` — Debug overlay now draws a cyan intent line when no A* path is active, visualising the bot's direct-movement target vector.
+
+### Rationale
+The old approach duplicated repath logic in two separate AI systems and made it easy for them to drift out of sync. Extracting PathFollower gives a single, tested implementation with consistent nearest-side routing and jittered repath timing. Raising the chop range to 56 px and dropping orbit behaviour fixes bots getting wedged into walls during resource gathering.
+
+### Next Steps
+- Add unit tests for PathFollower nearest-side selection edge cases.
+- Consider exposing PathFollower repath interval as a constructor parameter for tuning different AI speeds.
+
+---
+
 ## 2026-03-19 — v2.6.39: Fix BotAI direct-move threshold 100px -> 32px
 
 ### Summary
