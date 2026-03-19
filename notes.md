@@ -2,6 +2,29 @@
 
 ---
 
+## 2026-03-19 — v2.6.13: Bot AI — smart resource targeting by type with truthful status
+
+### Summary
+The bot now tracks the best available resource entity per type (wood, stone, metal) using a balanced distance score, and targets the specific resource type required for each goal. Status messages are truthful and specific. If a needed resource type does not exist on the map or as a ground drop, the goal node fails cleanly and the bot moves on — no stuck behavior.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - `BotContext.bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }>` — new field storing the best harvestable entity per resource type (wood/stone/metal). Uses the same weighted score as the old single-resource scan (60% player dist + 40% camp dist). References are live `GameEntity` objects that auto-invalidate when the entity is killed.
+  - Context builder loop now reads `ResourceComponent.resourceType` and upserts into `bestResourceByType` per type, while still maintaining the legacy `nearestResource` / `nearestResourceDist` for backward compatibility.
+  - **"Chop/Mine for Build"** node `check`: now validates that `bestResourceByType[neededType]` exists rather than just `nearestResource !== null`. If the specific resource type is absent from the map, the node returns `false` and the parent subtree fails.
+  - **"Chop/Mine for Build"** node `goal`: targets `bestResourceByType[need].entity` directly. Status label: `"Mine stone for TURRET (need 5)"` / `"Mine metal for WEAPON SHOP (need 2)"` etc.
+  - **"Gather Wood"** node `check`: now requires `bestResourceByType['wood'] !== undefined` instead of `nearestResource !== null`.
+  - **"Gather Wood"** node `goal`: targets `bestResourceByType['wood'].entity` directly. Status label: `"Chop Wood (need N)"`.
+
+### Rationale
+Previously all resource gather goals routed to the single nearest resource regardless of type, which meant a bot needing stone could walk to a wood tree and get stuck trying to harvest the wrong entity. Storing best-per-type references eliminates the mismatch and also gives truthful, actionable status messages that make bot behavior easier to debug.
+
+### Next Steps
+- Evaluate whether `bestResourceByType` should respect a per-type cap on max distance beyond which the type is treated as unavailable.
+- Consider exposing resource type availability to the build priority ranker so it can deprioritize builds whose inputs are entirely absent from the map.
+
+---
+
 ## 2026-03-19 — v2.6.12: Bot AI picks up resource drops from the ground
 
 ### Summary

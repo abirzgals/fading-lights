@@ -78,6 +78,7 @@ interface BotContext {
   projectileAttacker: GameEntity | null;
   nearestResource: GameEntity | null;
   nearestResourceDist: number;
+  bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }>;
   woodNeeded: number;
   hasEnoughWood: boolean;
   /** Can we level up the fire? */
@@ -521,12 +522,23 @@ export class BotAI {
             },
             {
               name: 'Chop/Mine for Build',
-              check: (ctx) => ctx.nearestResource !== null,
-              goal: (ctx) => ({
-                type: 'chop', target: ctx.nearestResource!,
-                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-                _treePath: `Gather for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount} ${ctx.gatherNeed!.type})`,
-              }),
+              check: (ctx) => {
+                // Find a resource of the NEEDED type — if none exists, skip (can't gather)
+                const need = ctx.gatherNeed!.type;
+                const resMap: Record<string, string> = { wood: 'wood', stone: 'stone', metal: 'metal' };
+                const rType = resMap[need];
+                if (!rType) return false;
+                return ctx.bestResourceByType[rType] !== undefined;
+              },
+              goal: (ctx) => {
+                const need = ctx.gatherNeed!.type;
+                const r = ctx.bestResourceByType[need];
+                return {
+                  type: 'chop', target: r.entity,
+                  x: r.entity.pos.x, y: r.entity.pos.y,
+                  _treePath: `Mine ${need} for ${ctx.gatherBuildSpot!.type} (need ${ctx.gatherNeed!.amount})`,
+                };
+              },
             },
           ],
         },
@@ -568,13 +580,16 @@ export class BotAI {
           check: (ctx) => {
             if (ctx.hpRatio < 0.4) return false;
             if (ctx.hasEnoughWood) return false;
-            return ctx.nearestResource !== null;
+            return ctx.bestResourceByType['wood'] !== undefined;
           },
-          goal: (ctx) => ({
-            type: 'chop', target: ctx.nearestResource!,
-            x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-            _treePath: `Gather Wood (need ${ctx.woodNeeded})`,
-          }),
+          goal: (ctx) => {
+            const r = ctx.bestResourceByType['wood'];
+            return {
+              type: 'chop', target: r.entity,
+              x: r.entity.pos.x, y: r.entity.pos.y,
+              _treePath: `Chop Wood (need ${ctx.woodNeeded})`,
+            };
+          },
         },
         // === IDLE — stay near bonfire, orbit slowly ===
         {
@@ -685,21 +700,26 @@ export class BotAI {
       }
     }
 
-    // Best resource — balanced score: not too far from player AND not too far from camp
+    // Best resource per type — balanced score (player dist + camp dist)
+    // Stores references to actual GameEntity — auto-invalidates when entity is killed
+    const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
-    let bestResourceScore = Infinity;
     for (const e of this.getEntities()) {
-      if (e.isKilled() || !e.get(ResourceComponent)) continue;
+      if (e.isKilled()) continue;
+      const rc = e.get(ResourceComponent) as ResourceComponent | null;
+      if (!rc) continue;
+      const rType = rc.resourceType;
       const distToPlayer = p.pos.distance(e.pos);
       const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : distToPlayer;
-      // Skip resources too far from camp (hard limit)
       if (distToCamp > this.GATHER_RANGE * 1.5) continue;
-      // Score = weighted blend: 60% distance to player + 40% distance to camp
-      // Penalize resources very far from camp more heavily
       const score = distToPlayer * 0.6 + distToCamp * 0.4;
-      if (score < bestResourceScore) {
-        bestResourceScore = score;
+      const prev = bestResourceByType[rType];
+      if (!prev || score < prev.score) {
+        bestResourceByType[rType] = { entity: e, dist: distToPlayer, score };
+      }
+      // Also track overall nearest
+      if (score < (nearestResource ? p.pos.distance(nearestResource.pos) * 0.6 + (bonfire ? nearestResource.pos.distance(bonfire.pos) : 0) * 0.4 : Infinity)) {
         nearestResource = e;
         nearestResourceDist = distToPlayer;
       }
@@ -785,7 +805,7 @@ export class BotAI {
       enemies, entities: this.getEntities(),
       nearestEnemy, nearestEnemyDist, nearEnemyCount, strongEnemyClose,
       bestEnemy, enemyNearCamp, projectileAttacker,
-      nearestResource, nearestResourceDist,
+      nearestResource, nearestResourceDist, bestResourceByType,
       woodNeeded, hasEnoughWood,
       nearestNeededDrop, nearestNeededDropDist: nearestNeededDropDist,
       nearestDrop, nearestDropDist: nearestDropDist,
