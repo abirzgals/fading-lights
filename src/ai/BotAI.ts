@@ -964,18 +964,22 @@ export class BotAI {
       case 'mine': {
         const target = goal.target!;
         if (target.isKilled()) break;
+
+        // Always run pathfinder — it handles everything
+        const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+        // PathFollower returns (0,0) when arrived at nearest walkable side
+        const arrived = dir.x === 0 && dir.y === 0;
         const dist = ctx.player.pos.distance(target.pos);
-        // Attack range = 1.5 tiles (diagonal neighbor to center ≈ 45px)
-        if (dist < 56) {
+
+        if (arrived || dist < 48) {
+          // At the target — attack and stay put
           attack = true;
-          // Stay put while attacking — don't orbit into blocked tiles
           vx = 0; vy = 0;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
             vx = ctx.evasion.x; vy = ctx.evasion.y;
           }
         } else {
-          // A* to resource (PathFollower finds nearest walkable side)
-          const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+          // Still moving toward target
           vx = dir.x; vy = dir.y;
           if (ctx.evasion && ctx.evasion.urgency > 0.5) {
             const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
