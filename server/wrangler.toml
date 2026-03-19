@@ -1,6 +1,7 @@
 name = "fading-light-relay"
 main = "worker.js"
 compatibility_date = "2024-01-01"
+account_id = "d48bc9e5446343f511168879211b6392"
 
 [durable_objects]
 bindings = [
@@ -9,4 +10,4 @@ bindings = [
 
 [[migrations]]
 tag = "v1"
-new_classes = ["GameRoom"]
+new_sqlite_classes = ["GameRoom"]
