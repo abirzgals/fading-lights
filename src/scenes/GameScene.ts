@@ -42,6 +42,7 @@ export class GameScene extends ex.Scene {
   private waveNumber = 0;      // current wave (increases each minute)
   private totalSpawned = 0;    // total enemies spawned this level
   private readonly MAX_ALIVE = 10;
+  private feedCooldown = 0;  // cooldown between feeding sticks (seconds)
   private drops: GameEntity[] = [];
 
   onInitialize(engine: ex.Engine): void {
@@ -113,13 +114,7 @@ export class GameScene extends ex.Scene {
       vx = cmd.vx;
       vy = cmd.vy;
       shouldAttack = cmd.attack;
-      // Bot wants to interact (feed bonfire)
-      if (cmd.interact && this.resources.wood > 0 && this.level.bonfires[0] &&
-        this.level.bonfires[0].pos.distance(player.pos) < CONFIG.INTERACT_RADIUS &&
-        this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.95) {
-        this.resources.wood--;
-        this.bonfireFuel = Math.min(CONFIG.BONFIRE_MAX_FUEL, this.bonfireFuel + CONFIG.FUEL_PER_WOOD);
-      }
+      // Bot wants to interact (feed bonfire) — handled by runBonfire() with animation
     } else {
       // Human controls
       const kb = engine.input.keyboard;
@@ -197,18 +192,40 @@ export class GameScene extends ex.Scene {
     const player = this.level.player;
     this.drops = this.drops.filter(drop => {
       if (drop.isKilled()) return false;
+      // Skip drops already flying to player
+      if ((drop as any)._flyingToPlayer) return true;
       const dist = player.pos.distance(drop.pos);
       if (dist < CONFIG.PICKUP_RADIUS) {
+        // Animate: fly toward player, then collect
+        (drop as any)._flyingToPlayer = true;
         const type = (drop as any).dropType as string;
-        if (type in this.resources) {
-          (this.resources as any)[type] += 1;
-          this.spawnFloatingText(drop.pos.x, drop.pos.y - 8, `+1 ${type}`, '#AAFFAA');
-        }
-        drop.kill();
-        return false;
+        drop.z = 9998;
+        // Fly to player position over 300ms
+        const flyDuration = 300;
+        const startPos = drop.pos.clone();
+        let elapsed = 0;
+        drop.on('preupdate', (_evt: any) => {
+          elapsed += 16; // ~60fps
+          const t = Math.min(elapsed / flyDuration, 1);
+          // Lerp toward current player position
+          drop.pos = ex.vec(
+            startPos.x + (player.pos.x - startPos.x) * t,
+            startPos.y + (player.pos.y - startPos.y) * t - Math.sin(t * Math.PI) * 15, // slight arc up
+          );
+          drop.scale = ex.vec(1 - t * 0.5, 1 - t * 0.5); // shrink
+          if (t >= 1) {
+            if (type in this.resources) {
+              (this.resources as any)[type] += 1;
+            }
+            drop.kill();
+          }
+        });
+        return true; // keep in array until killed
       }
       return true;
     });
+    // Remove killed
+    this.drops = this.drops.filter(d => !d.isKilled());
   }
 
   /** Spawn a floating text that rises and fades */
@@ -226,6 +243,40 @@ export class GameScene extends ex.Scene {
     label.vel = ex.vec(0, -30);
     label.actions.fade(0, 1200).die();
     this.add(label);
+  }
+
+  /** Spawn a stick that flies parabolically from source to target */
+  private spawnParabolicStick(fromX: number, fromY: number, toX: number, toY: number): void {
+    const stick = new ex.Actor({
+      pos: ex.vec(fromX, fromY),
+      anchor: ex.vec(0.5, 0.5),
+    });
+    stick.graphics.use(new ex.Rectangle({ width: 10, height: 4, color: ex.Color.fromHex('#8B6914') }));
+    stick.z = 9998;
+
+    const duration = 500; // ms
+    const startX = fromX, startY = fromY;
+    const dx = toX - fromX, dy = toY - fromY;
+    const arcHeight = 40 + Math.abs(dx) * 0.15; // higher arc for longer distances
+    let elapsed = 0;
+
+    stick.on('preupdate', () => {
+      elapsed += 16;
+      const t = Math.min(elapsed / duration, 1);
+      // Linear position + parabolic arc
+      stick.pos = ex.vec(
+        startX + dx * t,
+        startY + dy * t - Math.sin(t * Math.PI) * arcHeight,
+      );
+      // Rotate as it flies
+      stick.rotation = t * Math.PI * 2;
+      stick.scale = ex.vec(1 - t * 0.3, 1 - t * 0.3);
+      if (t >= 1) {
+        stick.kill();
+      }
+    });
+
+    this.add(stick);
   }
 
   // ======== ENEMY AI — delegated to EnemyBrainSystem ========
@@ -296,12 +347,25 @@ export class GameScene extends ex.Scene {
 
   private runBonfire(dt: number): void {
     this.bonfireFuel = Math.max(0, this.bonfireFuel - CONFIG.BONFIRE_BURN_RATE * dt);
+    this.feedCooldown = Math.max(0, this.feedCooldown - dt);
+
     const player = this.level.player;
-    if (this.resources.wood > 0 && this.level.bonfires[0] &&
-      this.level.bonfires[0].pos.distance(player.pos) < CONFIG.INTERACT_RADIUS &&
-      this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.9) {
+    const bf = this.level.bonfires[0];
+    if (this.resources.wood > 0 && bf &&
+      bf.pos.distance(player.pos) < CONFIG.INTERACT_RADIUS &&
+      this.bonfireFuel < CONFIG.BONFIRE_MAX_FUEL * 0.9 &&
+      this.feedCooldown <= 0) {
       this.resources.wood--;
+      const added = Math.min(CONFIG.FUEL_PER_WOOD, CONFIG.BONFIRE_MAX_FUEL - this.bonfireFuel);
       this.bonfireFuel = Math.min(CONFIG.BONFIRE_MAX_FUEL, this.bonfireFuel + CONFIG.FUEL_PER_WOOD);
+      this.feedCooldown = 0.5; // 0.5s between each stick
+
+      // Parabolic stick animation: player → bonfire
+      this.spawnParabolicStick(player.pos.x, player.pos.y - 8, bf.pos.x, bf.pos.y - 4);
+
+      // Notification over bonfire
+      this.spawnFloatingText(bf.pos.x, bf.pos.y - 20,
+        `+${Math.round(added)} fuel`, '#FF8800');
     }
   }
 
