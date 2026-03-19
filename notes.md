@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-19 — v2.6.75: BotAI — all enemy targeting uses wave distance instead of straight-line distance
+
+### Summary
+Replaced straight-line distance scoring with wave (BFS flood-fill) distance across all enemy targeting logic in BotAI. A shared `getWaveDist()` helper computes the tile distance through walkable paths rather than air distance, so enemies behind walls of rocks score correctly. The helper was also repositioned to appear before any usage, resolving a prior compile error.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Added `getWaveDist()` helper (BFS wave distance, Infinity if unreachable) before all enemy scoring code.
+- `src/ai/BotAI.ts`: `bestEnemy` scoring now uses `walkDist = wd * 32` rather than `p.pos.distance(e.pos)` — enemies behind obstacles score much lower than those with clear paths.
+- `src/ai/BotAI.ts`: `enemyNearCamp` validated against wave immediately after wave computation (moved earlier than before).
+- `src/ai/BotAI.ts`: `projectileAttacker` validated against wave using the shared helper; old duplicate `isEnemyReachable()` helper removed.
+
+### Rationale
+Bots were previously chasing enemies that were physically close by air distance but blocked by rocks or walls, causing them to path endlessly around impassable terrain. Using wave distance ensures scoring reflects actual walking cost, so a clear-path enemy at 150px beats a wall-blocked enemy at 50px.
+
+### Next Steps
+- Observe whether sight-range cutoff (`walkDist > SIGHT_RANGE * 2`) needs tuning relative to the old straight-line `SIGHT_RANGE` threshold.
+- Consider factoring wave distance into resource scoring as well for consistency.
+
+---
+
 ## 2026-03-19 — v2.6.74: Fix BotAI — walk directly toward target when PathFollower arrives too far away
 
 ### Summary

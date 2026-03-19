@@ -664,26 +664,37 @@ export class BotAI {
     // BFS flood-fill from player — find all reachable tiles with WAVE DISTANCE
     const reachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
 
-    // Best enemy to hunt — must be reachable by wave
+    // Wave distance helper — Infinity if unreachable
+    const getWaveDist = (e: GameEntity): number => {
+      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
+      const selfDist = reachable.get(`${etx},${ety}`);
+      if (selfDist !== undefined) return selfDist;
+      let best = Infinity;
+      for (let ddx = -1; ddx <= 1; ddx++)
+        for (let ddy = -1; ddy <= 1; ddy++)
+          if (ddx !== 0 || ddy !== 0) {
+            if (this.grid.isBlocked(etx + ddx, ety + ddy)) continue;
+            const nd = reachable.get(`${etx + ddx},${ety + ddy}`);
+            if (nd !== undefined && nd < best) best = nd;
+          }
+      return best;
+    };
+
+    // Validate enemyNearCamp + find best by wave distance
+    if (enemyNearCamp && getWaveDist(enemyNearCamp) === Infinity) enemyNearCamp = null;
+
+    // Best enemy to hunt — reachable, scored by WAVE distance
     let bestEnemy: GameEntity | null = null;
     let bestScore = -Infinity;
     for (const e of enemies) {
-      const d = p.pos.distance(e.pos);
-      if (d > this.SIGHT_RANGE) continue;
-      // Check reachability — enemy tile or adjacent tile in wave
-      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-      let enemyReachable = reachable.has(`${etx},${ety}`);
-      if (!enemyReachable) {
-        for (let dx = -1; dx <= 1 && !enemyReachable; dx++)
-          for (let dy = -1; dy <= 1 && !enemyReachable; dy++)
-            if (dx !== 0 || dy !== 0)
-              if (!this.grid.isBlocked(etx + dx, ety + dy) && reachable.has(`${etx + dx},${ety + dy}`))
-                enemyReachable = true;
-      }
-      if (!enemyReachable) continue;
-      const selfDefense = d < 60;
+      const wd = getWaveDist(e);
+      if (wd === Infinity) continue;
+      const walkDist = wd * 32;
+      if (walkDist > this.SIGHT_RANGE * 2) continue;
+      const straightDist = p.pos.distance(e.pos);
+      const selfDefense = straightDist < 60;
       const eHp = (e.get(HealthComponent) as HealthComponent | null)?.hp ?? 20;
-      const score = (selfDefense ? 500 : 0) + (300 - d) - eHp * 0.5;
+      const score = (selfDefense ? 500 : 0) + (300 - walkDist) - eHp * 0.5;
       if (score > bestScore) { bestScore = score; bestEnemy = e; }
     }
 
@@ -694,12 +705,10 @@ export class BotAI {
         if ((actor as any).entityType !== 'projectile') continue;
         const dist = p.pos.distance(actor.pos);
         if (dist > 150) continue;
-        // Is it heading toward us?
         const toPlayer = p.pos.sub(actor.pos).normalize();
         const projDir = actor.vel.normalize();
         const dot = toPlayer.x * projDir.x + toPlayer.y * projDir.y;
         if (dot > 0.5) {
-          // Find the enemy who owns this projectile (nearest ranged enemy)
           for (const e of enemies) {
             const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
             if (ai?.isRanged && e.pos.distance(actor.pos) < 300) {
@@ -711,19 +720,7 @@ export class BotAI {
         }
       }
     }
-
-    // Validate all targets against wave reachability
-    const isEnemyReachable = (e: GameEntity): boolean => {
-      const etx = Math.floor(e.pos.x / 32), ety = Math.floor(e.pos.y / 32);
-      if (reachable.has(`${etx},${ety}`)) return true;
-      for (let ddx = -1; ddx <= 1; ddx++)
-        for (let ddy = -1; ddy <= 1; ddy++)
-          if ((ddx !== 0 || ddy !== 0) && !this.grid.isBlocked(etx + ddx, ety + ddy) && reachable.has(`${etx + ddx},${ety + ddy}`))
-            return true;
-      return false;
-    };
-    if (enemyNearCamp && !isEnemyReachable(enemyNearCamp)) enemyNearCamp = null;
-    if (projectileAttacker && !isEnemyReachable(projectileAttacker)) projectileAttacker = null;
+    if (projectileAttacker && getWaveDist(projectileAttacker) === Infinity) projectileAttacker = null;
 
     // Best resource per type — only from reachable tiles (wave computed above)
     const bestResourceByType: Record<string, { entity: GameEntity; dist: number; score: number }> = {};
