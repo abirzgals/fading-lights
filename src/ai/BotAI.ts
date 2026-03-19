@@ -1019,15 +1019,9 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
 
-        // Attack if on adjacent tile (including diagonal — all 8 neighbors)
-        const pTx = Math.floor(ctx.player.pos.x / 32);
-        const pTy = Math.floor(ctx.player.pos.y / 32);
-        const tTx = Math.floor(target.pos.x / 32);
-        const tTy = Math.floor(target.pos.y / 32);
-        const dx = Math.abs(pTx - tTx), dy = Math.abs(pTy - tTy);
-        const isDirectNeighbor = dx <= 1 && dy <= 1; // same tile or any of 8 neighbors
-
-        if (isDirectNeighbor) {
+        // Attack only if within actual weapon reach (52px — same as GameScene damage check)
+        const distToTarget = ctx.player.pos.distance(target.pos);
+        if (distToTarget < 50) {
           attack = true;
           // Face the resource
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
@@ -1045,17 +1039,15 @@ export class BotAI {
         }
 
         if (this.pathFollower.arrived) {
-          // Arrived at approach tile — check if actually adjacent
-          if (!isDirectNeighbor) {
-            // Arrived but not adjacent — target unreachable from here
+          // Arrived at approach tile — check if close enough to attack
+          if (distToTarget >= 50) {
+            // Arrived but still too far — target unreachable from here
             this.goalAge = 999;
             break;
           }
           attack = true;
-          vx = 0; vy = 0;
-          if (ctx.evasion && ctx.evasion.urgency > 1.0) {
-            vx = ctx.evasion.x; vy = ctx.evasion.y;
-          }
+          const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+          vx = toRes.x * 0.01; vy = toRes.y * 0.01;
         } else {
           // Still moving toward target
           vx = dir.x; vy = dir.y;

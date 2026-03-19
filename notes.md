@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.68: Fix bot resource attack range using pixel distance
+
+### Summary
+Fixed BotAI attacking resources from tile-adjacency positions that were actually too far in pixel space. Replaced the tile-based dx/dy neighbor check with a direct pixel distance comparison matching the 52px damage range used in GameScene.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Replaced tile-adjacency check (`dx<=1 && dy<=1`) with pixel distance check (`< 50px`) for resource attack trigger
+- `src/ai/BotAI.ts`: Updated "arrived but too far" guard to use the same 50px threshold instead of tile adjacency
+- `src/ai/BotAI.ts`: When arrived at approach tile, bot now nudges toward resource instead of standing still (small directional velocity)
+
+### Rationale
+Tile adjacency allowed the bot to believe it was in attack range when the pixel distance was ~60px — outside the 52px damage radius in GameScene. The bot would swing but deal no damage. Now both checks are based on actual pixel distance, consistent with the engine's damage logic.
+
+### Next Steps
+- Monitor if 50px threshold needs tuning relative to bot movement speed and resource hitbox sizes
+
+---
+
 ## 2026-03-19 — v2.6.67: Stump sprite variants, speed rebalance, extended melee range, PathFollower AI movement
 
 ### Summary
