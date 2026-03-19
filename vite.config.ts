@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite';
 
 export default defineConfig({
-  base: '/fading-lights/',
+  base: process.env.GITHUB_ACTIONS ? '/fading-lights/' : '/',
   build: {
     outDir: 'dist',
     assetsInlineLimit: 0,

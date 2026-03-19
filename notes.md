@@ -2,6 +2,45 @@
 
 ---
 
+## 2026-03-19 — v2.6.82: Complete multiplayer synchronization — drops, buildings, full state
+
+### Summary
+Completed full multiplayer synchronization coverage. Drop pickups, building placement, and periodic full-state broadcasts from the host are now synchronized across all clients, closing the remaining gaps in the multiplayer experience.
+
+### Changes Made
+- `src/network/NetworkSync.ts`:
+  - Added `sendDropPickup()` — broadcasts when a player picks up a drop so other clients remove it.
+  - Added `sendPlayerHP()` — broadcasts player health changes to peers.
+  - Added `full_state` message — host sends complete game state every 1 second (bonfire level/fuel, resources pool, buildings list, kills, wave number).
+  - Added `onDropPickup`, `onPlayerHP`, and `onFullState` callbacks.
+  - Added message handlers for `drop_pickup`, `player_hp`, and `full_state`.
+- `src/scenes/GameScene.ts`:
+  - Building placement fully synced — `onBuildingPlaced` handler finds the matching build spot, creates the building, initializes its turret, and applies armor bonus.
+  - Drop pickup synced — `sendDropPickup` is called on collection; `onDropPickup` removes the drop on other clients.
+  - Full state sync handler — clients receive bonfire/resources/kills/wave from host every 1 second and reconcile missing buildings.
+  - `sendGameState` now includes buildings list, player HP, kills, and wave number.
+  - Building placement broadcasts to all other players on placement.
+- `vite.config.ts`: Base path is now dynamic — `/` for local dev, `/fading-lights/` for GitHub Actions builds.
+
+### Rationale
+Drop pickups and buildings were previously local-only, causing desync between host and joining clients. A periodic full-state broadcast from the host acts as a single source of truth that corrects any missed events, making the session resilient to message loss and late joins.
+
+### Synchronized State (complete)
+- Player positions
+- Enemy spawn / position / HP / death
+- Resource destruction
+- Drop pickup (NEW)
+- Buildings (NEW)
+- Bonfire fuel and level
+- Resources pool
+- Full state periodic sync (NEW)
+
+### Next Steps
+- Test full-state reconciliation with a late-joining client.
+- Consider compressing the full_state payload for larger building counts.
+
+---
+
 ## 2026-03-19 — v2.6.81: GitHub Pages deployment — Vite build pipeline + fullscreen button
 
 ### Summary

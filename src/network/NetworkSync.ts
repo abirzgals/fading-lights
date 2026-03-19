@@ -48,6 +48,9 @@ export class NetworkSync {
   public onResourcesState: ((wood: number, stone: number, metal: number, gold: number) => void) | null = null;
   public onEnemySpawned: ((netId: number, x: number, y: number, type: EnemyType) => GameEntity | null) | null = null;
   public onEnemyKilled: ((netId: number) => void) | null = null;
+  public onDropPickup: ((x: number, y: number, type: string) => void) | null = null;
+  public onPlayerHP: ((peerId: string, hp: number, maxHp: number) => void) | null = null;
+  public onFullState: ((state: any) => void) | null = null;
 
   constructor(net: NetworkClient, scene: ex.Scene, worldSeed: number) {
     this.net = net;
@@ -67,8 +70,9 @@ export class NetworkSync {
     this.net.on('enemy_killed', (msg) => this.onEnemyKilledMsg(msg));
     this.net.on('resource_killed', (msg) => this.onResourceKilledMsg(msg));
     this.net.on('building_placed', (msg) => this.onBuildingPlacedMsg(msg));
-    this.net.on('bonfire_state', (msg) => this.onBonfireStateMsg(msg));
-    this.net.on('resources_state', (msg) => this.onResourcesStateMsg(msg));
+    this.net.on('drop_pickup', (msg) => this.onDropPickupMsg(msg));
+    this.net.on('player_hp', (msg) => this.onPlayerHPMsg(msg));
+    this.net.on('full_state', (msg) => this.onFullStateMsg(msg));
   }
 
   // ============================================================
@@ -126,16 +130,40 @@ export class NetworkSync {
     this.net.send({ type: 'building_placed', x: Math.round(x), y: Math.round(y), buildingType });
   }
 
-  /** Host: broadcast bonfire + resource state periodically */
-  sendGameState(fuel: number, campLevel: number, campFuelAdded: number,
-                resources: { wood: number; stone: number; metal: number; gold: number }, dt: number): void {
+  /** Any player: broadcast drop pickup */
+  sendDropPickup(x: number, y: number, dropType: string): void {
+    this.net.send({ type: 'drop_pickup', x: Math.round(x), y: Math.round(y), dropType });
+  }
+
+  /** Broadcast player HP (when damaged or healed significantly) */
+  sendPlayerHP(hp: number, maxHp: number): void {
+    this.net.send({ type: 'player_hp', hp: Math.round(hp), maxHp });
+  }
+
+  /** Host: broadcast full state periodically (bonfire + resources + buildings + player HP) */
+  sendGameState(
+    fuel: number, campLevel: number, campFuelAdded: number,
+    resources: { wood: number; stone: number; metal: number; gold: number },
+    buildings: Array<{ x: number; y: number; type: string }>,
+    playerHp: number, playerMaxHp: number,
+    kills: number, waveNumber: number,
+    dt: number
+  ): void {
     if (!this.net.isHost) return;
     this.stateSyncTimer += dt * 1000;
     if (this.stateSyncTimer < this.STATE_SYNC_MS) return;
     this.stateSyncTimer = 0;
 
-    this.net.send({ type: 'bonfire_state', fuel, campLevel, campFuelAdded });
-    this.net.send({ type: 'resources_state', ...resources });
+    // Single full state message — one source of truth
+    this.net.send({
+      type: 'full_state',
+      fuel, campLevel, campFuelAdded,
+      ...resources,
+      buildings,
+      hostHp: Math.round(playerHp),
+      hostMaxHp: playerMaxHp,
+      kills, waveNumber,
+    });
   }
 
   /** Register a locally-spawned enemy with a netId */
@@ -295,14 +323,17 @@ export class NetworkSync {
     this.onBuildingPlaced?.(msg.x, msg.y, msg.buildingType);
   }
 
-  private onBonfireStateMsg(msg: any): void {
-    if (this.net.isHost) return;
-    this.onBonfireState?.(msg.fuel, msg.campLevel, msg.campFuelAdded);
+  private onDropPickupMsg(msg: any): void {
+    this.onDropPickup?.(msg.x, msg.y, msg.dropType);
   }
 
-  private onResourcesStateMsg(msg: any): void {
+  private onPlayerHPMsg(msg: any): void {
+    this.onPlayerHP?.(msg.from, msg.hp, msg.maxHp);
+  }
+
+  private onFullStateMsg(msg: any): void {
     if (this.net.isHost) return;
-    this.onResourcesState?.(msg.wood, msg.stone, msg.metal, msg.gold);
+    this.onFullState?.(msg);
   }
 
   destroy(): void {

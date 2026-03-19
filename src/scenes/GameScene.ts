@@ -372,6 +372,8 @@ export class GameScene extends ex.Scene {
             if (type in this.resources) {
               (this.resources as any)[type] += 1;
             }
+            // Broadcast pickup to other players
+            this.netSync?.sendDropPickup(startPos.x, startPos.y, type);
             drop.kill();
           }
         });
@@ -731,6 +733,8 @@ export class GameScene extends ex.Scene {
 
             this.spawnFloatingText(spot.wx, spot.wy - 20, `${def.name} built!`, '#44FF44');
             console.log(`[Build] ${def.name} built at (${Math.round(spot.wx)}, ${Math.round(spot.wy)})`);
+            // Broadcast to other players
+            this.netSync?.sendBuildingPlaced(spot.wx, spot.wy, spot.type);
           }
         }
       }
@@ -928,15 +932,45 @@ export class GameScene extends ex.Scene {
         }
       };
       this.netSync.onBuildingPlaced = (x, y, buildingType) => {
-        // TODO: place building at position
+        // Find matching build spot and build it
+        for (const spot of this.buildSpots) {
+          if (spot.state === 'unlocked' && Math.hypot(spot.wx - x, spot.wy - y) < 48) {
+            if (spot.ghost) { spot.ghost.kill(); spot.ghost = undefined; }
+            spot.building = EntityFactory.createBuilding(this, spot.wx, spot.wy, spot.type);
+            spot.state = 'built';
+            this.buildings.push(spot.building);
+            const bc = spot.building.get(BuildingComponent) as BuildingComponent | null;
+            if (bc) bc.init(this, () => this.level.enemies);
+            if (spot.type === 'ARMOR_WORKSHOP') this.armorBonus = 0.3;
+            break;
+          }
+        }
       };
-      this.netSync.onBonfireState = (fuel, campLevel, campFuelAdded) => {
-        this.bonfireFuel = fuel;
-        this.campLevel = campLevel;
-        this.campFuelAdded = campFuelAdded;
+      this.netSync.onDropPickup = (x, y, dropType) => {
+        // Remove nearest drop at position (another player picked it up)
+        const idx = this.drops.findIndex(d =>
+          !d.isKilled() && Math.hypot(d.pos.x - x, d.pos.y - y) < 40
+        );
+        if (idx >= 0) { this.drops[idx].kill(); this.drops.splice(idx, 1); }
       };
-      this.netSync.onResourcesState = (wood, stone, metal, gold) => {
-        this.resources = { wood, stone, metal, gold };
+      this.netSync.onFullState = (state) => {
+        // Full state sync from host — one source of truth
+        this.bonfireFuel = state.fuel;
+        this.campLevel = state.campLevel;
+        this.campFuelAdded = state.campFuelAdded;
+        this.resources = { wood: state.wood, stone: state.stone, metal: state.metal, gold: state.gold };
+        this.kills = state.kills;
+        this.waveNumber = state.waveNumber;
+
+        // Sync buildings that we don't have yet
+        for (const b of state.buildings) {
+          const alreadyBuilt = this.buildSpots.some(s =>
+            s.state === 'built' && Math.hypot(s.wx - b.x, s.wy - b.y) < 48
+          );
+          if (!alreadyBuilt) {
+            this.netSync!.onBuildingPlaced?.(b.x, b.y, b.type);
+          }
+        }
       };
 
       // Register existing enemies with netIds
@@ -964,9 +998,17 @@ export class GameScene extends ex.Scene {
 
     // Host: sync everything
     this.netSync.sendEnemySync(this.level.enemies, dt);
+
+    // Full state (host→clients every 1s)
+    const builtBuildings = this.buildSpots
+      .filter(s => s.state === 'built')
+      .map(s => ({ x: s.wx, y: s.wy, type: s.type }));
+    const playerHp = this.level.player.get(HealthComponent) as HealthComponent | null;
     this.netSync.sendGameState(
       this.bonfireFuel, this.campLevel, this.campFuelAdded,
-      this.resources, dt
+      this.resources, builtBuildings,
+      playerHp?.hp ?? 0, playerHp?.maxHp ?? CONFIG.PLAYER_MAX_HP,
+      this.kills, this.waveNumber, dt
     );
 
     // Update remote player rendering
