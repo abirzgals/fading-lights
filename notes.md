@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-19 — v2.6.84: Fix asset paths for GitHub Pages subpath
+
+### Summary
+All 105 texture paths in AssetLoader.ts were hardcoded with a leading slash (e.g., `/assets/...`), which works locally but breaks on GitHub Pages where the site is served under the `/fading-lights/` subpath. Added an `img()` helper that prepends `import.meta.env.BASE_URL` so paths resolve correctly in both environments.
+
+### Changes Made
+- `src/engine/AssetLoader.ts`:
+  - Added `img()` helper: reads `import.meta.env.BASE_URL` (Vite injects `'/'` locally, `'/fading-lights/'` in GitHub Actions) and constructs the full path.
+  - Replaced all 105 `new ex.ImageSource('/assets/...')` calls with `img('assets/...')`.
+
+### Rationale
+GitHub Pages hosts the project at `https://<user>.github.io/fading-lights/`, so absolute paths starting with `/assets/` resolve to the root of the domain rather than the project subpath, causing every texture to return a 404. Using `BASE_URL` is the standard Vite solution for multi-environment deployments.
+
+### Next Steps
+- Verify the deployed build on GitHub Pages after the next push.
+
+---
+
 ## 2026-03-19 — v2.6.83: Sync drop pickup fly animation to all clients
 
 ### Summary
