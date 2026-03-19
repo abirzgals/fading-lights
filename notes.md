@@ -2,6 +2,28 @@
 
 ---
 
+## 2026-03-20 — v2.6.96: Viewport culling — remove static entities off-screen from scene
+
+### Summary
+Static entities (trees, stones, metals) are now removed from the Excalibur scene graph when off-screen and re-added when they return to view. This cuts the number of actors Excalibur processes per frame from ~16,000 down to ~300 visible. The actor count is now shown in the HUD next to FPS for easy monitoring.
+
+### Changes Made
+- `src/scenes/GameScene.ts`:
+  - Added `cullTimer` and `culledEntities: Set<GameEntity>` fields to track culling state.
+  - Added `viewportCull()` method — runs every 10 frames, computes visible viewport bounds with a 5-tile margin, and calls `this.add(e)` / `this.remove(e)` to bring actors in and out of the scene graph without destroying them.
+  - `viewportCull()` is called as a profiled step in the update loop (`profileStep('cull', ...)`).
+  - HUD updated to read `this.actors.length` and display it as `${sceneActors} actors` in grey next to the FPS counter.
+- `package.json`: bumped version to `2.6.96`.
+
+### Rationale
+Excalibur provides graphics-level culling (skips draw calls for off-screen actors) but does NOT cull the scene graph — it still iterates every actor for update, transform, and z-sort. With a large open world this was ~16,000 actors per tick. By removing off-screen static entities from the scene (while keeping them in `this.level.entities` for re-insertion), only ~300 actors are processed per frame. The 10-frame interval and 5-tile margin prevent thrashing at viewport edges.
+
+### Next Steps
+- Monitor HUD actor count in-game to confirm the ~300 figure holds at various zoom levels.
+- Consider whether dynamic entities (enemies, projectiles) also benefit from culling if counts grow.
+
+---
+
 ## 2026-03-20 — v2.6.95: Zero-allocation BFS flood fill — Uint16Array reuse, no GC pressure
 
 ### Summary
