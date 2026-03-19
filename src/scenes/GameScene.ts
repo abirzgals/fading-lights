@@ -38,6 +38,10 @@ export class GameScene extends ex.Scene {
   private bonfireFuel = 80;
   private kills = 0;
   private spawnTimer = 0;
+  private waveTimer = 0;       // total elapsed time in seconds
+  private waveNumber = 0;      // current wave (increases each minute)
+  private totalSpawned = 0;    // total enemies spawned this level
+  private readonly MAX_ALIVE = 10;
   private drops: GameEntity[] = [];
 
   onInitialize(engine: ex.Engine): void {
@@ -232,20 +236,58 @@ export class GameScene extends ex.Scene {
     );
   }
 
-  // ======== SPAWNING ========
+  // ======== SPAWNING — progressive waves ========
+  // Wave 0 (0:00): 1 mob, Wave 1 (1:00): 2 mobs, Wave 2 (2:00): 3 mobs, ...
+  // Each wave spawns its quota spread over the minute (not all at once)
+  // Max 10 alive enemies at any time
+
+  // Enemy pool — early waves get weak enemies, later waves get stronger ones
+  private static readonly WAVE_POOLS: EnemyType[][] = [
+    ['SHADOW_WISP'],                                          // wave 0
+    ['SHADOW_WISP', 'SHADOW_WISP', 'SHADOW_STALKER'],        // wave 1
+    ['SHADOW_WISP', 'SHADOW_STALKER', 'SHADOW_STALKER'],     // wave 2
+    ['SHADOW_STALKER', 'FOG_CRAWLER', 'SHADOW_ARCHER'],      // wave 3
+    ['SHADOW_STALKER', 'SHADOW_ARCHER', 'VOID_MAGE', 'FOG_CRAWLER'], // wave 4
+    ['SHADOW_BEAST', 'SHADOW_ARCHER', 'VOID_MAGE', 'SHADOW_STALKER'], // wave 5
+    ['SHADOW_BEAST', 'SHADOW_LORD', 'VOID_MAGE', 'SHADOW_ARCHER', 'FOG_CRAWLER'], // wave 6+
+  ];
 
   private runSpawning(dt: number): void {
+    this.waveTimer += dt;
     this.spawnTimer += dt;
-    if (this.spawnTimer > 10 && this.level.enemies.filter(e => !e.isKilled()).length < CONFIG.MAX_ENEMIES) {
+
+    // Check for new wave every 60 seconds
+    const newWave = Math.floor(this.waveTimer / 60);
+    if (newWave > this.waveNumber) {
+      this.waveNumber = newWave;
+      console.log(`[Spawn] Wave ${this.waveNumber} — spawning up to ${this.waveNumber + 1} enemies`);
+    }
+
+    // How many enemies this wave wants alive
+    const waveQuota = Math.min(this.waveNumber + 1, this.MAX_ALIVE);
+    const aliveCount = this.level.enemies.filter(e => !e.isKilled()).length;
+
+    // Spawn interval: spread spawns over the minute (min 3s between spawns)
+    const spawnInterval = Math.max(3, 60 / (waveQuota + 1));
+
+    if (this.spawnTimer >= spawnInterval && aliveCount < waveQuota) {
       this.spawnTimer = 0;
+
       const player = this.level.player;
-      const angle = Math.random() * Math.PI * 2, dist = 300 + Math.random() * 200;
-      const types: EnemyType[] = ['SHADOW_WISP', 'SHADOW_WISP', 'SHADOW_WISP', 'SHADOW_STALKER', 'SHADOW_STALKER',
-        'FOG_CRAWLER', 'SHADOW_ARCHER', 'VOID_MAGE', 'SHADOW_BEAST'];
+      const angle = Math.random() * Math.PI * 2;
+      const dist = 280 + Math.random() * 200;
+
+      // Pick from wave-appropriate pool
+      const poolIdx = Math.min(this.waveNumber, GameScene.WAVE_POOLS.length - 1);
+      const pool = GameScene.WAVE_POOLS[poolIdx];
+      const type = pool[Math.floor(Math.random() * pool.length)];
+
       const enemy = EntityFactory.createEnemy(this,
-        player.pos.x + Math.cos(angle) * dist, player.pos.y + Math.sin(angle) * dist,
-        types[Math.floor(Math.random() * types.length)]);
+        player.pos.x + Math.cos(angle) * dist,
+        player.pos.y + Math.sin(angle) * dist, type);
       this.level.enemies.push(enemy);
+      this.totalSpawned++;
+
       if (Math.random() < 0.3) audioEngine.playEnemyRoar();
     }
   }
@@ -313,7 +355,8 @@ export class GameScene extends ex.Scene {
       <span style="color:#CC8844">Metal ${this.resources.metal}</span> ·
       <span style="color:#FFD700">Gold ${this.resources.gold}</span><br>
       <span style="color:#AA66FF">Kills ${this.kills}</span> ·
-      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span>
+      <span style="color:#FF4444">Enemies ${this.level.enemies.filter(e => !e.isKilled()).length}</span> ·
+      <span style="color:#FFAA44">Wave ${this.waveNumber}</span>
       ${this.botEnabled ? `<br><span style="color:#44FFFF">BOT: ${this.botAI?.goal ?? '?'}</span>` : ''}`;
   }
   onDeactivate(): void {

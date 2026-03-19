@@ -177,18 +177,7 @@ export class Level1Script {
       entities.push(EntityFactory.createMetal(scene, tx * T + T / 2, ty * T + T / 2, tx, ty));
     }
 
-    // ======== TEST ENEMIES — one of each type near the camp ========
-    const testEnemyTypes: EnemyType[] = [
-      'SHADOW_WISP', 'SHADOW_STALKER', 'SHADOW_BEAST', 'SHADOW_LORD',
-      'FOG_CRAWLER', 'SHADOW_ARCHER', 'VOID_MAGE',
-    ];
-    testEnemyTypes.forEach((type, i) => {
-      const angle = (i / testEnemyTypes.length) * Math.PI * 2;
-      const dist = 120 + i * 20;
-      const ex2 = cx * T + T / 2 + Math.cos(angle) * dist;
-      const ey = cy * T + T / 2 + Math.sin(angle) * dist;
-      enemies.push(EntityFactory.createEnemy(scene, ex2, ey, type));
-    });
+    // Enemies are spawned progressively by GameScene.runSpawning()
 
     return { player, bonfires, entities, enemies, grid, pathTiles };
   }

@@ -2,6 +2,61 @@
 
 ---
 
+## 2026-03-19 — v2.5.11: Progressive enemy spawning — wave system with escalating difficulty
+
+### Summary
+Removed the static test-enemy block from `LevelScript` so levels start with zero enemies. Added a minute-based wave system to `GameScene` that progressively increases enemy count and enemy type difficulty. The HUD now shows the current wave number.
+
+### Changes Made
+- `src/world/LevelScript.ts`:
+  - Deleted the 7-enemy test spawn loop that placed one of each enemy type around the camp at level start
+  - Replaced with a comment pointing to `GameScene.runSpawning()` as the authoritative spawn source
+- `src/scenes/GameScene.ts`:
+  - Added `waveTimer`, `waveNumber`, `totalSpawned`, and `MAX_ALIVE` (10) fields
+  - Added static `WAVE_POOLS` array: 7 entries mapping wave index to weighted enemy-type pools (Wisp-only at wave 0, escalating to Beast/Lord/VoidMage at wave 6+)
+  - `runSpawning()` rewritten: increments `waveTimer`, advances `waveNumber` each 60s, computes `waveQuota = min(waveNumber+1, 10)`, derives `spawnInterval = max(3, 60/(quota+1))` to spread spawns across the minute, and only spawns when `aliveCount < waveQuota`
+  - Enemy type drawn randomly from the wave-appropriate pool
+  - HUD updated: added "Wave N" display in amber alongside Kills/Enemies counters
+  - Console logs wave transitions: `[Spawn] Wave N — spawning up to N+1 enemies`
+- `package.json`: version bumped 2.5.10 → 2.5.11
+
+### Rationale
+The test enemy block was useful for early development but broke the game feel — players faced 7 varied enemies from second one. The wave system creates a proper difficulty ramp: one harmless Wisp at minute 0, then steadily more enemies of increasing strength. Spreading spawns over the minute (rather than dumping them all at once) prevents sudden overwhelming swarms while keeping pressure constant.
+
+### Next Steps
+- Tune per-wave pool composition based on playtesting (especially wave 3-5 difficulty curve)
+- Consider adding a brief on-screen "Wave N" announcement when a new wave starts
+- Expose `MAX_ALIVE` and `WAVE_POOLS` to CONFIG for easier balance iteration
+
+---
+
+## 2026-03-19 — 3e93ea7: v2.5.10: BotAI rewrite — A* pathfinding, camp defense, counter-attack
+
+**Commit:** 3e93ea7
+
+### Summary
+Complete rewrite of `src/ai/BotAI.ts`. All bot movement now uses A* pathfinding via `grid.findPath()` so bots navigate around obstacles. Two new reactive decision tree nodes add camp defense and projectile counter-attack logic, making kill goals interruptible at higher priority.
+
+### Changes Made
+- `src/ai/BotAI.ts` (full rewrite):
+  - All movement goals (kill, flee, feed, chop, idle/patrol) replace straight-line `dirTo()` with `grid.findPath()` A* navigation
+  - **Defend Camp** node: detects enemies within 250px of bonfire and interrupts lower-priority goals to engage the threat
+  - **Counter-Attack** node: traces incoming projectile trajectories back to the nearest ranged enemy, triggering a kill goal against the attacker
+  - Kill goal is now reactive — can preempt chop/mine/feed/idle when camp is threatened or bot takes projectile damage
+  - Repath logic: repaths every 0.8–1.2s or when target drifts >60px from last known path destination
+  - A* waypoint count displayed in debug HUD
+- `package.json`: version bumped 2.5.9 → 2.5.10
+
+### Rationale
+Straight-line movement was causing bots to get stuck on trees, walls, and other obstacles constantly. A* pathfinding resolves this at the navigation layer while grid collision remains as a fallback safety net on final velocity. The camp defense and counter-attack nodes make bot behavior feel proactive rather than passive — bots now respond to threats to the bonfire and to being attacked from range, which meaningfully raises the skill ceiling of cooperative play.
+
+### Next Steps
+- Tune A* repath interval and enemy detection radii based on playtesting
+- Consider path-smoothing (funnel algorithm) to reduce zigzag waypoint walking
+- Expose camp-defense radius (currently 250px) in CONFIG for balance tuning
+
+---
+
 ## 2026-03-19 — 364ffc9: v2.5.9: Player melee animation, resource drops, and auto-pickup
 
 **Commit:** 364ffc9
