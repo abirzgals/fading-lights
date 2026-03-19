@@ -1,6 +1,6 @@
 import { WeaponDef, EnemyDef, BuildingDef, EnemyType, BuildingType } from './types';
 
-export const GAME_VERSION = '2.0.0';
+export const GAME_VERSION = '2.0.1';
 
 export const CONFIG = {
   // World
