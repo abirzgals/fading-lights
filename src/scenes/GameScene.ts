@@ -181,6 +181,15 @@ export class GameScene extends ex.Scene {
 
     this.profileStep('pushOut', () => this.pushEntitiesOutOfBlocked());
     this.profileStep('input', () => this.handlePlayerInput(engine, dt));
+    // Sub-profile bot AI internals
+    if (this.botEnabled && this.botAI) {
+      const ba = this.botAI as any;
+      if (ba._lastPerfBreakdown) {
+        for (const [k, v] of Object.entries(ba._lastPerfBreakdown)) {
+          this.perfAccum['ai.' + k] = (this.perfAccum['ai.' + k] ?? 0) + (v as number);
+        }
+      }
+    }
     this.profileStep('enemyAI', () => this.runEnemyAI(dt));
     this.profileStep('spawn', () => this.runSpawning(dt));
     this.profileStep('drops', () => this.runDropPickup());

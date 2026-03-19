@@ -207,15 +207,23 @@ export class BotAI {
     idle: 1.0,
   };
 
+  // Profiling data — read by GameScene
+  public _lastPerfBreakdown: Record<string, number> = {};
+
   update(dt: number): { vx: number; vy: number; attack: boolean; interact: boolean } {
+    const perf: Record<string, number> = {};
+    let t0 = performance.now();
     const ctx = this.buildContext(dt);
+    perf.context = performance.now() - t0;
+
     this.goalAge += dt;
     this.pathFollower.tick(dt);
 
-    // Evaluate decision tree
+    t0 = performance.now();
     const trace: TreeTrace[] = [];
     const newGoal = this.evaluateTree(this.tree, ctx, 0, trace);
     this.treeTrace = trace;
+    perf.tree = performance.now() - t0;
 
     const candidate = newGoal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
 
@@ -235,7 +243,9 @@ export class BotAI {
     }
 
     // Execute goal
+    t0 = performance.now();
     const raw = this.executeGoal(this.currentGoal!, ctx, dt);
+    perf.execute = performance.now() - t0;
 
     // Movement smoothing
     this.smoothVx += (raw.vx - this.smoothVx) * this.SMOOTH_FACTOR;
@@ -267,6 +277,7 @@ export class BotAI {
     this.updateStatusLabel();
 
     this.renderDebugHUD();
+    this._lastPerfBreakdown = perf;
     return { vx: this.smoothVx, vy: this.smoothVy, attack: raw.attack, interact: raw.interact };
   }
 
