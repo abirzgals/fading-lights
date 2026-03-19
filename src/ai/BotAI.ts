@@ -54,6 +54,8 @@ interface BotContext {
   nearEnemyCount: number;
   strongEnemyClose: boolean;
   bestEnemy: GameEntity | null;
+  enemyNearCamp: GameEntity | null;
+  projectileAttacker: GameEntity | null;
   nearestResource: GameEntity | null;
   nearestResourceDist: number;
   evasion: { x: number; y: number; urgency: number } | null;
@@ -61,8 +63,7 @@ interface BotContext {
 }
 
 // ============================================================
-// BotAI — Full decision tree autonomous player
-// Ported from original bot.js with kiting, dodge, fire management
+// BotAI — Full decision tree autonomous player with A* pathfinding
 // ============================================================
 export class BotAI {
   private player: GameEntity;
@@ -73,34 +74,38 @@ export class BotAI {
 
   // State
   private currentGoal: BotGoal | null = null;
-  private goalAge = 0;             // how long we've been on this goal
-  private goalMinTime = 0;         // minimum time to stick with goal
+  private goalAge = 0;
+  private goalMinTime = 0;
   private kiteTimer = 0;
-  private retreating = false;      // hysteresis flag
+  private retreating = false;
   private wanderAngle = 0;
   private wanderTimer = 0;
   private orbitAngle = 0;
   private stuckTimer = 0;
   private lastPos = { x: 0, y: 0 };
 
+  // A* pathfinding state
+  private path: Array<{ x: number; y: number }> | null = null;
+  private pathIdx = 0;
+  private repathTimer = 0;
+  private pathTarget: { x: number; y: number } | null = null;
+
   // Movement smoothing
   private smoothVx = 0;
   private smoothVy = 0;
-  private readonly SMOOTH_FACTOR = 0.15; // lower = smoother (0..1)
+  private readonly SMOOTH_FACTOR = 0.18;
 
   // Decision tree debug trace
   private treeTrace: TreeTrace[] = [];
   private activeNodeName = '';
-
-  // Debug HUD
   private debugEl: HTMLDivElement | null = null;
 
   // Config
   private readonly ATTACK_REACH = 40;
   private readonly SIGHT_RANGE = 350;
+  private readonly CAMP_DEFENSE_RANGE = 250;
   private readonly KITE_DISTANCE = 50;
-  private readonly ENEMY_AVOID_R = 55;
-  private readonly PROJ_AVOID_R = 100;
+  private readonly WAYPOINT_REACH = 16;
 
   // Game state (updated each tick from GameScene)
   private gameState: BotGameState = {
@@ -109,7 +114,6 @@ export class BotAI {
     resources: { wood: 5, stone: 0, metal: 0, gold: 0 },
   };
 
-  // The decision tree — built once
   private readonly tree: TreeNode;
 
   constructor(opts: {
@@ -127,15 +131,13 @@ export class BotAI {
     this.tree = this.buildDecisionTree();
   }
 
-  /** Update game state from GameScene each tick */
   setGameState(state: BotGameState): void {
     this.gameState = state;
   }
 
   // Reactive goal types that can interrupt any goal immediately
-  private static readonly REACTIVE_GOALS = new Set(['flee', 'dodge', 'kite']);
+  private static readonly REACTIVE_GOALS = new Set(['flee', 'dodge', 'kite', 'kill']);
 
-  // Minimum hold time per goal type (seconds)
   private static readonly GOAL_HOLD_TIMES: Record<string, number> = {
     kill: 2.0,
     chop: 1.5,
@@ -147,10 +149,10 @@ export class BotAI {
     idle: 1.0,
   };
 
-  /** Call every tick from GameScene */
   update(dt: number): { vx: number; vy: number; attack: boolean; interact: boolean } {
     const ctx = this.buildContext(dt);
     this.goalAge += dt;
+    this.repathTimer -= dt;
 
     // Evaluate decision tree
     const trace: TreeTrace[] = [];
@@ -159,20 +161,17 @@ export class BotAI {
 
     const candidate = newGoal || { type: 'idle', x: ctx.bx, y: ctx.by, _treePath: 'FALLBACK' };
 
-    // ---- Goal persistence logic ----
-    // Only switch goals if:
-    //   a) No current goal
-    //   b) Current goal is complete (target dead/collected)
-    //   c) Minimum hold time exceeded AND new goal is different type
-    //   d) New goal is a reactive interrupt (dodge/flee/kite)
     const shouldSwitch = this.shouldSwitchGoal(candidate, ctx);
     if (shouldSwitch) {
       this.currentGoal = candidate;
       this.goalAge = 0;
       this.goalMinTime = BotAI.GOAL_HOLD_TIMES[candidate.type] ?? 1.0;
       this.activeNodeName = candidate._treePath;
+      // Clear path on goal switch
+      this.path = null;
+      this.pathTarget = null;
     } else {
-      // Keep current goal but update target position (enemy may have moved)
+      // Update target position
       if (this.currentGoal?.target && !this.currentGoal.target.isKilled()) {
         this.currentGoal.x = this.currentGoal.target.pos.x;
         this.currentGoal.y = this.currentGoal.target.pos.y;
@@ -182,10 +181,9 @@ export class BotAI {
     // Execute goal
     const raw = this.executeGoal(this.currentGoal!, ctx, dt);
 
-    // ---- Movement smoothing (lerp) ----
+    // Movement smoothing
     this.smoothVx += (raw.vx - this.smoothVx) * this.SMOOTH_FACTOR;
     this.smoothVy += (raw.vy - this.smoothVy) * this.SMOOTH_FACTOR;
-    // Snap to zero if very small (prevent drifting)
     if (Math.abs(this.smoothVx) < 0.02) this.smoothVx = 0;
     if (Math.abs(this.smoothVy) < 0.02) this.smoothVy = 0;
 
@@ -202,56 +200,85 @@ export class BotAI {
         this.stuckTimer = 0;
         this.wanderAngle = Math.random() * Math.PI * 2;
         this.orbitAngle += 1.5;
-        // Force goal re-evaluation
+        this.path = null; // force repath
         this.goalAge = 999;
       }
     } else {
       this.stuckTimer = 0;
     }
 
-    // Update debug HUD
     this.renderDebugHUD();
-
     return { vx: this.smoothVx, vy: this.smoothVy, attack: raw.attack, interact: raw.interact };
   }
 
-  /** Decide whether to switch from current goal to candidate */
-  private shouldSwitchGoal(candidate: BotGoal, ctx: BotContext): boolean {
+  private shouldSwitchGoal(candidate: BotGoal, _ctx: BotContext): boolean {
     if (!this.currentGoal) return true;
-
-    // Current goal's target is dead/gone → switch
     if (this.currentGoal.target && this.currentGoal.target.isKilled()) return true;
 
-    // Reactive interrupts always go through
+    // Kill is reactive — if enemy is near camp/player, interrupt lower-priority goals
     if (BotAI.REACTIVE_GOALS.has(candidate.type) && candidate.type !== this.currentGoal.type) {
-      return true;
+      // For 'kill', only interrupt if current goal is low priority
+      if (candidate.type === 'kill') {
+        const lowPriority = ['idle', 'chop', 'mine', 'feed', 'gather'];
+        if (lowPriority.includes(this.currentGoal.type)) return true;
+      } else {
+        return true;
+      }
     }
 
-    // Same goal type with same target — no switch needed
     if (candidate.type === this.currentGoal.type &&
-        candidate.target === this.currentGoal.target) {
-      return false;
-    }
+        candidate.target === this.currentGoal.target) return false;
+    if (this.goalAge < this.goalMinTime && this.currentGoal.type !== 'idle') return false;
 
-    // Hold time not yet elapsed — don't switch (unless current is idle/patrol)
-    if (this.goalAge < this.goalMinTime && this.currentGoal.type !== 'idle') {
-      return false;
-    }
-
-    // Different goal type or target — switch
     return candidate.type !== this.currentGoal.type ||
            candidate.target !== this.currentGoal.target;
   }
 
   // ============================================================
-  // DECISION TREE — structured like original bot.js
+  // A* PATHFINDING — follow path to target
+  // ============================================================
+  private moveToWithPathfinding(tx: number, ty: number): { x: number; y: number } {
+    const p = this.player;
+
+    // Repath if needed
+    if (!this.path || this.pathIdx >= this.path.length || this.repathTimer <= 0 ||
+      (this.pathTarget && Math.hypot(tx - this.pathTarget.x, ty - this.pathTarget.y) > 60)) {
+      this.path = this.grid.findPath(p.pos.x, p.pos.y, tx, ty);
+      this.pathIdx = 0;
+      this.repathTimer = 0.8 + Math.random() * 0.4;
+      this.pathTarget = { x: tx, y: ty };
+    }
+
+    if (this.path && this.pathIdx < this.path.length) {
+      const wp = this.path[this.pathIdx];
+      const dist = Math.hypot(p.pos.x - wp.x, p.pos.y - wp.y);
+      if (dist < this.WAYPOINT_REACH) {
+        this.pathIdx++;
+        if (this.pathIdx >= this.path.length) {
+          return { x: 0, y: 0 }; // arrived
+        }
+      }
+      if (this.pathIdx < this.path.length) {
+        const next = this.path[this.pathIdx];
+        const dx = next.x - p.pos.x, dy = next.y - p.pos.y;
+        const len = Math.hypot(dx, dy);
+        if (len > 1) return { x: dx / len, y: dy / len };
+      }
+    }
+
+    // Fallback: direct movement
+    return this.dirTo(p.pos, tx, ty);
+  }
+
+  // ============================================================
+  // DECISION TREE
   // ============================================================
   private buildDecisionTree(): TreeNode {
     return {
       name: 'SURVIVE & PROGRESS',
       check: () => true,
       children: [
-        // === SURVIVAL (reactive — highest priority) ===
+        // === SURVIVAL ===
         {
           name: 'SURVIVE',
           check: () => true,
@@ -267,13 +294,8 @@ export class BotAI {
             },
             {
               name: 'Dodge Projectile',
-              check: (ctx) => ctx.evasion !== null && ctx.evasion.urgency > 1.0,
+              check: (ctx) => ctx.evasion !== null && ctx.evasion.urgency > 1.5,
               goal: (ctx) => ({ type: 'dodge', evasion: ctx.evasion!, _treePath: 'Dodge Projectile' }),
-            },
-            {
-              name: 'Strong Enemy Close',
-              check: (ctx) => ctx.strongEnemyClose && ctx.hpRatio < 0.6,
-              goal: (ctx) => ({ type: 'flee', x: ctx.bx, y: ctx.by, _treePath: 'Strong Enemy Close' }),
             },
             {
               name: 'Surrounded',
@@ -282,29 +304,25 @@ export class BotAI {
             },
           ],
         },
-        // === FIRE EMERGENCY ===
+        // === DEFEND CAMP — enemy near bonfire ===
         {
-          name: 'FIRE DYING',
-          check: (ctx) => ctx.fuelRatio < 0.35,
-          children: [
-            {
-              name: 'Feed Fire (critical)',
-              check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null,
-              goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire (critical)' }),
-            },
-            {
-              name: 'Chop for Fire (urgent)',
-              check: (ctx) => {
-                if (ctx.hpRatio < 0.35) return false;
-                return ctx.nearestResource !== null && ctx.nearestResourceDist < 300;
-              },
-              goal: (ctx) => ({
-                type: 'chop', target: ctx.nearestResource!,
-                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
-                _treePath: 'Chop for Fire (urgent)',
-              }),
-            },
-          ],
+          name: 'Defend Camp',
+          check: (ctx) => ctx.enemyNearCamp !== null,
+          goal: (ctx) => ({
+            type: 'kill', target: ctx.enemyNearCamp!,
+            x: ctx.enemyNearCamp!.pos.x, y: ctx.enemyNearCamp!.pos.y,
+            _treePath: 'Defend Camp',
+          }),
+        },
+        // === COUNTER-ATTACK — kill projectile attacker ===
+        {
+          name: 'Counter-Attack',
+          check: (ctx) => ctx.projectileAttacker !== null,
+          goal: (ctx) => ({
+            type: 'kill', target: ctx.projectileAttacker!,
+            x: ctx.projectileAttacker!.pos.x, y: ctx.projectileAttacker!.pos.y,
+            _treePath: 'Counter-Attack',
+          }),
         },
         // === KITE MELEE ENEMIES ===
         {
@@ -319,6 +337,27 @@ export class BotAI {
             x: ctx.nearestEnemy!.pos.x, y: ctx.nearestEnemy!.pos.y,
             _treePath: 'Kite Melee',
           }),
+        },
+        // === FIRE EMERGENCY ===
+        {
+          name: 'FIRE DYING',
+          check: (ctx) => ctx.fuelRatio < 0.35,
+          children: [
+            {
+              name: 'Feed Fire (critical)',
+              check: (ctx) => ctx.resources.wood >= 1 && ctx.bonfire !== null,
+              goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire (critical)' }),
+            },
+            {
+              name: 'Chop for Fire (urgent)',
+              check: (ctx) => ctx.hpRatio >= 0.35 && ctx.nearestResource !== null && ctx.nearestResourceDist < 300,
+              goal: (ctx) => ({
+                type: 'chop', target: ctx.nearestResource!,
+                x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
+                _treePath: 'Chop for Fire (urgent)',
+              }),
+            },
+          ],
         },
         // === COMBAT — fight visible enemies ===
         {
@@ -342,20 +381,17 @@ export class BotAI {
           check: (ctx) => ctx.fuelRatio < 0.7 && ctx.resources.wood >= 1 && ctx.bonfire !== null,
           goal: (ctx) => ({ type: 'feed', x: ctx.bx, y: ctx.by, _treePath: 'Feed Fire' }),
         },
-        // === GATHER RESOURCES ===
+        // === GATHER ===
         {
           name: 'Gather Resources',
-          check: (ctx) => {
-            if (ctx.hpRatio < 0.4) return false;
-            return ctx.nearestResource !== null && ctx.nearestResourceDist < 300;
-          },
+          check: (ctx) => ctx.hpRatio >= 0.4 && ctx.nearestResource !== null && ctx.nearestResourceDist < 300,
           goal: (ctx) => ({
             type: 'chop', target: ctx.nearestResource!,
             x: ctx.nearestResource!.pos.x, y: ctx.nearestResource!.pos.y,
             _treePath: 'Gather Resources',
           }),
         },
-        // === PATROL / WANDER ===
+        // === PATROL ===
         {
           name: 'Patrol',
           check: () => true,
@@ -366,45 +402,32 @@ export class BotAI {
   }
 
   // ============================================================
-  // Tree evaluator — builds trace for debug HUD
+  // Tree evaluator
   // ============================================================
   private evaluateTree(node: TreeNode, ctx: BotContext, depth: number, trace: TreeTrace[]): BotGoal | null {
     const passed = node.check(ctx);
-    if (!passed) {
-      trace.push({ name: node.name, depth, status: 'failed' });
-      return null;
-    }
-
-    if (node.goal) {
-      trace.push({ name: node.name, depth, status: 'active' });
-      return node.goal(ctx);
-    }
-
+    if (!passed) { trace.push({ name: node.name, depth, status: 'failed' }); return null; }
+    if (node.goal) { trace.push({ name: node.name, depth, status: 'active' }); return node.goal(ctx); }
     if (node.children) {
       trace.push({ name: node.name, depth, status: 'checking' });
       for (const child of node.children) {
         const result = this.evaluateTree(child, ctx, depth + 1, trace);
         if (result) {
-          // Mark branch as active
           for (let i = trace.length - 1; i >= 0; i--) {
-            if (trace[i].depth === depth && trace[i].name === node.name) {
-              trace[i].status = 'active';
-              break;
-            }
+            if (trace[i].depth === depth && trace[i].name === node.name) { trace[i].status = 'active'; break; }
           }
           result._treePath = node.name + ' > ' + result._treePath;
           return result;
         }
       }
-      // All children failed
-      const branchIdx = trace.findIndex(t => t.depth === depth && t.name === node.name);
-      if (branchIdx >= 0) trace[branchIdx].status = 'failed';
+      const bi = trace.findIndex(t => t.depth === depth && t.name === node.name);
+      if (bi >= 0) trace[bi].status = 'failed';
     }
     return null;
   }
 
   // ============================================================
-  // Context builder — computed once per tick
+  // Context builder
   // ============================================================
   private buildContext(dt: number): BotContext {
     const p = this.player;
@@ -415,11 +438,12 @@ export class BotAI {
     const bx = bonfire?.pos.x ?? p.pos.x;
     const by = bonfire?.pos.y ?? p.pos.y;
 
-    // Nearest enemy
     let nearestEnemy: GameEntity | null = null;
     let nearestEnemyDist = Infinity;
     let nearEnemyCount = 0;
     let strongEnemyClose = false;
+    let enemyNearCamp: GameEntity | null = null;
+    let enemyNearCampDist = Infinity;
 
     for (const e of enemies) {
       const d = p.pos.distance(e.pos);
@@ -429,9 +453,17 @@ export class BotAI {
         const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
         if (ai && ai.damage >= 15) strongEnemyClose = true;
       }
+      // Enemy near bonfire — defend camp
+      if (bonfire) {
+        const campDist = e.pos.distance(bonfire.pos);
+        if (campDist < this.CAMP_DEFENSE_RANGE && campDist < enemyNearCampDist) {
+          enemyNearCampDist = campDist;
+          enemyNearCamp = e;
+        }
+      }
     }
 
-    // Best enemy to hunt (within sight, prioritize self-defense)
+    // Best enemy to hunt
     let bestEnemy: GameEntity | null = null;
     let bestScore = -Infinity;
     for (const e of enemies) {
@@ -443,6 +475,31 @@ export class BotAI {
       if (score > bestScore) { bestScore = score; bestEnemy = e; }
     }
 
+    // Find attacker — who shot a projectile at us?
+    let projectileAttacker: GameEntity | null = null;
+    if (p.scene) {
+      for (const actor of p.scene.actors) {
+        if ((actor as any).entityType !== 'projectile') continue;
+        const dist = p.pos.distance(actor.pos);
+        if (dist > 150) continue;
+        // Is it heading toward us?
+        const toPlayer = p.pos.sub(actor.pos).normalize();
+        const projDir = actor.vel.normalize();
+        const dot = toPlayer.x * projDir.x + toPlayer.y * projDir.y;
+        if (dot > 0.5) {
+          // Find the enemy who owns this projectile (nearest ranged enemy)
+          for (const e of enemies) {
+            const ai = e.get(AIBrainComponent) as AIBrainComponent | null;
+            if (ai?.isRanged && e.pos.distance(actor.pos) < 300) {
+              projectileAttacker = e;
+              break;
+            }
+          }
+          if (projectileAttacker) break;
+        }
+      }
+    }
+
     // Nearest resource
     let nearestResource: GameEntity | null = null;
     let nearestResourceDist = Infinity;
@@ -452,73 +509,59 @@ export class BotAI {
       if (d < nearestResourceDist) { nearestResourceDist = d; nearestResource = e; }
     }
 
-    // Evasion — projectile dodging
     const evasion = this.computeEvasion(p, enemies);
 
     return {
-      player: p,
-      bonfire, bx, by,
+      player: p, bonfire, bx, by,
       distToFire: bonfire ? p.pos.distance(bonfire.pos) : 0,
       hpRatio: hp ? hp.hp / hp.maxHp : 1,
       fuelRatio: this.gameState.bonfireFuel / this.gameState.bonfireMaxFuel,
       resources: this.gameState.resources,
-      enemies,
-      entities: this.getEntities(),
-      nearestEnemy,
-      nearestEnemyDist,
-      nearEnemyCount,
-      strongEnemyClose,
-      bestEnemy,
-      nearestResource,
-      nearestResourceDist,
-      evasion,
-      dt,
+      enemies, entities: this.getEntities(),
+      nearestEnemy, nearestEnemyDist, nearEnemyCount, strongEnemyClose,
+      bestEnemy, enemyNearCamp, projectileAttacker,
+      nearestResource, nearestResourceDist,
+      evasion, dt,
     };
   }
 
   // ============================================================
-  // Evasion — dodge enemies + projectiles
+  // Evasion
   // ============================================================
   private computeEvasion(
-    player: GameEntity,
-    enemies: GameEntity[]
+    player: GameEntity, enemies: GameEntity[]
   ): { x: number; y: number; urgency: number } | null {
     if (!player.scene) return null;
     let evX = 0, evY = 0;
     const px = player.pos.x, py = player.pos.y;
+    const ENEMY_AVOID_R = 55;
+    const PROJ_AVOID_R = 100;
 
-    // Avoid close enemies
     for (const e of enemies) {
       const ed = player.pos.distance(e.pos);
-      if (ed < this.ENEMY_AVOID_R && ed > 1) {
-        const strength = (this.ENEMY_AVOID_R - ed) / this.ENEMY_AVOID_R * 0.7;
+      if (ed < ENEMY_AVOID_R && ed > 1) {
+        const strength = (ENEMY_AVOID_R - ed) / ENEMY_AVOID_R * 0.7;
         evX += (px - e.pos.x) / ed * strength;
         evY += (py - e.pos.y) / ed * strength;
       }
     }
 
-    // Dodge projectiles
     for (const actor of player.scene.actors) {
       if ((actor as any).entityType !== 'projectile') continue;
       const dist = player.pos.distance(actor.pos);
-      if (dist > this.PROJ_AVOID_R || dist < 5) continue;
+      if (dist > PROJ_AVOID_R || dist < 5) continue;
       const speed = actor.vel.distance(ex.Vector.Zero);
       if (speed < 10) continue;
-
-      // Closest approach calculation
       const tpx = px - actor.pos.x, tpy = py - actor.pos.y;
       const dot = tpx * actor.vel.x + tpy * actor.vel.y;
-      if (dot < 0) continue; // moving away
+      if (dot < 0) continue;
       const tClosest = dot / (speed * speed);
       const cpx = actor.pos.x + actor.vel.x * tClosest;
       const cpy = actor.pos.y + actor.vel.y * tClosest;
       const minDist = Math.hypot(cpx - px, cpy - py);
-      if (minDist > 30) continue; // won't hit us
-
-      // Dodge perpendicular, prefer toward bonfire
+      if (minDist > 30) continue;
       const pnx = -actor.vel.y / speed, pny = actor.vel.x / speed;
-      const bonfires = this.getBonfires();
-      const bf = bonfires[0];
+      const bf = this.getBonfires()[0];
       if (bf) {
         const toBfX = bf.pos.x - px, toBfY = bf.pos.y - py;
         const dotBf = pnx * toBfX + pny * toBfY;
@@ -538,7 +581,7 @@ export class BotAI {
   }
 
   // ============================================================
-  // Goal execution
+  // Goal execution — uses A* pathfinding for all movement
   // ============================================================
   private executeGoal(
     goal: BotGoal, ctx: BotContext, dt: number
@@ -549,43 +592,36 @@ export class BotAI {
 
     switch (goal.type) {
       case 'flee': {
-        const dir = this.dirTo(ctx.player.pos, goal.x!, goal.y!);
+        // A* pathfind to bonfire
+        const dir = this.moveToWithPathfinding(goal.x!, goal.y!);
         vx = dir.x;
         vy = dir.y;
         // Blend evasion
         if (ctx.evasion && ctx.evasion.urgency > 0.5) {
           const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
-          vx += ctx.evasion.x * blend;
-          vy += ctx.evasion.y * blend;
+          vx = vx * (1 - blend) + ctx.evasion.x * blend;
+          vy = vy * (1 - blend) + ctx.evasion.y * blend;
         }
         break;
       }
 
       case 'dodge': {
-        if (goal.evasion) {
-          vx = goal.evasion.x;
-          vy = goal.evasion.y;
-        }
+        if (goal.evasion) { vx = goal.evasion.x; vy = goal.evasion.y; }
         break;
       }
 
       case 'kite': {
         const enemy = goal.target!;
         const away = ctx.player.pos.sub(enemy.pos).normalize();
-        vx = away.x;
-        vy = away.y;
-        // Pull toward bonfire while kiting (40% bonfire, 60% away)
         if (ctx.bonfire) {
           const toBf = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
           vx = away.x * 0.6 + toBf.x * 0.4;
           vy = away.y * 0.6 + toBf.y * 0.4;
+        } else {
+          vx = away.x; vy = away.y;
         }
-        // Counter-attack while backing up
         this.kiteTimer += dt;
-        if (this.kiteTimer > 0.25) {
-          this.kiteTimer = 0;
-          attack = true;
-        }
+        if (this.kiteTimer > 0.25) { this.kiteTimer = 0; attack = true; }
         break;
       }
 
@@ -595,25 +631,24 @@ export class BotAI {
         const dist = ctx.player.pos.distance(enemy.pos);
         if (dist < this.ATTACK_REACH) {
           attack = true;
-          // Kite backward after attack, pull toward bonfire
+          // Kite backward, pull toward bonfire
           const away = ctx.player.pos.sub(enemy.pos).normalize();
           if (ctx.bonfire) {
             const toBf = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
             vx = away.x * 0.6 + toBf.x * 0.4;
             vy = away.y * 0.6 + toBf.y * 0.4;
           } else {
-            vx = away.x * 0.3;
-            vy = away.y * 0.3;
+            vx = away.x * 0.3; vy = away.y * 0.3;
           }
         } else {
-          // Approach — with evasion blending
-          const dir = this.dirTo(ctx.player.pos, enemy.pos.x, enemy.pos.y);
-          vx = dir.x;
-          vy = dir.y;
+          // A* pathfind to enemy
+          const dir = this.moveToWithPathfinding(enemy.pos.x, enemy.pos.y);
+          vx = dir.x; vy = dir.y;
+          // Blend evasion while approaching
           if (ctx.evasion && ctx.evasion.urgency > 0.5) {
             const blend = Math.min(ctx.evasion.urgency * 0.3, 0.5);
-            vx += ctx.evasion.x * blend;
-            vy += ctx.evasion.y * blend;
+            vx = vx * (1 - blend) + ctx.evasion.x * blend;
+            vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }
         }
         break;
@@ -623,22 +658,18 @@ export class BotAI {
         if (!ctx.bonfire) break;
         const dist = ctx.player.pos.distance(ctx.bonfire.pos);
         if (dist < CONFIG.INTERACT_RADIUS) {
-          // At bonfire — orbit and interact
           this.orbitAngle += dt * 1.5;
           const ox = ctx.bx + Math.cos(this.orbitAngle) * 30;
           const oy = ctx.by + Math.sin(this.orbitAngle) * 30;
           const dir = this.dirTo(ctx.player.pos, ox, oy);
-          vx = dir.x * 0.4;
-          vy = dir.y * 0.4;
-          interact = true; // signals GameScene to auto-feed bonfire
+          vx = dir.x * 0.4; vy = dir.y * 0.4;
+          interact = true;
         } else {
-          // Walk to bonfire — with evasion
-          const dir = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
-          vx = dir.x;
-          vy = dir.y;
+          // A* to bonfire
+          const dir = this.moveToWithPathfinding(ctx.bx, ctx.by);
+          vx = dir.x; vy = dir.y;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
-            vx = ctx.evasion.x;
-            vy = ctx.evasion.y;
+            vx = ctx.evasion.x; vy = ctx.evasion.y;
           }
         }
         break;
@@ -650,53 +681,41 @@ export class BotAI {
         if (target.isKilled()) break;
         const dist = ctx.player.pos.distance(target.pos);
         if (dist < 52) {
-          // In range — attack resource
           attack = true;
-          // Orbit while attacking
           this.orbitAngle += dt * 2;
           const ox = target.pos.x + Math.cos(this.orbitAngle) * 30;
           const oy = target.pos.y + Math.sin(this.orbitAngle) * 30;
           const dir = this.dirTo(ctx.player.pos, ox, oy);
-          vx = dir.x * 0.3;
-          vy = dir.y * 0.3;
-          // If enemies close, blend evasion
+          vx = dir.x * 0.3; vy = dir.y * 0.3;
           if (ctx.evasion && ctx.evasion.urgency > 1.0) {
-            vx = ctx.evasion.x;
-            vy = ctx.evasion.y;
+            vx = ctx.evasion.x; vy = ctx.evasion.y;
           }
         } else {
-          // Walk to target — with evasion
-          const dir = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
-          vx = dir.x;
-          vy = dir.y;
+          // A* to resource
+          const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+          vx = dir.x; vy = dir.y;
           if (ctx.evasion && ctx.evasion.urgency > 0.5) {
             const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
-            vx += ctx.evasion.x * blend;
-            vy += ctx.evasion.y * blend;
+            vx = vx * (1 - blend) + ctx.evasion.x * blend;
+            vy = vy * (1 - blend) + ctx.evasion.y * blend;
           }
         }
         break;
       }
 
       case 'idle': {
-        // Orbit around bonfire
         this.wanderTimer += dt;
-        if (this.wanderTimer > 3) {
-          this.wanderTimer = 0;
-          this.wanderAngle = Math.random() * Math.PI * 2;
-        }
+        if (this.wanderTimer > 3) { this.wanderTimer = 0; this.wanderAngle = Math.random() * Math.PI * 2; }
         if (ctx.bonfire && ctx.distToFire < 80) {
           this.orbitAngle += dt * 0.8;
           const ox = ctx.bx + Math.cos(this.orbitAngle) * 50;
           const oy = ctx.by + Math.sin(this.orbitAngle) * 50;
           const dir = this.dirTo(ctx.player.pos, ox, oy);
-          vx = dir.x * 0.4;
-          vy = dir.y * 0.4;
+          vx = dir.x * 0.4; vy = dir.y * 0.4;
         } else if (ctx.bonfire) {
-          // Walk to bonfire
-          const dir = this.dirTo(ctx.player.pos, ctx.bx, ctx.by);
-          vx = dir.x * 0.6;
-          vy = dir.y * 0.6;
+          // A* to bonfire
+          const dir = this.moveToWithPathfinding(ctx.bx, ctx.by);
+          vx = dir.x * 0.6; vy = dir.y * 0.6;
         } else {
           vx = Math.cos(this.wanderAngle) * 0.5;
           vy = Math.sin(this.wanderAngle) * 0.5;
@@ -705,10 +724,8 @@ export class BotAI {
       }
     }
 
-    // Normalize
     const len = Math.sqrt(vx * vx + vy * vy);
     if (len > 1) { vx /= len; vy /= len; }
-
     return { vx, vy, attack, interact };
   }
 
@@ -720,7 +737,7 @@ export class BotAI {
   }
 
   // ============================================================
-  // DEBUG HUD — decision tree trace overlay
+  // DEBUG HUD
   // ============================================================
   private renderDebugHUD(): void {
     if (!this.debugEl) {
@@ -736,25 +753,14 @@ export class BotAI {
       document.body.appendChild(this.debugEl);
     }
 
-    const statusColors: Record<string, string> = {
-      active: '#44ff44',
-      checking: '#888',
-      failed: '#555',
-    };
-    const statusIcons: Record<string, string> = {
-      active: '\u25B6',  // ▶
-      checking: '\u25CB', // ○
-      failed: '\u00D7',   // ×
-    };
+    const statusColors: Record<string, string> = { active: '#44ff44', checking: '#888', failed: '#555' };
+    const statusIcons: Record<string, string> = { active: '\u25B6', checking: '\u25CB', failed: '\u00D7' };
 
     let html = '<div style="color:#44ff44;font-weight:bold;margin-bottom:4px">BOT AI</div>';
-
-    // Game state
     const fuelPct = Math.round(this.gameState.bonfireFuel / this.gameState.bonfireMaxFuel * 100);
     html += `<div style="color:#ff8800">Fuel: ${fuelPct}%</div>`;
     html += `<div style="color:#aa8844">Wood: ${this.gameState.resources.wood}</div>`;
 
-    // Tree trace
     html += '<div style="margin-top:4px;border-top:1px solid #333;padding-top:4px">';
     for (const entry of this.treeTrace) {
       const indent = '\u00A0\u00A0'.repeat(entry.depth);
@@ -765,7 +771,6 @@ export class BotAI {
     }
     html += '</div>';
 
-    // Active goal
     if (this.currentGoal) {
       html += `<div style="color:#ffaa00;margin-top:4px;border-top:1px solid #333;padding-top:4px">`;
       html += `Goal: ${this.currentGoal.type}`;
@@ -774,25 +779,17 @@ export class BotAI {
         if (tType) html += ` (${tType})`;
       }
       html += ` [${this.goalAge.toFixed(1)}s]`;
+      if (this.path) html += ` A*:${this.path.length - this.pathIdx}wp`;
       html += '</div>';
     }
 
     this.debugEl.innerHTML = html;
   }
 
-  /** Remove debug HUD when bot is disabled */
   removeDebugHUD(): void {
-    if (this.debugEl) {
-      this.debugEl.remove();
-      this.debugEl = null;
-    }
+    if (this.debugEl) { this.debugEl.remove(); this.debugEl = null; }
   }
 
-  get goal(): string {
-    return this.currentGoal?._treePath ?? 'IDLE';
-  }
-
-  get trace(): TreeTrace[] {
-    return this.treeTrace;
-  }
+  get goal(): string { return this.currentGoal?._treePath ?? 'IDLE'; }
+  get trace(): TreeTrace[] { return this.treeTrace; }
 }
