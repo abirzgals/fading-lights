@@ -2,6 +2,34 @@
 
 ---
 
+## 2026-03-19 — v2.6.12: Bot AI picks up resource drops from the ground
+
+### Summary
+The bot AI can now see and collect resource drops lying on the ground. `BotGameState` is extended with a `drops[]` array populated each tick by `GameScene`. The context builder locates the nearest useful drop and the nearest any drop. Ground drops are also folded into building affordability checks, and two new behavior-tree nodes route the bot to pick them up before chopping or mining.
+
+### Changes Made
+- `src/ai/BotAI.ts`:
+  - New `BotDrop` interface (`x`, `y`, `type`).
+  - `BotGameState.drops: BotDrop[]` field added; default initialized to `[]`.
+  - Context builder computes `nearestDrop`, `nearestDropDist`, `nearestNeededDrop`, `nearestNeededDropDist` — preferred types are those missing from inventory for any unlocked build spot, plus wood (always useful).
+  - Affordability check now adds `dropCounts[r]` per resource to the `have` value; `missingAmt` still measures only what is missing from inventory so gather goals are not over-reduced.
+  - `'pickup'` speed multiplier added (`0.5`).
+  - `'pickup'` status label: `"Picking up"`.
+  - "Gather for Build" node converted from a leaf to a parent with two children: **"Pick Up for Build"** (fires when a needed drop is within 200 px) and **"Chop/Mine for Build"** (original behavior).
+  - **"Pick Up Drops"** general node added after the level-up subtree and before "Gather Wood"; fires when any drop is within 120 px.
+  - New `case 'pickup'` in the velocity dispatcher: calls `moveToWithPathfinding` toward the drop position; auto-pickup is handled by `GameScene.runDropPickup()` on proximity.
+- `src/scenes/GameScene.ts`:
+  - Bot state update now maps `this.drops` (filtered to live, non-flying actors) into `{ x, y, type }` objects and passes them as `drops`.
+
+### Rationale
+Previously the bot ignored all resource drops, even those sitting next to it after a kill or chop. This caused it to mine or chop for resources it could simply walk over. The new system lets the bot opportunistically collect nearby drops before committing to a gather action, and treats ground drops as virtual inventory when deciding whether it can afford a building.
+
+### Next Steps
+- Consider a maximum pickup walk distance cap so the bot does not wander far off course for a single drop.
+- Evaluate whether drop-count should be weighted (e.g. fractional) to avoid over-estimating available resources.
+
+---
+
 ## 2026-03-19 — v2.6.11: Fix grid occupancy initialization + forest wall system
 
 ### Summary
