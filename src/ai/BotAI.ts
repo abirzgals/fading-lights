@@ -374,9 +374,10 @@ export class BotAI {
     if (candidate.type === this.currentGoal.type &&
         candidate.target === this.currentGoal.target) return false;
 
-    // Chop/mine: commit to target until it's destroyed — don't switch trees
+    // Chop/mine: commit to target — but give up if stuck too long (>5s)
     if ((this.currentGoal.type === 'chop' || this.currentGoal.type === 'mine') &&
         this.currentGoal.target && !this.currentGoal.target.isKilled()) {
+      if (this.stuckTimer > 3) return true; // stuck — pick different target
       return false;
     }
 
