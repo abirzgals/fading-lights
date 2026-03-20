@@ -203,7 +203,11 @@ export class MenuScene extends ex.Scene {
     }, 1200);
   }
 
+  onActivate(): void {
+    console.log('[MenuScene] ACTIVATED');
+  }
   onDeactivate(): void {
+    console.log('[MenuScene] DEACTIVATED');
     if (this.hudEl?.parentNode) this.hudEl.remove();
   }
 }

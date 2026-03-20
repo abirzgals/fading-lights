@@ -116,6 +116,14 @@ game.addScene('intro', new IntroScene());
 game.addScene('menu', new MenuScene());
 game.addScene('game', new GameScene());
 
+// Log ALL scene transitions
+const origGoTo = game.goToScene.bind(game);
+game.goToScene = (name: string, ...args: any[]) => {
+  console.log(`[SCENE] >>> Transition to "${name}" at ${Math.round(performance.now())}ms`);
+  console.trace('[SCENE] call stack:');
+  return (origGoTo as any)(name, ...args);
+};
+
 game.start(loader).then(() => {
   clearInterval(progressInterval);
   clearInterval(emberInterval);

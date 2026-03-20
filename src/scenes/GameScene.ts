@@ -1496,6 +1496,7 @@ export class GameScene extends ex.Scene {
       </div>` : ''}`;
   }
   onDeactivate(): void {
+    console.error('[GameScene] DEACTIVATED! Stack:', new Error().stack);
     if (this.hudEl) this.hudEl.remove();
     if ((this as any)._debugWrap) (this as any)._debugWrap.remove();
     if (this.mobileControlsEl) this.mobileControlsEl.remove();
