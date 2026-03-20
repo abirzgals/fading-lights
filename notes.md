@@ -2,6 +2,57 @@
 
 ---
 
+## 2026-03-20 — v2.7.21: Fix black screen — IntroScene timeout double-firing goToMenu
+
+### Summary
+Root cause of the "black screen after ~30 seconds" bug identified and fixed. IntroScene's 30-second fallback timeout was firing AFTER the game had already transitioned from intro to menu to gameplay. The second call to `goToMenu()` switched the active scene from GameScene back to MenuScene, causing the campfire to render over a black canvas — the classic symptom reported by users.
+
+### Root Cause Flow
+1. User clicks IntroScene — `playVideo()` runs, video fails to load, `error` event fires `onDone` immediately.
+2. Transition chain executes: intro -> menu -> game. Player is now in GameScene.
+3. 30 seconds later: the original `setTimeout(onDone, 30000)` fires — calling `goToMenu()` a second time.
+4. Engine switches active scene back to MenuScene, which renders the campfire over a black background.
+
+This was unrelated to mobs, shadows, WebGL context loss, or the fog shader — it was a simple double-firing `setTimeout`.
+
+### Changes Made
+- `src/scenes/IntroScene.ts`:
+  - Added `transitioned` boolean flag — `goToMenu` is a no-op if it has already fired once.
+  - `video.addEventListener('ended', ...)` and `video.addEventListener('error', ...)` now call `clearTimeout(timeout)` before invoking `onDone`, eliminating the race between the event path and the fallback timer.
+  - Previously `ended` was registered twice (once calling `onDone`, once clearing the timeout) — consolidated into a single handler that does both.
+  - Added null-check `if (this.overlay.parentNode)` before `this.overlay.remove()` to prevent DOM errors on a second invocation.
+- `package.json`: Bumped version to 2.7.21.
+
+### Rationale
+The `transitioned` flag is a belt-and-suspenders guard ensuring only one scene transition can ever originate from IntroScene, regardless of how many async paths (timeout, video end, video error, skip button) happen to fire. Clearing the timeout on all non-timeout completion paths removes the underlying race condition entirely.
+
+### Next Steps
+- Remove diagnostic logging added in v2.7.20 (monkey-patched `goToScene`, `GameScene.onDeactivate` error log, MenuScene activate/deactivate logs) now that the root cause is resolved.
+- Verify no other scenes have similar unguarded timeout/event patterns.
+
+---
+
+## 2026-03-20 — v2.7.20: Scene-transition debug logging
+
+### Summary
+Added diagnostic logging to track down the bug where the game switches back to the menu scene approximately 25 seconds into gameplay. The approach monkey-patches `game.goToScene` at startup so every scene transition — regardless of call site — is logged with a timestamp and full call stack. Complementary logs in `GameScene.onDeactivate` and `MenuScene.onActivate`/`onDeactivate` provide additional entry points to catch the transition from both sides.
+
+### Changes Made
+- `src/main.ts`: Monkey-patches `game.goToScene` after scene registration. Every call logs the target scene name, a `performance.now()` timestamp, and a `console.trace` call stack.
+- `src/scenes/GameScene.ts`: `onDeactivate` now calls `console.error` with a new `Error().stack` so the full call chain is visible in the console whenever GameScene is torn down unexpectedly.
+- `src/scenes/MenuScene.ts`: Added `onActivate` (new method) and a log in the existing `onDeactivate` to record when the menu becomes active and when it tears down.
+- `package.json`: Bumped version to 2.7.20.
+
+### Rationale
+The 25-second scene switch is not yet attributed to any specific code path. Logging every scene transition with a stack trace is the most direct way to identify the caller without needing a breakpoint-capable debugger. Using `console.error` for `GameScene.onDeactivate` makes the entry visually distinct (red) in the browser console.
+
+### Next Steps
+- Reproduce the 25-second switch in the browser with DevTools open and collect the logged stack traces.
+- Identify the call site responsible for triggering `goToScene('menu')` during gameplay.
+- Remove all debug logging once the root cause is confirmed and fixed.
+
+---
+
 ## 2026-03-20 — v2.7.19: Sprite shadow with try-finally tint guard + spawn actor logging
 
 ### Summary

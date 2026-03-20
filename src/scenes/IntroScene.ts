@@ -27,11 +27,14 @@ export class IntroScene extends ex.Scene {
     `;
     document.body.appendChild(this.overlay);
 
+    let transitioned = false;
     const goToMenu = () => {
+      if (transitioned) return; // prevent double-fire from video error + timeout
+      transitioned = true;
       this.overlay.style.transition = 'opacity 0.5s';
       this.overlay.style.opacity = '0';
       setTimeout(() => {
-        this.overlay.remove();
+        if (this.overlay.parentNode) this.overlay.remove();
         engine.goToScene('menu');
       }, 500);
     };
@@ -79,13 +82,12 @@ export class IntroScene extends ex.Scene {
     skipBtn.addEventListener('click', onDone);
     this.overlay.appendChild(skipBtn);
 
-    // Video events
-    video.addEventListener('ended', onDone);
-    video.addEventListener('error', onDone); // fallback on error
-
     // Timeout fallback (30s max)
     const timeout = setTimeout(onDone, 30000);
-    video.addEventListener('ended', () => clearTimeout(timeout));
+
+    // Video events — clear timeout on ALL completion paths
+    video.addEventListener('ended', () => { clearTimeout(timeout); onDone(); });
+    video.addEventListener('error', () => { clearTimeout(timeout); onDone(); });
 
     video.play().catch(() => {
       // Autoplay blocked — go to menu
