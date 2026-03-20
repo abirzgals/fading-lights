@@ -707,7 +707,7 @@ export class BotAI {
     const needsRecompute = this.reachableCacheTimer <= 0;
     if (needsRecompute) {
       this.reachableCacheTimer = 1.0;
-      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 200); // reduced from 300 to 200 tiles
+      this.cachedReachable = this.grid.floodFill(p.pos.x, p.pos.y, 300);
     }
     const reachable = this.cachedReachable;
 
@@ -778,12 +778,11 @@ export class BotAI {
         const rc = e.get(ResourceComponent) as ResourceComponent | null;
         if (!rc) continue;
         const rType = rc.resourceType;
-        // Use getWaveDist for fast Uint16Array lookup
         const waveDist = getWaveDist(e);
         if (waveDist === Infinity) continue;
-        const distToCamp = bonfire ? e.pos.distance(bonfire.pos) : waveDist * 32;
-        if (distToCamp > this.GATHER_RANGE * 1.5) continue;
-        const score = waveDist * 32 * 0.6 + distToCamp * 0.4;
+        // Score: wave distance is primary (actual walk), straight-line as tiebreaker
+        const straightDist = p.pos.distance(e.pos);
+        const score = waveDist * 32 * 0.8 + straightDist * 0.2;
         const prev = bestResourceByType[rType];
         if (!prev || score < prev.score) {
           bestResourceByType[rType] = { entity: e, dist: waveDist * 32, score };
