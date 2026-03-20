@@ -1070,37 +1070,29 @@ export class BotAI {
         const target = goal.target!;
         if (target.isKilled()) break;
 
-        // Attack only if within actual weapon reach (52px — same as GameScene damage check)
         const distToTarget = ctx.player.pos.distance(target.pos);
-        if (distToTarget < 20) {
+
+        // Within weapon reach — attack
+        if (distToTarget < 48) {
           attack = true;
-          // Face the resource
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
           vx = toRes.x * 0.01; vy = toRes.y * 0.01;
           break;
         }
 
-        // Move toward target
+        // Use pathfinding to get close
         const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
 
-        // Unreachable — can't path to this resource, give up goal
         if (this.pathFollower.unreachable) {
           this.goalAge = 999;
           break;
         }
 
-        if (this.pathFollower.arrived) {
-          if (distToTarget < 20) {
-            // Close enough — attack
-            attack = true;
-            const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
-            vx = toRes.x * 0.01; vy = toRes.y * 0.01;
-          } else {
-            // Arrived at approach tile but still too far — walk directly toward target
-            // Grid collision will slide along walls
-            const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
-            vx = toRes.x; vy = toRes.y;
-          }
+        if (this.pathFollower.arrived || dir.x === 0 && dir.y === 0) {
+          // Path ended but not close enough — walk DIRECTLY to target tile
+          // Grid collision will stop us at the edge, pressed against the resource
+          const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+          vx = toRes.x; vy = toRes.y;
         } else {
           // Still moving toward target
           vx = dir.x; vy = dir.y;

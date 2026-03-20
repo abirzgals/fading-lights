@@ -2,6 +2,43 @@
 
 ---
 
+## 2026-03-20 — v2.7.10: Fix bot stopping too far from trees
+
+### Summary
+The bot was stopping short of trees and failing to attack because the arrival check used a 20px threshold while the GameScene damage check uses 52px. The pathfinder's arrived state also left the bot stranded on the approach tile rather than pressing up against the resource.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Attack threshold raised from 20px to 48px to align with the 52px GameScene damage range.
+- `src/ai/BotAI.ts`: Consolidated arrived + zero-dir cases — when PathFollower arrives or movement stalls, the bot walks directly toward the target tile; grid collision presses it against the resource edge.
+- `src/ai/BotAI.ts`: Removed redundant nested arrived/distance check — attack is now handled by the single top-of-loop `distToTarget < 48` guard.
+- `package.json`: Bumped version to 2.7.10.
+
+### Rationale
+The old 20px threshold was too tight — the pathfinder approach tile can land the bot 30–45px from the tree centre, meaning the bot arrived and checked distance, found it > 20px, then re-entered the walk-toward loop which immediately re-reported arrived and looped forever without attacking. Raising the threshold to 48px (inside the 52px damage check) means the bot attacks as soon as it is genuinely adjacent. The direct-walk fallback ensures the bot closes any remaining gap that pathfinding cannot resolve.
+
+### Next Steps
+- Verify bot consistently attacks trees across edge cases (bot spawning far from map centre, trees at map borders).
+
+## 2026-03-20 — v2.7.9: Fix bot resource scoring — prefer nearby trees
+
+### Summary
+The bot was choosing distant trees over ones nearby because the old scoring formula heavily weighted distance-to-bonfire camp (`distToCamp`), which had nothing to do with the actual walk cost. A strict `distToCamp` filter also excluded valid resources that happened to be far from the bonfire. Additionally, the BFS flood fill had been reduced to 200 tiles, which was too small — trees behind obstacles near the player could fall outside the reachable set entirely.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Resource score changed from `waveDist * 0.6 + distToCamp * 0.4` to `waveDist * 32 * 0.8 + straightDist * 0.2`. Straight-line distance from the player is now the tiebreaker, not camp distance.
+- `src/ai/BotAI.ts`: Removed `distToCamp > GATHER_RANGE * 1.5` filter — camp distance is no longer a gating criterion.
+- `src/ai/BotAI.ts`: BFS flood fill limit restored to 300 tiles (reverts a prior reduction to 200).
+- `package.json`: Bumped version to 2.7.9.
+
+### Rationale
+Wave distance (BFS cost) already captures the real walk cost including obstacles. Camp distance is a proxy that penalises resources that are legitimately close to the player but happen to be in the opposite direction from the bonfire. Straight-line distance as a 20% tiebreaker nudges the bot toward resources that are physically near the player when two wave-cost options are similar, which matches natural human gathering behaviour. Restoring the BFS limit to 300 ensures the flood fill covers the full viable gathering radius.
+
+### Next Steps
+- Monitor whether bots now make sensible choices across varied map layouts, particularly when trees spawn behind large obstacle clusters.
+- Consider capping `straightDist` to avoid over-weighting the tiebreaker when wave paths are significantly different.
+
+---
+
 ## 2026-03-20 — v2.7.8: Fix debug overlay — replace Excalibur Actors with HTML Canvas
 
 ### Summary
