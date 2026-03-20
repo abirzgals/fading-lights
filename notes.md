@@ -2,6 +2,21 @@
 
 ---
 
+## 2026-03-20 — v2.7.11: Fix bot stuck on unreachable chop/mine target
+
+### Summary
+The bot could get permanently stuck trying to chop or mine a resource it could not physically reach. Once committed to a chop or mine goal, the bot would keep the same target until the resource was destroyed — there was no escape path if the resource was obstructed.
+
+### Changes Made
+- `src/ai/BotAI.ts`: In the goal-switching guard for chop/mine, added an early-exit: if `stuckTimer > 3`, allow switching to a different target. The `stuckTimer` already tracks whether the bot has stopped moving, so no new state was needed.
+- `package.json`: Bumped version to 2.7.11.
+
+### Rationale
+The committed-target pattern was correct for the common case (prevent thrashing between nearby trees), but had no fallback when the target was unreachable. The existing `stuckTimer` cleanly captures "bot has been stationary too long", making it the right signal to abandon an unreachable resource and re-score alternatives.
+
+### Next Steps
+- Monitor whether the 3-second threshold is too short on slower machines or for resources that are momentarily blocked by other bots/entities.
+
 ## 2026-03-20 — v2.7.10: Fix bot stopping too far from trees
 
 ### Summary
