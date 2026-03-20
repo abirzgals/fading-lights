@@ -231,6 +231,8 @@ export class GameScene extends ex.Scene {
 
     for (const e of this.level.entities) {
       if (e.isKilled()) continue;
+      // Never cull bonfires or buildings — they provide light for fog shader
+      if (e.entityType === 'bonfire' || e.entityType === 'building') continue;
       const inView = e.pos.x > left && e.pos.x < right && e.pos.y > top && e.pos.y < bottom;
 
       if (!inView && !this.culledFromScene.has(e)) {
