@@ -2,6 +2,24 @@
 
 ---
 
+## 2026-03-20 — v2.7.8: Fix debug overlay — replace Excalibur Actors with HTML Canvas
+
+### Summary
+Debug mode was crashing the game by creating hundreds of `ex.Actor` instances every frame — one per blocked tile, per path node, and per dot. The scene graph was overwhelmed within seconds. All debug rendering has been replaced with a single HTML Canvas overlay element that is drawn with the 2D canvas API each frame and has zero Excalibur scene graph impact.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Removed `debugActors: ex.Actor[]` array and all actor creation/kill logic in `renderDebugOverlay`. Replaced with `debugCanvas: HTMLCanvasElement | null` and `debugCtx: CanvasRenderingContext2D | null`. `renderDebugOverlay` now creates or reuses one `<canvas>` element appended to `document.body` with `pointer-events:none; z-index:9999`. Each frame it clears and redraws: red fill for blocked tiles, blue fill for player tile, yellow fill for bot target tile, green lines and dots for A* path, cyan lines for intent, orange lines for enemy paths. `clearDebugOverlay` removes the canvas from the DOM entirely.
+- `package.json`: Bumped version to 2.7.8.
+
+### Rationale
+Creating and destroying Excalibur Actors per frame is catastrophically expensive — each actor registers with the scene, participates in collision broadphase, and is garbage collected in bulk. A canvas overlay is the correct tool for ephemeral debug visuals: one element, one clear, many fast `fillRect`/`lineTo` calls with no object allocation.
+
+### Next Steps
+- Consider throttling debug overlay redraws (e.g., every 3–5 frames) to further reduce overhead during heavy debug sessions.
+- The canvas world-to-screen transform (`w2sx`, `w2sy`) could be extracted into a shared utility if other HUD overlays need it.
+
+---
+
 ## 2026-03-20 — v2.7.7: Persist player name + AI off by default
 
 ### Summary
