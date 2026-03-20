@@ -1087,17 +1087,27 @@ export class BotAI {
         const tTx = Math.floor(target.pos.x / 32);
         const tTy = Math.floor(target.pos.y / 32);
         const tdx = Math.abs(pTx - tTx), tdy = Math.abs(pTy - tTy);
-        const isCardinal = (tdx + tdy) === 1; // directly up/down/left/right
+        const isCardinal = (tdx + tdy) === 1; // up/down/left/right ONLY
 
         if (isCardinal) {
-          // Cardinal neighbor — run DIRECTLY to target center, grid collision stops at edge
+          // Cardinal neighbor — run directly to target, attack on approach
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
           vx = toRes.x; vy = toRes.y;
-          // Close enough to hit while running toward
           if (distToTarget < 48) attack = true;
         } else {
-          // Diagonal or farther — use pathfinding
-          const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+          // Diagonal or farther — pathfind to nearest CARDINAL neighbor of target
+          const cardinals = [[0,-1],[0,1],[-1,0],[1,0]]; // up, down, left, right
+          let bestCardX = target.pos.x, bestCardY = target.pos.y;
+          let bestCardDist = Infinity;
+          for (const [cdx, cdy] of cardinals) {
+            const nx = tTx + cdx, ny = tTy + cdy;
+            if (this.grid.isBlocked(nx, ny)) continue;
+            const cx = nx * 32 + 16, cy = ny * 32 + 16;
+            const d = Math.hypot(cx - ctx.player.pos.x, cy - ctx.player.pos.y);
+            if (d < bestCardDist) { bestCardDist = d; bestCardX = cx; bestCardY = cy; }
+          }
+
+          const dir = this.moveToWithPathfinding(bestCardX, bestCardY);
 
           if (this.pathFollower.unreachable) {
             this.goalAge = 999;
@@ -1105,7 +1115,7 @@ export class BotAI {
           }
 
           if (this.pathFollower.arrived) {
-            // Path ended — walk directly to target, grid collision handles the rest
+            // At cardinal neighbor — run to target, attack
             const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
             vx = toRes.x; vy = toRes.y;
             if (distToTarget < 48) attack = true;

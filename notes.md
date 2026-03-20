@@ -2,6 +2,23 @@
 
 ---
 
+## 2026-03-20 — v2.7.13: Fix bot diagonal tree approach — pathfind to cardinal neighbor, not tree tile
+
+### Summary
+When a tree (or other resource) tile was diagonal to the bot, the bot would pathfind directly to the tree tile and get stuck on the corner. The fix changes the diagonal path target to the nearest walkable cardinal neighbor (up/down/left/right) of the tree tile instead, so the bot always approaches from a side.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Cardinal neighbor case (tdx+tdy=1) unchanged — run directly, attack at <48px.
+- `src/ai/BotAI.ts`: Diagonal/far case — enumerate all four cardinal neighbors of the tree tile, skip blocked ones, pick the closest walkable one to the player, pathfind there instead of to the tree tile itself. On arrival, run directly to tree and attack at <48px.
+- `package.json`: Bumped version to 2.7.13.
+
+### Rationale
+Pathfinding to a solid tile's center can steer the bot into a diagonal corner where it gets wedged. By pathfinding to a clear adjacent tile first, the bot arrives on a shared edge with the tree and can then walk straight in to attack. The cardinal neighbor closest to the player minimizes extra travel.
+
+### Next Steps
+- Monitor whether all four cardinal neighbors are correctly excluded when blocked by other geometry.
+- Consider the same neighbor-selection approach for mining targets.
+
 ## 2026-03-20 — v2.7.12: Rewrite bot chop/mine approach logic — cardinal vs diagonal
 
 ### Summary
