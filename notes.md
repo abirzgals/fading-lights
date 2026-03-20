@@ -2,6 +2,22 @@
 
 ---
 
+## 2026-03-20 — v2.7.14: Guard onPreUpdate with try-catch to prevent scene crash
+
+### Summary
+Wrapped the entire body of `GameScene.onPreUpdate` in a try-catch block. Any unhandled runtime error that previously would propagate uncaught and potentially crash the scene is now caught and logged to the console instead. This addresses the black screen + menu campfire regression — the most likely cause being an uncaught error in the update loop that caused Excalibur to fall back to displaying the previous scene's state.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Added `try { ... } catch (err) { console.error('[GameScene] ERROR in update:', err); }` wrapping the full `onPreUpdate` body.
+- `package.json`: Bumped version to 2.7.14.
+
+### Rationale
+The black screen bug was intermittent and hard to reproduce. Without a safety net any thrown error silently killed the update loop. The try-catch keeps the game running and surfaces the error in the console so the root cause can be identified later, rather than letting a single bad frame crash the scene entirely.
+
+### Next Steps
+- Monitor the console on devices that exhibited the black screen to capture the actual error message.
+- Once the root error is identified, fix it directly and consider whether the try-catch is still needed as a permanent guard.
+
 ## 2026-03-20 — v2.7.13: Fix bot diagonal tree approach — pathfind to cardinal neighbor, not tree tile
 
 ### Summary
