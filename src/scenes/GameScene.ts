@@ -83,7 +83,8 @@ export class GameScene extends ex.Scene {
   private buildings: GameEntity[] = [];
   private debugMode = false;
   private profilerMode = false;
-  private debugActors: ex.Actor[] = [];
+  private debugCanvas: HTMLCanvasElement | null = null;
+  private debugCtx: CanvasRenderingContext2D | null = null;
   private debugCheckbox: HTMLInputElement | null = null;
 
   // Network
@@ -1316,125 +1317,103 @@ export class GameScene extends ex.Scene {
   }
 
   private clearDebugOverlay(): void {
-    for (const a of this.debugActors) a.kill();
-    this.debugActors = [];
+    if (this.debugCanvas) {
+      this.debugCanvas.remove();
+      this.debugCanvas = null;
+      this.debugCtx = null;
+    }
   }
 
   private renderDebugOverlay(): void {
-    this.clearDebugOverlay();
+    const engine = this.engine;
     const cam = this.camera;
-    const vp = this.engine.screen.resolution;
     const zoom = cam.zoom;
+    const sw = engine.canvas.width, sh = engine.canvas.height;
+
+    // Create/resize canvas overlay
+    if (!this.debugCanvas) {
+      this.debugCanvas = document.createElement('canvas');
+      this.debugCanvas.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:9999;';
+      document.body.appendChild(this.debugCanvas);
+    }
+    this.debugCanvas.width = sw;
+    this.debugCanvas.height = sh;
+    const ctx = this.debugCanvas.getContext('2d')!;
+    ctx.clearRect(0, 0, sw, sh);
+
+    const dpr = window.devicePixelRatio || 1;
+    const camX = cam.pos.x, camY = cam.pos.y;
+
+    // World to screen helper
+    const w2sx = (wx: number) => (wx - camX) * zoom * dpr + sw / 2;
+    const w2sy = (wy: number) => (wy - camY) * zoom * dpr + sh / 2;
+    const tileS = T * zoom * dpr;
 
     // Visible tile range
-    const camX = cam.pos.x, camY = cam.pos.y;
-    const halfW = vp.width / zoom / 2 + T, halfH = vp.height / zoom / 2 + T;
+    const halfW = sw / zoom / dpr / 2 + T;
+    const halfH = sh / zoom / dpr / 2 + T;
     const minTX = Math.max(0, Math.floor((camX - halfW) / T));
     const maxTX = Math.min(this.level.grid.getSize() - 1, Math.ceil((camX + halfW) / T));
     const minTY = Math.max(0, Math.floor((camY - halfH) / T));
     const maxTY = Math.min(this.level.grid.getSize() - 1, Math.ceil((camY + halfH) / T));
 
-    // Draw blocked tiles as red semi-transparent
+    // Blocked tiles (red)
+    ctx.fillStyle = 'rgba(255,0,0,0.15)';
     for (let tx = minTX; tx <= maxTX; tx++) {
       for (let ty = minTY; ty <= maxTY; ty++) {
         if (!this.level.grid.isBlocked(tx, ty)) continue;
-        const a = new ex.Actor({
-          pos: ex.vec(tx * T + T / 2, ty * T + T / 2),
-          anchor: ex.vec(0.5, 0.5),
-        });
-        a.graphics.use(new ex.Rectangle({ width: T - 1, height: T - 1, color: ex.Color.fromRGB(255, 0, 0, 0.2) }));
-        a.z = 8000;
-        this.add(a);
-        this.debugActors.push(a);
+        ctx.fillRect(w2sx(tx * T), w2sy(ty * T), tileS, tileS);
       }
     }
 
-    // Highlight player tile (blue)
-    {
-      const pp = this.level.player;
-      const ptx = Math.floor(pp.pos.x / T), pty = Math.floor(pp.pos.y / T);
-      const pt = new ex.Actor({ pos: ex.vec(ptx * T + T / 2, pty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
-      pt.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromRGB(0, 100, 255, 0.3) }));
-      pt.z = 8001;
-      this.add(pt);
-      this.debugActors.push(pt);
+    // Player tile (blue)
+    const pp = this.level.player;
+    const ptx = Math.floor(pp.pos.x / T), pty = Math.floor(pp.pos.y / T);
+    ctx.fillStyle = 'rgba(0,100,255,0.25)';
+    ctx.fillRect(w2sx(ptx * T), w2sy(pty * T), tileS, tileS);
+
+    // Bot target tile (yellow)
+    const bg = this.botAI ? (this.botAI as any).currentGoal : null;
+    if (bg?.target && !bg.target.isKilled()) {
+      const ttx = Math.floor(bg.target.pos.x / T), tty = Math.floor(bg.target.pos.y / T);
+      ctx.fillStyle = 'rgba(255,255,0,0.25)';
+      ctx.fillRect(w2sx(ttx * T), w2sy(tty * T), tileS, tileS);
     }
 
-    // Highlight bot target tile (yellow)
-    {
-      const bg = this.botAI ? (this.botAI as any).currentGoal : null;
-      if (bg?.target) {
-        const ttx = Math.floor(bg.target.pos.x / T), tty = Math.floor(bg.target.pos.y / T);
-        const tt = new ex.Actor({ pos: ex.vec(ttx * T + T / 2, tty * T + T / 2), anchor: ex.vec(0.5, 0.5) });
-        tt.graphics.use(new ex.Rectangle({ width: T, height: T, color: ex.Color.fromRGB(255, 255, 0, 0.3) }));
-        tt.z = 8001;
-        this.add(tt);
-        this.debugActors.push(tt);
+    // Draw path helper
+    const drawPath = (points: Array<{x:number;y:number}>, idx: number, sx: number, sy: number, color: string) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2 * dpr;
+      ctx.beginPath();
+      ctx.moveTo(w2sx(sx), w2sy(sy));
+      for (let i = idx; i < points.length; i++) {
+        ctx.lineTo(w2sx(points[i].x), w2sy(points[i].y));
       }
-    }
-
-    // Draw A* paths with lines + dots
-    const drawPath = (
-      points: Array<{ x: number; y: number }>,
-      startIdx: number,
-      startPos: { x: number; y: number },
-      dotColor: ex.Color,
-      lineColor: ex.Color,
-    ) => {
-      let prevX = startPos.x, prevY = startPos.y;
-      for (let i = startIdx; i < points.length; i++) {
-        const wp = points[i];
-        // Line from prev to current
-        const dx = wp.x - prevX, dy = wp.y - prevY;
-        const len = Math.hypot(dx, dy);
-        if (len > 1) {
-          const line = new ex.Actor({
-            pos: ex.vec((prevX + wp.x) / 2, (prevY + wp.y) / 2),
-            anchor: ex.vec(0.5, 0.5),
-          });
-          line.graphics.use(new ex.Rectangle({ width: len, height: 1.5, color: lineColor }));
-          line.rotation = Math.atan2(dy, dx);
-          line.z = 8001;
-          this.add(line);
-          this.debugActors.push(line);
-        }
-        // Dot at waypoint
-        const dot = new ex.Actor({ pos: ex.vec(wp.x, wp.y), anchor: ex.vec(0.5, 0.5) });
-        dot.graphics.use(new ex.Circle({ radius: 3, color: dotColor }));
-        dot.z = 8002;
-        this.add(dot);
-        this.debugActors.push(dot);
-        prevX = wp.x; prevY = wp.y;
+      ctx.stroke();
+      // Dots
+      ctx.fillStyle = color;
+      for (let i = idx; i < points.length; i++) {
+        ctx.beginPath();
+        ctx.arc(w2sx(points[i].x), w2sy(points[i].y), 3 * dpr, 0, Math.PI * 2);
+        ctx.fill();
       }
     };
 
-    // Player bot: A* path (green) or intent line (cyan) to goal
+    // Bot path (green) or intent (cyan)
     const botPf = this.botAI ? (this.botAI as any).pathFollower : null;
-    const botGoal = this.botAI ? (this.botAI as any).currentGoal : null;
-    const player = this.level.player;
     if (botPf?.getPath()) {
-      const path = botPf.getPath() as Array<{ x: number; y: number }>;
-      const idx = botPf.getPathIdx() as number ?? 0;
-      drawPath(path, idx, { x: player.pos.x, y: player.pos.y },
-        ex.Color.fromRGB(0, 255, 0, 0.8),
-        ex.Color.fromRGB(0, 255, 0, 0.4));
-    } else if (botGoal && botGoal.x !== undefined && botGoal.y !== undefined) {
-      // No A* path — show direct intent line (cyan dashed)
-      drawPath([{ x: botGoal.x, y: botGoal.y }], 0,
-        { x: player.pos.x, y: player.pos.y },
-        ex.Color.fromRGB(0, 200, 255, 0.6),
-        ex.Color.fromRGB(0, 200, 255, 0.3));
+      const path = botPf.getPath();
+      drawPath(path, botPf.getPathIdx() ?? 0, pp.pos.x, pp.pos.y, 'rgba(0,255,0,0.6)');
+    } else if (bg?.x !== undefined && bg?.y !== undefined) {
+      drawPath([{x: bg.x, y: bg.y}], 0, pp.pos.x, pp.pos.y, 'rgba(0,200,255,0.5)');
     }
 
     // Enemy paths (orange)
     for (const e of this.level.enemies) {
       if (e.isKilled()) continue;
-      const ePath = (e as any)._aiPath as Array<{ x: number; y: number }> | null;
-      const eIdx = (e as any)._aiPathIdx as number ?? 0;
+      const ePath = (e as any)._aiPath;
       if (!ePath) continue;
-      drawPath(ePath, eIdx, { x: e.pos.x, y: e.pos.y },
-        ex.Color.fromRGB(255, 100, 0, 0.7),
-        ex.Color.fromRGB(255, 100, 0, 0.3));
+      drawPath(ePath, (e as any)._aiPathIdx ?? 0, e.pos.x, e.pos.y, 'rgba(255,100,0,0.4)');
     }
   }
 
