@@ -647,6 +647,8 @@ export class GameScene extends ex.Scene {
   ];
 
   private runSpawning(dt: number): void {
+    // Disable mob spawning via URL param ?noMobs
+    if (new URLSearchParams(window.location.search).has('noMobs')) return;
     this.waveTimer += dt;
     this.spawnTimer += dt;
 
