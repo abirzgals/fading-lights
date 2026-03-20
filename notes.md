@@ -2,6 +2,44 @@
 
 ---
 
+## 2026-03-20 — v2.7.19: Sprite shadow with try-finally tint guard + spawn actor logging
+
+### Summary
+Restored the sprite-based silhouette shadow in `ShadowCasterComponent`. The previous fix replaced the shadow with a plain ellipse to avoid tint corruption; this revision brings back the sprite shadow with a `try-finally` block ensuring the tint is always restored to its original value even if the draw call throws. Also added actor-count logging around enemy creation in `GameScene` to diagnose whether spawning contributes to scene corruption. Black screen investigation is ongoing — user has observed it occurring in the menu when clicking outside buttons, not only in-game with enemies present, suggesting the root cause may be upstream of the shadow or spawn systems.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts`: Shadow now draws the actor's own sprite as a black silhouette. `graphic.tint` is set to `ex.Color.Black` inside a `try` block and unconditionally restored in `finally`. Falls back to `ex.Color.White` if original tint was `undefined`.
+- `src/scenes/GameScene.ts`: Added `console.log` lines before and after `EntityFactory.createEnemy()` reporting actor count, enemy list length, enemy type, and spawn position.
+- `package.json`: Bumped version to 2.7.19.
+
+### Rationale
+The ellipse shadow was a safe fallback but visually inferior. The try-finally pattern gives the same safety guarantee (no permanent tint corruption) while preserving the sprite silhouette fidelity. The spawn logging is a diagnostic aid — if actor count changes unexpectedly during spawn, it will be visible in the console without needing a debugger attached.
+
+### Next Steps
+- Investigate black screen in menu context — clicking outside buttons should not trigger any rendering path that corrupts state. Review input handlers and any graphics operations tied to pointer-down/pointer-up events.
+- If try-finally is still insufficient (e.g., ExcaliburJS renders async and the tint read happens after the finally runs), consider a dedicated off-screen shadow sprite approach.
+- Remove spawn logging once the investigation is resolved.
+
+---
+
+## 2026-03-20 — v2.7.18: Fix black screen — ShadowCasterComponent tint mutation
+
+### Summary
+Identified and fixed the likely root cause of the intermittent black screen bug. `ShadowCasterComponent` was mutating `graphic.tint` to `ex.Color.Black` on shared `ImageSource` objects. Because multiple enemies share the same sprite reference, if a draw call was interrupted mid-frame, the tint was never restored and remained permanently Black. This caused every sprite using that shared source to render as a solid black rectangle — resulting in a full black screen.
+
+### Changes Made
+- `src/components/ShadowCasterComponent.ts`: Removed `graphic.tint` mutation entirely. Shadow is now rendered as a dark ellipse using `ctx.drawCircle(ex.Vector.Zero, ...)`. No shared sprite state is touched at any point.
+- `package.json`: Bumped version to 2.7.18.
+
+### Rationale
+Mutating shared graphic state inside a per-frame draw hook is inherently unsafe. The new approach draws a simple geometric shadow instead, which is stateless and cannot corrupt any other actor's rendering. The visual trade-off (ellipse vs. sprite silhouette) is acceptable given the correctness guarantee.
+
+### Next Steps
+- Monitor for any remaining black screen occurrences in testing.
+- If shadow fidelity is needed later, consider a dedicated shadow sprite or a masking approach that does not touch the source graphic's tint.
+
+---
+
 ## 2026-03-20 — v2.7.17: Add ?noMobs URL param to disable enemy spawning
 
 ### Summary

@@ -684,10 +684,12 @@ export class GameScene extends ex.Scene {
       const rawY = player.pos.y + Math.sin(angle) * dist;
       const spawnPos = this.level.grid.findWalkableNear(rawX, rawY);
 
+      console.log(`[Spawn] Creating ${type} at (${Math.round(spawnPos.x)}, ${Math.round(spawnPos.y)}), actors before: ${this.actors.length}`);
       const enemy = EntityFactory.createEnemy(this, spawnPos.x, spawnPos.y, type);
       (enemy as any).enemyType = type;
       this.level.enemies.push(enemy);
       this.totalSpawned++;
+      console.log(`[Spawn] Created ${type}, actors after: ${this.actors.length}, enemies: ${this.level.enemies.length}`);
 
       // Assign netId and broadcast to clients
       const netId = this.nextNetId++;

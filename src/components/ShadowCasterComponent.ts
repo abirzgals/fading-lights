@@ -50,13 +50,21 @@ export class ShadowCasterComponent extends ex.Component {
       const graphic = actor.graphics.current;
       if (!graphic) return;
 
-      // Draw shadow as dark ellipse — no tint mutation (safe for shared sprites)
       ctx.save();
       ctx.translate(self.shadowOffsetX, self.shadowOffsetY);
       ctx.rotate(self.shadowRotation);
       ctx.scale(self.shadowScaleX, self.shadowScaleY);
       ctx.opacity = self.shadowAlpha;
-      ctx.drawCircle(ex.Vector.Zero, Math.max(graphic.width, graphic.height) * 0.4, ex.Color.Black);
+
+      // Draw sprite as black silhouette — protect tint with try-finally
+      const origTint = graphic.tint;
+      try {
+        graphic.tint = ex.Color.Black;
+        graphic.draw(ctx, -graphic.width / 2, -graphic.height);
+      } finally {
+        graphic.tint = origTint ?? ex.Color.White;
+      }
+
       ctx.restore();
     };
     this.installed = true;
