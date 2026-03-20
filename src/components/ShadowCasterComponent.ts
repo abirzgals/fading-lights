@@ -50,26 +50,13 @@ export class ShadowCasterComponent extends ex.Component {
       const graphic = actor.graphics.current;
       if (!graphic) return;
 
+      // Draw shadow as dark ellipse — no tint mutation (safe for shared sprites)
       ctx.save();
-
-      // Translate to feet position (ground contact point)
       ctx.translate(self.shadowOffsetX, self.shadowOffsetY);
-
-      // Rotate away from light
       ctx.rotate(self.shadowRotation);
-
-      // Scale: X = entity width, Y = shadow stretch
       ctx.scale(self.shadowScaleX, self.shadowScaleY);
-
       ctx.opacity = self.shadowAlpha;
-
-      // Draw black silhouette of the sprite
-      // Anchor the sprite drawing so its BOTTOM is at the current origin (feet)
-      const origTint = graphic.tint;
-      graphic.tint = ex.Color.Black;
-      graphic.draw(ctx, -graphic.width / 2, -graphic.height);
-      graphic.tint = origTint ?? ex.Color.White;
-
+      ctx.drawCircle(ex.Vector.Zero, Math.max(graphic.width, graphic.height) * 0.4, ex.Color.Black);
       ctx.restore();
     };
     this.installed = true;
