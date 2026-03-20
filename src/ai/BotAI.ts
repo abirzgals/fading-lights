@@ -1073,34 +1073,44 @@ export class BotAI {
 
         const distToTarget = ctx.player.pos.distance(target.pos);
 
-        // Within weapon reach — attack
-        if (distToTarget < 48) {
+        // Very close — attack
+        if (distToTarget < 28) {
           attack = true;
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
           vx = toRes.x * 0.01; vy = toRes.y * 0.01;
           break;
         }
 
-        // Use pathfinding to get close
-        const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+        // Check tile relationship: is target cardinal (up/down/left/right) or diagonal?
+        const pTx = Math.floor(ctx.player.pos.x / 32);
+        const pTy = Math.floor(ctx.player.pos.y / 32);
+        const tTx = Math.floor(target.pos.x / 32);
+        const tTy = Math.floor(target.pos.y / 32);
+        const tdx = Math.abs(pTx - tTx), tdy = Math.abs(pTy - tTy);
+        const isCardinal = (tdx + tdy) === 1; // directly up/down/left/right
 
-        if (this.pathFollower.unreachable) {
-          this.goalAge = 999;
-          break;
-        }
-
-        if (this.pathFollower.arrived || dir.x === 0 && dir.y === 0) {
-          // Path ended but not close enough — walk DIRECTLY to target tile
-          // Grid collision will stop us at the edge, pressed against the resource
+        if (isCardinal) {
+          // Cardinal neighbor — run DIRECTLY to target center, grid collision stops at edge
           const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
           vx = toRes.x; vy = toRes.y;
+          // Close enough to hit while running toward
+          if (distToTarget < 48) attack = true;
         } else {
-          // Still moving toward target
-          vx = dir.x; vy = dir.y;
-          if (ctx.evasion && ctx.evasion.urgency > 0.5) {
-            const blend = Math.min(ctx.evasion.urgency * 0.4, 0.6);
-            vx = vx * (1 - blend) + ctx.evasion.x * blend;
-            vy = vy * (1 - blend) + ctx.evasion.y * blend;
+          // Diagonal or farther — use pathfinding
+          const dir = this.moveToWithPathfinding(target.pos.x, target.pos.y);
+
+          if (this.pathFollower.unreachable) {
+            this.goalAge = 999;
+            break;
+          }
+
+          if (this.pathFollower.arrived) {
+            // Path ended — walk directly to target, grid collision handles the rest
+            const toRes = this.dirTo(ctx.player.pos, target.pos.x, target.pos.y);
+            vx = toRes.x; vy = toRes.y;
+            if (distToTarget < 48) attack = true;
+          } else {
+            vx = dir.x; vy = dir.y;
           }
         }
         break;

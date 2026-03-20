@@ -1,6 +1,6 @@
 {
   "name": "fading-lights-v2",
-  "version": "2.7.11",
+  "version": "2.7.12",
   "type": "module",
   "scripts": {
     "dev": "vite",

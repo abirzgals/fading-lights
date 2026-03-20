@@ -2,6 +2,25 @@
 
 ---
 
+## 2026-03-20 — v2.7.12: Rewrite bot chop/mine approach logic — cardinal vs diagonal
+
+### Summary
+The bot was stopping 1-2 tiles away from resource tiles instead of pressing directly against them. The root cause was that pathfinding treated all resources the same regardless of their tile relationship to the bot. Cardinal neighbors (directly adjacent up/down/left/right) do not require pathfinding — a straight run into the tile is enough and grid collision stops the bot at the edge.
+
+### Changes Made
+- `src/ai/BotAI.ts`: Very-close guard tightened from 48px to 28px — at that range stop and attack, facing the target.
+- `src/ai/BotAI.ts`: Cardinal check added (`tdx + tdy === 1`) — if the target tile is a direct neighbor, run straight toward its center; attack fires while closing (dist < 48). No pathfinding, no indirection.
+- `src/ai/BotAI.ts`: Diagonal/farther path — PathFollower still used to navigate corners. On arrival, falls back to direct walk; attacks at < 48px. Unreachable flag still triggers goalAge bailout.
+- `src/ai/BotAI.ts`: Removed evasion blending from the chop/mine movement path (was causing drift away from the resource on approach).
+- `package.json`: Bumped version to 2.7.12.
+
+### Rationale
+Cardinal neighbors share a tile edge with the bot's current tile — the shortest path is always a straight line and grid collision acts as a natural stop. Routing them through PathFollower was unnecessary and could cause the bot to overshoot or stall. Diagonal targets genuinely need path navigation to get around corners, so PathFollower is retained for that case only.
+
+### Next Steps
+- Observe whether the 28px very-close threshold is correct for all resource types or needs per-resource tuning.
+- Consider applying the same cardinal/diagonal split to combat movement (enemy approach).
+
 ## 2026-03-20 — v2.7.11: Fix bot stuck on unreachable chop/mine target
 
 ### Summary
