@@ -142,6 +142,15 @@ export class GameScene extends ex.Scene {
       }
     });
 
+    // Handle WebGL context loss (causes black screen on some devices)
+    engine.canvas.addEventListener('webglcontextlost', (e) => {
+      console.error('[GameScene] WebGL context lost!');
+      e.preventDefault();
+    });
+    engine.canvas.addEventListener('webglcontextrestored', () => {
+      console.log('[GameScene] WebGL context restored');
+    });
+
     // UI controls
     this.createDebugCheckbox();
     this.setupMouseControls(engine);

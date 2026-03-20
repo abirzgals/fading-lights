@@ -2,6 +2,47 @@
 
 ---
 
+## 2026-03-20 — v2.7.16: Add WebGL context loss handler to diagnose black screen
+
+### Summary
+Could not reproduce the reported black screen in a 90-second Playwright automated test — the game ran without issue throughout. Added WebGL context loss event listeners on the engine canvas to detect whether the black screen is GPU-related. The `webglcontextlost` handler calls `e.preventDefault()` to allow the browser to attempt context recovery; a `webglcontextrestored` handler logs when recovery succeeds.
+
+The black screen may be caused by: WebGL context loss on mobile or older GPUs, browser tab throttling, or GPU driver issues.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Added `webglcontextlost` listener (logs error, calls `e.preventDefault()`) and `webglcontextrestored` listener (logs recovery) on `engine.canvas`.
+- `package.json`: Bumped version to 2.7.16.
+
+### Rationale
+The black screen could not be reproduced in an automated test environment, suggesting it is device- or browser-specific. Hooking into the WebGL context events will surface any GPU context loss in the console, providing a concrete signal to distinguish between a rendering bug, a context loss event, and a tab-throttling issue.
+
+### Next Steps
+- Test on mobile devices and older GPUs where context loss is more likely.
+- If `webglcontextlost` fires, investigate whether Excalibur handles context restoration automatically or requires a scene reload.
+- Consider adding a visible on-screen error banner when context is lost so the player knows the game can recover.
+
+---
+
+## 2026-03-20 — v2.7.15: Fix black screen — never cull bonfires or buildings from viewport
+
+### Summary
+Found and fixed the root cause of the black screen that appeared after approximately one minute of play. Viewport culling was removing the bonfire entity from the scene when the player walked far enough away. With no bonfire in the scene, the fog shader had zero registered light sources and rendered the entire screen as pure darkness, making the game appear frozen.
+
+The fix adds an `entityType` check at the top of the `viewportCull` loop: entities with type `'bonfire'` or `'building'` are unconditionally skipped and never removed from the scene, ensuring light sources are always present for the fog shader.
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Added early-continue guard in `viewportCull` for `entityType === 'bonfire'` and `entityType === 'building'`.
+- `package.json`: Bumped version to 2.7.15.
+
+### Rationale
+Bonfires and buildings register themselves as light sources with the fog shader. If they are culled from the scene that registration is lost. The fog shader then has no lights and defaults to maximum darkness, producing the black screen. These entity types must always remain active regardless of player distance.
+
+### Next Steps
+- Confirm the try-catch guard added in v2.7.14 is still valuable as a general safety net, or remove it if no longer needed.
+- Consider whether other light-source entity types need the same culling exemption.
+
+---
+
 ## 2026-03-20 — v2.7.14: Guard onPreUpdate with try-catch to prevent scene crash
 
 ### Summary
