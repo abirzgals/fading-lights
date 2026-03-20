@@ -161,6 +161,7 @@ export class GameScene extends ex.Scene {
   }
 
   onPreUpdate(engine: ex.Engine, deltaMs: number): void {
+   try {
     const dt = deltaMs / 1000;
     // Frame time measurement (includes Excalibur render)
     const now = performance.now();
@@ -206,9 +207,12 @@ export class GameScene extends ex.Scene {
     this.profileStep('network', () => this.updateNetwork(dt));
     this.hudUpdateTimer -= deltaMs;
     if (this.hudUpdateTimer <= 0) {
-      this.hudUpdateTimer = 200; // update HUD 5x/sec instead of 60x
+      this.hudUpdateTimer = 200;
       this.profileStep('hud', () => this.updateHUD());
     }
+   } catch (err) {
+    console.error('[GameScene] ERROR in update:', err);
+   }
   }
 
   // ======== VIEWPORT CULLING — remove far entities from Excalibur scene graph ========
