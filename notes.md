@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-20 — v2.7.7: Persist player name + AI off by default
+
+### Summary
+Player name is now saved to localStorage when the game starts and is automatically restored into the name input field when MenuScene initialises. BotAI is disabled by default so normal gameplay is fully manual; it is only activated via the `?ai=1` URL parameter. The AI toggle checkbox in the bottom bar now reflects the actual URL param state rather than always being on. Tests were updated to include `&ai=1` so bot-driven automation still works.
+
+### Changes Made
+- `src/scenes/MenuScene.ts`: On init, reads `localStorage.getItem('playerName')` and populates the input. In `startGame`, calls `localStorage.setItem('playerName', name)` before transitioning.
+- `src/scenes/GameScene.ts`: Changed `botEnabled = true` to `botEnabled = new URLSearchParams(window.location.search).has('ai')` so the bot is opt-in.
+- `tests/game.spec.ts`: All three `page.goto('/?skipIntro=1')` calls updated to `page.goto('/?skipIntro=1&ai=1')` so the bot drives movement for test assertions.
+- `package.json`: Bumped version to 2.7.7.
+
+### Rationale
+Persisting the player name removes friction for returning players. Making AI opt-in prevents the bot from interfering with manual play sessions and keeps the default experience clean; it was only useful during automated testing.
+
+### Next Steps
+- Consider adding a Playwright test that verifies the saved name is restored on a second page visit.
+- Evaluate whether the AI checkbox should be hidden entirely when `?ai=1` is absent.
+
+---
+
 ## 2026-03-20 — v2.7.6: Restore intro→menu→game flow; remove starter test enemies
 
 ### Summary
