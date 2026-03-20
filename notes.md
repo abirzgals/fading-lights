@@ -2,6 +2,26 @@
 
 ---
 
+## 2026-03-20 — v2.7.17: Add ?noMobs URL param to disable enemy spawning
+
+### Summary
+Added a single-line debug flag in `runSpawning()` that returns early when `?noMobs` is present in the URL query string. This allows developers to load the game scene without any enemies spawning, making it much easier to test UI, player movement, loot, and other non-combat systems in isolation.
+
+Usage: `localhost:5001/?skipIntro=1&noMobs`
+
+### Changes Made
+- `src/scenes/GameScene.ts`: Added URLSearchParams check at the top of `runSpawning()` — returns immediately if `noMobs` param is present.
+- `package.json`: Bumped version to 2.7.17.
+
+### Rationale
+Enemy pressure during debugging sessions makes it difficult to inspect non-combat features. The param is zero-cost at runtime when not set and requires no build step or config file change.
+
+### Next Steps
+- Consider adding similar params for other subsystems (e.g., `?noRegen`, `?godMode`) as the need arises.
+- Document available debug URL params in a developer notes section.
+
+---
+
 ## 2026-03-20 — v2.7.16: Add WebGL context loss handler to diagnose black screen
 
 ### Summary
