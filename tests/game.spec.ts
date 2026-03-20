@@ -8,7 +8,7 @@ test('Game loads and renders with enemies', async ({ page }) => {
     else logs.push(msg.text());
   });
 
-  await page.goto('/?skipIntro=1');
+  await page.goto('/?skipIntro=1&ai=1');
   await page.waitForSelector('canvas', { timeout: 30000 });
   await page.waitForTimeout(8000); // wait for world gen + enemy spawn
 
@@ -31,7 +31,7 @@ test('Enemies walk with animation and attack', async ({ page }) => {
   const logs: string[] = [];
   page.on('console', msg => logs.push(msg.text()));
 
-  await page.goto('/?skipIntro=1');
+  await page.goto('/?skipIntro=1&ai=1');
   await page.waitForSelector('canvas', { timeout: 30000 });
   await page.waitForTimeout(8000);
 
@@ -45,7 +45,7 @@ test('Enemies walk with animation and attack', async ({ page }) => {
 });
 
 test('Player attacks enemies with SPACE', async ({ page }) => {
-  await page.goto('/?skipIntro=1');
+  await page.goto('/?skipIntro=1&ai=1');
   await page.waitForSelector('canvas', { timeout: 30000 });
   await page.waitForTimeout(8000);
 

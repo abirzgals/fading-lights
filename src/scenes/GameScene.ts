@@ -35,7 +35,7 @@ export class GameScene extends ex.Scene {
   private fog!: FogOfWarPostProcessor;
   private level!: LevelData;
   private botAI: BotAI | null = null;
-  private botEnabled = true;
+  private botEnabled = new URLSearchParams(window.location.search).has('ai');
   private enemyBrains!: EnemyBrainSystem;
 
   // FPS counter + profiling

@@ -168,8 +168,11 @@ export class MenuScene extends ex.Scene {
     `;
     document.body.appendChild(this.hudEl);
 
-    // Enter key starts game
+    // Load saved name from localStorage
     const nameInput = document.getElementById('player-name') as HTMLInputElement;
+    const savedName = localStorage.getItem('playerName');
+    if (savedName && nameInput) nameInput.value = savedName;
+
     nameInput?.addEventListener('keydown', (e) => {
       if (e.key === 'Enter') this.startGame(engine);
     });
@@ -183,7 +186,10 @@ export class MenuScene extends ex.Scene {
 
   private startGame(engine: ex.Engine): void {
     const nameInput = document.getElementById('player-name') as HTMLInputElement;
-    (window as any).__playerName = nameInput?.value.trim() || 'Wanderer';
+    const name = nameInput?.value.trim() || 'Wanderer';
+    (window as any).__playerName = name;
+    // Save name to device
+    localStorage.setItem('playerName', name);
 
     this.hudEl.style.transition = 'opacity 1.2s';
     this.hudEl.style.opacity = '0';
